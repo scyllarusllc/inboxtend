@@ -172,7 +172,7 @@ Contributions and design discussions will be welcome when the public repository 
 
 ## License
 
-**To be decided before public release.** A license file should be added before accepting contributions or inviting reuse. Until a license is selected, do not assume the repository grants open-source reuse permissions merely because its contents are public.
+Licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2026 Scyllarus LLC. See [NOTICE](NOTICE) for project attribution.
 
 ## Brand and project links
 
