@@ -164,7 +164,7 @@ This roadmap is directional; implementation priorities may change as the project
 
 ## Getting started
 
-Inbox Tend is at the planning stage. There are no verified installation steps or downloadable releases yet. Once the first runnable version is available, this section will document prerequisites, local setup, provider authentication, and security configuration.
+Inbox Tend now has a **local sample-data demo**, not a production release or real email integration. With Python 3.10+, run `python3 app.py` from the repository root and open `http://127.0.0.1:8765`. The demo presents three fictional messages with deterministic excerpts and unsent reply templates. See [QUICKSTART.md](QUICKSTART.md) for instructions and tests. Gmail OAuth, AI processing, persistent storage, and remote-agent orchestration are not yet implemented.
 
 ## Contributing
 
