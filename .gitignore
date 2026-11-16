@@ -6,3 +6,7 @@ __pycache__/
 !.env.example
 *.sqlite3
 .DS_Store
+
+# Local Google OAuth Desktop client configuration (never commit)
+client_secret*.json
+credentials*.json
