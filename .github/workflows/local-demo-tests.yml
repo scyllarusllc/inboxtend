@@ -32,9 +32,9 @@ jobs:
           cache: npm
       - name: Install build tooling
         run: npm ci
-      - name: Rebuild the stylesheet and Font Awesome files
+      - name: Rebuild the stylesheet and the vendored icon files
         run: |
           npm run build:css
-          npm run vendor:fa
-      - name: Committed CSS and vendored files must match their sources
-        run: git diff --exit-code static/styles.css static/vendor
+          npm run vendor
+      - name: Committed CSS, vendored files and country list must match their sources
+        run: git diff --exit-code static/styles.css static/vendor countries.py

@@ -4,6 +4,7 @@ const detail = document.getElementById('detail');
 const draft = document.getElementById('draft');
 let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null, gmailWriteAccess = false;
 // What the list shows: search words (Gmail-style operators work), two quick filters, and how many rows are drawn.
+let flagsAttempted = false;
 let searchText = '', onlyUnread = false, onlyAttachments = false, listLimit = 100, lastData = null, listRun = 0;
 const PAGE = 100;
 const filtersActive = () => searchText.trim() !== '' || onlyUnread || onlyAttachments;
@@ -193,7 +194,10 @@ async function selectMessage(id) {
     el('div', 'From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date'), 'meta')];
   if (full.to) head.push(el('div', 'To ' + full.to, 'meta'));
   if (full.cc) head.push(el('div', 'Cc ' + full.cc, 'meta'));
-  head[1] = el('div', (full.direction === 'sent' ? 'Sent' : 'Received') + ' · From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date'), 'meta');
+  head[1] = el('div', undefined, 'meta flex flex-wrap items-center gap-x-1.5 gap-y-1');
+  head[1].append(el('span', (full.direction === 'sent' ? 'Sent' : 'Received') + ' · From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date')), agoSpan(full.internal_date));
+  const detailFlag = flagEl(full);
+  if (detailFlag) head[1].append(detailFlag, el('span', countryName(full.country)));
   if (full.direction !== 'sent') { detailRead.badge = el('span', '', 'read-badge'); head[1].append(detailRead.badge); }
   const body = el('pre', full.body_text || full.snippet || '(No text content)', 'message-body');  // Text only, never HTML.
   detail.replaceChildren(...head, body);
@@ -388,6 +392,14 @@ function paintRead() {
   }
   for (const item of detailRead.items) if (readState.has(item.id)) item.node.className = readState.get(item.id) ? 'message unread' : 'message';
 }
+// "[flag] name · 2 h ago": the line under a row's title.
+function rowMeta(item, who, ms, fallbackDate) {
+  const line = el('div', undefined, 'row-meta');
+  const flag = flagEl(item);
+  if (flag) line.append(flag);
+  line.append(el('span', who, 'who'), el('span', '·'), agoSpan(ms, fallbackDate || 'No date'));
+  return line;
+}
 function rowButton(key, pressed, unread = false) {
   const button = el('button', undefined, unread ? 'message unread' : 'message');
   button.dataset.id = key;
@@ -446,7 +458,7 @@ function renderList(data) {
       const button = rowButton(m.id, m.id === selectedId, m.unread);
       openBlock(ageOfItem(m), button);
       button.append(el('div', m.subject || '(No subject)'),
-        el('div', (folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender')) + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'));
+        rowMeta(m, folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender'), m.internal_date, m.date));
       if (m.attachment_count) button.append(attachmentLabel(m.attachment_count));
       button.addEventListener('click', () => { currentGroup = null; selectMessage(m.id); });
       list.append(button);
@@ -464,7 +476,7 @@ function renderList(data) {
         top.append(badge);
       }
       const who = g.kind === 'person' ? (g.address || '') : (g.participants || []).join(', ');
-      button.append(top, el('div', (who ? who + ' · ' : '') + formatWhen(last.internal_date, last.date || 'No date'), 'meta'),
+      button.append(top, rowMeta(g, who || 'Unknown', last.internal_date, last.date),
         el('div', (last.direction === 'sent' ? 'You: ' : '') + (g.kind === 'person' ? (last.subject || '') + ' — ' : '') + (last.snippet || ''), 'meta group-snippet'));
       if (filtersActive() && g.matches && g.count > 1) button.append(el('div', g.matches + ' of ' + g.count + ' messages match', 'meta'));
       if (g.attachment_count) button.append(attachmentLabel(g.attachment_count));
@@ -507,10 +519,17 @@ async function refreshGmail(startSync = false) {
       try { await request('/api/connectors/gmail/sync', 'POST', {}); } catch (error) { gmailStatus.textContent = error.message; }
       startSync = true; continue;
     }
+    const guess = state.flags || {};
+    if (userSettings.flags_enabled && guess.pending > 0 && !guess.running && !flagsAttempted) {   // Once per page load: a failing AI must not loop.
+      flagsAttempted = true;
+      try { await request('/api/flags/guess', 'POST', {}); } catch (error) { notify(error.message, true); }
+      continue;
+    }
+    const busy = sync.running || guess.running;
     gmailRefresh.disabled = sync.running;
     // While a sync runs, fetch the list again only when its progress moved: a big mailbox is a big response.
-    const signature = sync.running ? sync.done + ':' + sync.failed + ':' + sync.total : null;
-    if (!sync.running || signature !== lastSignature || !lastData) {
+    const signature = busy ? [sync.done, sync.failed, sync.total, guess.done].join(':') : null;
+    if (!busy || signature !== lastSignature || !lastData) {
       const mine = ++listRun;
       const data = await request(listUrl());
       if (run !== refreshRun) return;
@@ -522,8 +541,10 @@ async function refreshGmail(startSync = false) {
     gmailWriteAccess = state.write_access;
     gmailStatus.textContent = 'Gmail connected. ' + state.stored + ' message(s) saved locally (inbox and sent).' + syncLabel(state) +
       (sync.running ? ' Syncing… ' + sync.done + ' of ' + sync.total + ' new message(s).' + (sync.rate_limited_s > 0 ? ' Gmail is limiting requests, so the download is paused for about ' + sync.rate_limited_s + ' s and then continues.' : '') : '') +
-      (!sync.running && sync.error ? ' ' + sync.error : '');
-    if (!sync.running) return;
+      (!sync.running && sync.error ? ' ' + sync.error : '') +
+      (guess.running ? ' Guessing countries… ' + guess.done + ' of ' + guess.total + ' senders.' : '') +
+      (!guess.running && guess.error ? ' Country flags: ' + guess.error : '');
+    if (!busy) return;
     await new Promise(resolve => setTimeout(resolve, 2000));
     if (run !== refreshRun) return;
   }

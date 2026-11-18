@@ -65,12 +65,53 @@ function notify(message,error=false) {
 
 // Resolves once the session (and CSRF token) is known; page scripts await it.
 const sessionReady = request('/api/session').then(session => { csrfToken = session.csrf_token; });
-let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', inbox_view: 'threads', mark_read_on_open: true, gmail_write_read: false, ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: ''};
+let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', inbox_view: 'threads', mark_read_on_open: true, gmail_write_read: false, ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: '', flags_enabled: false};
 const AI_PROVIDERS = {codex: {name: 'Codex', vendor: 'OpenAI'}, claude: {name: 'Claude', vendor: 'Anthropic'}};
 function aiProvider() { return AI_PROVIDERS[userSettings.ai_provider] || AI_PROVIDERS.codex; }
 // Resolves after the user's saved settings are loaded (falls back to the defaults above on failure).
 const settingsReady = sessionReady.then(() => request('/api/settings')).then(result => { userSettings = result.settings; })
   .catch(() => {});
+// "5 min ago", "3 h ago", "2 d ago", "3 w ago", "4 mo ago", "2 y ago". The exact time goes in the tooltip.
+function agoLabel(ms) {
+  if (!ms) return '';
+  const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + ' min ago';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + ' h ago';
+  const days = Math.floor(hours / 24);
+  if (days < 7) return days + ' d ago';
+  if (days < 30) return Math.floor(days / 7) + ' w ago';
+  if (days < 365) return Math.floor(days / 30) + ' mo ago';
+  return Math.floor(days / 365) + ' y ago';
+}
+function agoSpan(ms, fallback = '') {
+  if (!ms) return el('span', fallback, 'ago');
+  const span = el('span', agoLabel(ms), 'ago');
+  span.dataset.ago = String(ms);
+  span.title = formatWhen(ms);
+  return span;
+}
+// Keep every "x ago" on the page honest while it stays open.
+function refreshAgo() {
+  if (typeof document.querySelectorAll !== 'function') return;
+  for (const node of document.querySelectorAll('[data-ago]')) node.textContent = agoLabel(Number(node.dataset.ago));
+}
+if (typeof setInterval === 'function') setInterval(refreshAgo, 30000);
+// Country name for an ISO code, in English.
+function countryName(code) {
+  try { return new Intl.DisplayNames(['en'], {type: 'region'}).of(code) || code; } catch (_) { return code; }
+}
+// A flag for the other party of a message or group (item.country comes from the AI guess), or null.
+function flagEl(item) {
+  if (!userSettings.flags_enabled || !item || !item.country) return null;
+  const flag = el('span', undefined, 'fi fi-' + item.country.toLowerCase() + ' flag' + (item.country_conf === 'low' ? ' low' : ''));
+  flag.title = countryName(item.country) + ' · AI guess, ' + (item.country_conf || 'low') + ' confidence' + (item.country_reason ? ': ' + item.country_reason : '');
+  flag.setAttribute('role', 'img');
+  flag.setAttribute('aria-label', countryName(item.country));
+  return flag;
+}
 // 'today' | 'yesterday' | 'earlier' for a timestamp (ms since epoch), by calendar day in the Settings timezone.
 function ageOf(ms) {
   if (!ms) return 'earlier';

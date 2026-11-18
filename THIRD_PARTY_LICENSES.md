@@ -1,14 +1,14 @@
 # Third-party notices
 
-Inbox Tend itself is licensed under the Apache License 2.0 (see `LICENSE`). The user interface uses two third-party
-components. Both are used as self-hosted static files: the running app contacts no CDN or other external service
+Inbox Tend itself is licensed under the Apache License 2.0 (see `LICENSE`). The user interface uses three third-party
+components. All are used as self-hosted static files: the running app contacts no CDN or other external service
 for them.
 
 ## Font Awesome Free 7.3.1 (icons)
 
 The icons are [Font Awesome Free](https://fontawesome.com), vendored in `static/vendor/fontawesome/` (CSS and the
 `fa-solid-900` / `fa-regular-400` web fonts, copied from the npm package `@fortawesome/fontawesome-free` by
-`npm run vendor:fa`). Font Awesome Free is licensed in three parts:
+`npm run vendor`). Font Awesome Free is licensed in three parts:
 
 - **Icons: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).** Attribution: icons by Font Awesome,
   <https://fontawesome.com>, Copyright Fonticons, Inc. Changes: none beyond subsetting the shipped files.
@@ -16,6 +16,12 @@ The icons are [Font Awesome Free](https://fontawesome.com), vendored in `static/
 - **Code (CSS): [MIT License](https://opensource.org/licenses/MIT).**
 
 The complete upstream license text is kept next to the files, in `static/vendor/fontawesome/LICENSE.txt`.
+
+## flag-icons 7.x (country flags)
+
+The flags are [flag-icons](https://github.com/lipis/flag-icons), vendored in `static/vendor/flag-icons/` (the stylesheet
+and the 4x3 SVG of every two-letter country code, copied by `npm run vendor`). flag-icons is licensed under the MIT
+License, Copyright (c) 2013 Panayiotis Lipiridis; the full text is in `static/vendor/flag-icons/LICENSE`.
 
 ## Tailwind CSS 4.x (styles)
 
@@ -46,5 +52,5 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-Build-time only: the Node packages in `package.json` (Tailwind CLI, Font Awesome) are development dependencies and
+Build-time only: the Node packages in `package.json` (Tailwind CLI, Font Awesome, flag-icons) are development dependencies and
 are not needed to run the app.

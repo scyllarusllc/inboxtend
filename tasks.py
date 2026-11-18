@@ -124,6 +124,8 @@ def connection(path=DEFAULT_DB):
             user_id INTEGER NOT NULL, peer_email TEXT NOT NULL, country TEXT NOT NULL DEFAULT '',
             confidence TEXT NOT NULL DEFAULT 'low', reason TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL DEFAULT '',
             guessed_at INTEGER NOT NULL, PRIMARY KEY (user_id, peer_email))''')  # country '' = the AI could not tell
+        if 'basis' not in {r['name'] for r in db.execute('PRAGMA table_info(sender_countries)')}:
+            db.execute("ALTER TABLE sender_countries ADD COLUMN basis TEXT NOT NULL DEFAULT 'meta'")  # meta = address/name/timezone only; content = also message excerpts
         db.execute('CREATE INDEX IF NOT EXISTS gmail_attachments_message ON gmail_attachments(user_id,message_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_inbox ON gmail_messages(user_id,in_inbox,internal_date DESC)')
     db.execute('PRAGMA foreign_keys=ON')

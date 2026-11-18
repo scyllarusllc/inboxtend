@@ -81,6 +81,7 @@ claude -p --output-format json --json-schema '<schema>' --tools "" --no-session-
 | Also send small text/CSV attachments | off | Up to 3 files, 8,000 characters each |
 | Translate messages I open | off | Shows a translation in a third Inbox column; sends every opened message |
 | Translate into | empty | Your preferred language, e.g. `English`, `Chinese (Simplified)` |
+| Show country flags | off | Guess the country of each new sender once and show a flag; sends sender details to the provider |
 
 ## Translation
 
@@ -102,6 +103,47 @@ AI buttons being enabled.
   database backups.
 - Same safety rules as above: the message is untrusted text, the answer is validated, and the translation is
   shown as plain text only.
+
+## Country flags
+
+**Settings → Country flags** (off by default) shows a flag next to the people you correspond with, in the mail list and on
+each message. The country is a **guess by the AI provider**, made once per *sender* (the other party of a message: the
+sender of mail you received, the first recipient of mail you sent), never per message.
+
+- **What is sent**, for each *new* sender only: display name, email address, the timezone offset their messages are
+  dated with (for example `+09:00`), up to two subject lines, and **excerpts of up to two messages they sent you**: the
+  first and last 500 characters of each (the end is where signatures are), with quoted replies and links removed; 20
+  senders per request. Never attachments, and never mail you sent: in your own mail the `Date` header and the signature
+  are yours, so they would mislead the guess. A sender you have only written to is judged by address and name alone.
+  Enabling the switch is the consent; nothing is sent while it is off.
+- **Why the text is included:** most senders use a generic address (`gmail.com`, `outlook.com`) that says nothing, while
+  their message does: a signature with a postal address or a `+81` phone code, place names, currencies, local
+  expressions. The AI is told to look for these, and not to infer a country from a language that many countries share
+  (English, Spanish, Portuguese, …) without a second clue.
+- **Second look:** a sender that gets no country is looked at once more with the excerpts if the first guess used only the
+  address and name (this matters for guesses made before excerpts were used). After that it is not asked about again; a
+  sender that already has a flag is never re-asked unless you press **Forget all guesses**.
+- **Cost:** a mailbox with thousands of messages usually has a few hundred distinct senders, so that is a handful of
+  requests once. Every answer is stored in the `sender_countries` table (also when the answer is "no country"), so a
+  sender is never asked about twice. The job runs in the background, at most 300 senders per run, and the Inbox page
+  shows its progress; **Forget all guesses** clears the table.
+- **Evidence the AI is told to use:** country-code domains (`.jp`, `.com.mx`), the name, the date offset of their
+  messages, and the excerpts. A generic mail provider or a plain `.com` domain with no clue anywhere gets **no flag**
+  rather than a wild guess.
+- **Safety:** the sender details are untrusted text, fenced and defanged like the email in the other features, and the
+  answer is validated: a code is accepted only if it is a real country that has a flag (`countries.py`), the reason is
+  cleaned and shortened, and anything else becomes "no country". A sender whose name says "ignore your instructions"
+  gets no flag in testing. Low-confidence flags are shown dimmed; hovering a flag shows the country, the confidence and
+  the reason. Flags can be wrong.
+- Uses the provider, model and timeout chosen under *AI assistant*; the reason text follows the output language
+  setting (English by default).
+- Flags are shown as SVG images (flag-icons), not emoji, so they look the same on every system.
+
+## How long ago
+
+Every message in the list and on the message page also shows how long ago it arrived (`1 min ago`, `3 h ago`, `2 d ago`,
+`3 w ago`, `4 mo ago`, `2 y ago`). This is computed in the browser from the message time, needs no AI, is refreshed
+every 30 seconds, and the exact time in your timezone is in the tooltip.
 
 ## Troubleshooting
 

@@ -167,6 +167,11 @@
   .message > div:first-child, .group-name { @apply font-medium text-slate-900; }
   .message.unread > div:first-child, .message.unread .group-name { @apply font-bold; }
   .message.unread > div:first-child::before, .message.unread .group-title::before { content: ""; @apply mr-2 inline-block size-2 shrink-0 rounded-full bg-indigo-600 align-middle; }
+  .row-meta { @apply flex min-w-0 items-center gap-1.5 text-xs text-slate-500; }
+  .row-meta .who { @apply min-w-0 truncate; }
+  .row-meta .ago { @apply shrink-0 whitespace-nowrap; }
+  .flag { @apply inline-block shrink-0 rounded-[3px] align-middle shadow-sm ring-1 ring-black/10; }
+  .flag.low { @apply opacity-60; }
   .group-title { @apply flex items-center justify-between gap-2; }
   .message.unread .group-title { @apply justify-start; }
   .message.unread .group-title .count-badge { @apply ml-auto; }

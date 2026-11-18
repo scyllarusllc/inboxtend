@@ -10,6 +10,7 @@ committed, so running the app needs only Python. Node is needed only to change t
 | Compiled stylesheet (committed, minified) | `static/styles.css` |
 | Page bodies / shared header and footer | `static/pages/*.html`, `static/layout.html` |
 | Icons (committed copy) | `static/vendor/fontawesome/` |
+| Country flags (committed copy, 257 SVGs) | `static/vendor/flag-icons/`; the accepted codes are generated into `countries.py` |
 | Navigation markup | `nav_html()` in `app.py` |
 | Build tooling | `package.json`, `package-lock.json` |
 
@@ -19,7 +20,7 @@ committed, so running the app needs only Python. Node is needed only to change t
 npm ci                 # once
 npm run watch:css      # recompiles static/styles.css while you edit
 make css               # one-off build, also refreshes the full-page HTML copies
-npm run vendor:fa      # re-copy Font Awesome after changing its version in package.json
+npm run vendor         # re-copy Font Awesome and the flag icons after changing a version in package.json
 ```
 
 Tailwind scans `static/pages`, `static/layout.html`, `static/*.js` and `app.py` for class names, so a class used in
@@ -48,6 +49,7 @@ one-day cache).
    fa-…">` in the HTML. Text that the scripts rewrite (tab labels with counts) carries no icon.
 6. **Grid children get `min-w-0`** (`.workspace-grid > *`). Without it, a single long line forces its column wider than
    the screen.
+6b. **Flags are SVG images** (`fi fi-jp`, from flag-icons), not emoji: flag emoji do not render on Windows. A flag is only shown when the AI guessed a country; low confidence is dimmed, and the tooltip says why. "x ago" labels (`agoSpan()`) are refreshed every 30 s and carry the exact time in the tooltip.
 7. **The mail list is split by age** (`.date-heading`, `data-age` on each row: today green, yesterday amber, earlier plain). The day is the calendar day in the timezone chosen in Settings (`ageOf()` in `static/common.js`), a conversation or person counts by its newest message, and the selected row (`aria-pressed`) always overrides the tint.
 8. Full width pages; forms (Settings) are limited to a readable width next to a section navigation.
 

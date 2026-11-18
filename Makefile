@@ -2,7 +2,7 @@ PORT ?= 8765
 PYTHON ?= python3
 CADDY ?= caddy
 
-.PHONY: dev caddy-dev test build-pages css css-watch css-check vendor-fa
+.PHONY: dev caddy-dev test build-pages css css-watch css-check vendor
 
 dev:
 	INBOX_TEND_PORT=$(PORT) $(PYTHON) app.py
@@ -28,5 +28,5 @@ css-watch:
 css-check: css
 	git diff --exit-code static/styles.css
 
-vendor-fa:
-	npm run vendor:fa
+vendor:
+	npm run vendor

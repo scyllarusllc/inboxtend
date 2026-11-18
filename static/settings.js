@@ -57,7 +57,8 @@ function readForm() {
     ai_timeout: Number(form.ai_timeout.value),
     ai_attachments: form.ai_attachments.checked,
     translate_enabled: form.translate_enabled.checked,
-    translate_language: form.translate_language.value.trim()
+    translate_language: form.translate_language.value.trim(),
+    flags_enabled: form.flags_enabled.checked
   };
 }
 let savedModel = '';
@@ -129,6 +130,14 @@ async function init() {
   else if (outcome === 'readonly') notify('Gmail access is read-only again. Read/unread changes stay in Inbox Tend.');
   else if (outcome === 'declined') notify('Google sign-in was cancelled. Nothing changed.', true);
   else if (outcome === 'failed') notify('Google did not grant the requested access. Check that the scope is listed in your Google Cloud consent screen, then try again.', true);
+  const resetButton = document.getElementById('flags-reset'), resetResult = document.getElementById('flags-reset-result');
+  resetButton.addEventListener('click', async () => {
+    if (!confirm('Forget all country guesses?\n\nFlags disappear until the AI guesses again (when country flags are on, that sends each sender to the AI provider once more).')) return;
+    resetButton.disabled = true;
+    try { await request('/api/flags/reset', 'POST', {}); resetResult.textContent = ' All guesses were forgotten.'; }
+    catch (error) { resetResult.textContent = ' ' + error.message; }
+    resetButton.disabled = false;
+  });
   const aiTest = document.getElementById('ai-test'), aiResult = document.getElementById('ai-test-result');
   aiTest.addEventListener('click', async () => {
     aiTest.disabled = true; aiResult.textContent = ' Asking the AI…';
