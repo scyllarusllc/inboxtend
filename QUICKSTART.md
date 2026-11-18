@@ -1,28 +1,25 @@
-# Inbox Tend — local demo quickstart
+# Inbox Tend local demo quickstart
 
-This is a **sample-data prototype**, not a Gmail client or production email service. No tokens, API keys, cloud models, or third-party libraries are required.
+Python 3.10+ and the standard library are sufficient. No real account, model, or secrets are needed.
 
-## Requirements
-- Python 3.10 or newer
-
-## Run
 ```bash
 python3 app.py
 ```
-Open http://127.0.0.1:8765 in a browser. The server binds to **127.0.0.1 only**.
 
-Explore three fictional messages, read deterministic excerpts (not AI summaries), and generate **unsent** reply templates. No email is ever sent or synchronized.
+Open `http://127.0.0.1:8765`. The server listens on `127.0.0.1` only. Its SQLite file is `data/tasks.sqlite3` (ignored by Git); keep it private and back it up before removing it. Override the port with `INBOX_TEND_PORT=8766` if needed.
 
-## Tests
+1. Open the fictional **Website project: response and start date** message, dated 2026-11-18.
+2. Review its rule-based proposal. The suggested deadline is 2026-11-20 at 17:00 Pacific/Saipan. Edit fields, then create the task.
+3. Refresh or restart; the task remains in SQLite. Creating it again returns a duplicate warning and does not add a row.
+4. Edit its status through `new`, `in_progress`, `waiting`, `done`, then reopen to `new`. The task list marks upcoming, due soon (within 48 hours), or overdue using Saipan time; completed tasks have no active deadline warning.
+5. Prepare an **unsent template**. There is no send API.
+
+The task store keeps IDs, labels, concise task notes, deadlines, and audit events; it does not persist email bodies. For local retention, use the task `DELETE /api/tasks/{id}` endpoint with the session CSRF token and JSON `{"confirm":"DELETE"}`. This permanently removes the task and its audit events, so back up the database first. No automatic deletion is performed.
+
+Run all tests:
+
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-## Not implemented yet
-- Gmail OAuth, IMAP, real mailbox synchronization
-- LLM summaries and generated responses
-- Persistent storage or production user authentication
-- Agent Skills, remote agents, orchestration, approvals
-- Sending or deleting messages
-
-Before connecting real accounts, the project needs credential storage, OAuth scope review, CSRF protections, retention controls, and an explicit authorization model.
+This is a local demo, not a production authenticated site. The separate Gmail OAuth command and read-only connector are experimental; they are not connected to this task flow. No Gmail sync, model extraction, reminders, sending, login, or multiuser isolation exists. Do not expose this server publicly or feed it real client email.

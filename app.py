@@ -4,6 +4,7 @@ import json
 import os
 import secrets
 import sqlite3
+from contextlib import contextmanager, closing
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -68,7 +69,12 @@ class Handler(BaseHTTPRequestHandler):
         return next((m for m in MESSAGES if m['id']==id),None)
 
     def _db(self):
-        return connection(self.db_path)
+        @contextmanager
+        def opened():
+            with closing(connection(self.db_path)) as db:
+                with db:
+                    yield db
+        return opened()
 
     def _read_json(self):
         if self.headers.get('Content-Type','').split(';')[0].strip().lower() != 'application/json':
