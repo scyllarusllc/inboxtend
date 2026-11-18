@@ -226,7 +226,7 @@ def grouped_inbox(db,user_id,folder,view):
     rows = db.execute('SELECT message_id,thread_id,from_addr,to_addr,subject,date_header,snippet,internal_date,label_ids,'
                       f'peer_email,peer_name,{column} AS in_folder,'
                       '(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
-                      'FROM gmail_messages m WHERE user_id=? AND has_full=1 ORDER BY internal_date DESC, message_id DESC',(user_id,))
+                      'FROM gmail_messages m WHERE user_id=? ORDER BY internal_date DESC, message_id DESC',(user_id,))  # Metadata-only rows (older syncs) group fine too.
     groups, names, names_to = {}, {}, {}
     for r in rows:
         if r['peer_email'] and r['peer_name']:  # Newest display name per address; names people chose for themselves win.
@@ -382,7 +382,7 @@ def _detail(db,user_id,row):
                                                       'WHERE user_id=? AND message_id=? ORDER BY id',(user_id,row['message_id']))]})
     if row['thread_id']:
         detail['thread'] = [dict(_row(t),) for t in db.execute(
-            'SELECT * FROM gmail_messages WHERE user_id=? AND thread_id=? AND has_full=1 ORDER BY internal_date, message_id',
+            'SELECT * FROM gmail_messages WHERE user_id=? AND thread_id=? ORDER BY internal_date, message_id',
             (user_id,row['thread_id']))]
     else:
         detail['thread'] = []
