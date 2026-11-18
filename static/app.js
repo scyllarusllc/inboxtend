@@ -74,58 +74,125 @@ function notify(message,error=false) {
   taskNotice.className=error?'error':'meta';
 }
 
+function makeEditForm(task) {
+  const form=el('form',undefined,'task-form');
+  const title=field(form,'Title','title',task.title); title.required=true; title.maxLength=200;
+  field(form,'Description','description',task.description,'textarea').parentElement.classList.add('wide');
+  field(form,'Owner','owner',task.owner || '');
+  const priority=field(form,'Priority','priority',task.priority,'select');
+  for(const value of ['low','medium','high']) {
+    const option=el('option',value); option.value=value; priority.append(option);
+  }
+  priority.value=task.priority;
+  field(form,'Due date (YYYY-MM-DD)','due_date',task.due_date || '');
+  field(form,'Due time (HH:MM)','due_time',task.due_time || '');
+  field(form,'Project','project_label',task.project_label || '');
+  field(form,'Customer','customer_label',task.customer_label || '');
+  const save=iconButton('check','Save changes'); save.type='submit'; save.className+=' action';
+  form.append(save);
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const values=Object.fromEntries(new FormData(form).entries());
+    values.due_date=values.due_date.trim() || null;
+    values.due_time=values.due_time.trim() || null;
+    const changed=values.due_date!==task.due_date || values.due_time!==task.due_time;
+    if(changed && Boolean(values.due_date)!==Boolean(values.due_time)){
+      notify('Enter both due date and time, or leave both blank.',true); return;
+    }
+    values.revision=task.revision;
+    if(!changed){delete values.due_date;delete values.due_time;}
+    save.disabled=true;
+    try{
+      await request('/api/tasks/'+task.id,'PATCH',values);
+      notify('Task changes saved locally.');
+      await refreshTasks();
+    }catch(error){notify(error.message+' — refresh and try again.',true);save.disabled=false;}
+  });
+  return form;
+}
+function renderTasks() {
+  taskList.replaceChildren();
+  const term=taskSearch.value.trim().toLowerCase();
+  const filter=taskFilter.value;
+  const matching=cachedTasks.filter(task=>{
+    const searchable=[task.title,task.description,task.owner,task.project_label,task.customer_label]
+      .filter(Boolean).join(' ').toLowerCase();
+    if(term && !searchable.includes(term))return false;
+    if(filter==='active')return task.status!=='done';
+    if(filter==='done')return task.status==='done';
+    if(filter==='overdue' || filter==='due_soon')return task.deadline_state===filter;
+    return true;
+  });
+  if(!matching.length){
+    taskList.append(el('p',cachedTasks.length?'No tasks match the current filter.':'No saved tasks yet. Review a fictional message to create one.'));
+    return;
+  }
+  for(const task of matching){
+    const item=el('article',undefined,'task-item');
+    item.dataset.deadline=task.deadline_state;
+    const date=task.due_date?task.due_date+' '+(task.due_time || '23:59')+' ('+task.due_timezone+')':'No deadline';
+    item.append(el('h3',task.title),el('div','Priority: '+task.priority+' · '+date+' · '+task.deadline_state,'meta'),el('p',task.description));
+    const label=el('label','Status: ');
+    const select=document.createElement('select');
+    for(const status of ['new','in_progress','waiting','done']){
+      const option=el('option',status.replaceAll('_',' '));option.value=status;select.append(option);
+    }
+    select.value=task.status; label.append(select);
+    const save=iconButton('check','Update status');
+    save.disabled=true;
+    select.addEventListener('change',()=>{save.disabled=select.value===task.status;});
+    save.addEventListener('click',async()=>{
+      save.disabled=true;
+      try{
+        await request('/api/tasks/'+task.id,'PATCH',{revision:task.revision,status:select.value});
+        notify('Task status saved locally.');await refreshTasks();
+      }catch(error){notify(error.message+' — refresh and retry.',true);save.disabled=false;}
+    });
+    const actions=el('div',undefined,'task-actions');actions.append(label,save);
+    const editor=el('details');
+    const editSummary=document.createElement('summary');editSummary.append(icon('pencil'),document.createTextNode(' Edit task'));
+    editor.append(editSummary);
+    editor.addEventListener('toggle',()=>{
+      if(editor.open && editor.children.length===1)editor.append(makeEditForm(task));
+    });
+    const history=el('details');
+    const historySummary=document.createElement('summary');historySummary.append(icon('history'),document.createTextNode(' Activity history'));
+    history.append(historySummary);
+    history.addEventListener('toggle',async()=>{
+      if(!history.open || history.dataset.loaded==='true')return;
+      const placeholder=el('p','Loading history…','meta');history.append(placeholder);
+      try{
+        const result=await request('/api/tasks/'+task.id+'/events');
+        const ordered=el('ol');
+        for(const event of result.events){
+          let changes=event.changes;
+          if(typeof changes==='string'){
+            try{changes=JSON.parse(changes);}catch(_){/* Display original */ }
+          }
+          const line=el('li',event.action+' · '+event.created_at);
+          line.append(el('div',typeof changes==='string'?changes:JSON.stringify(changes),'meta'));
+          ordered.append(line);
+        }
+        placeholder.replaceWith(ordered);history.dataset.loaded='true';
+      }catch(error){placeholder.textContent='Could not load history: '+error.message;}
+    });
+    item.append(actions,editor,history);
+    taskList.append(item);
+  }
+}
 async function refreshTasks() {
   try {
-    const [overview, rows] = await Promise.all([
-      request('/api/tasks/summary'), request('/api/tasks')
-    ]);
-    const summary = overview.summary;
-    taskSummary.textContent = 'Total ' + summary.total +
-      ' · New ' + summary.by_status.new +
-      ' · In progress ' + summary.by_status.in_progress +
-      ' · Waiting ' + summary.by_status.waiting +
-      ' · Done ' + summary.by_status.done +
-      ' · Due soon ' + summary.due_soon +
-      ' · Overdue ' + summary.overdue;
-    taskList.replaceChildren();
-    if (!rows.tasks.length) {
-      taskList.append(el('p', 'No saved tasks yet. Review a fictional email and create one.'));
-      return;
-    }
-    for (const task of rows.tasks) {
-      const item = el('article', undefined, 'task-item');
-      const date = task.due_date ? task.due_date + ' ' + (task.due_time || '23:59') + ' (' + task.due_timezone + ')' : 'No deadline';
-      item.append(el('h3', task.title),
-        el('div', 'Priority: ' + task.priority + ' · ' + date + ' · ' + task.deadline_state, 'meta'),
-        el('p', task.description));
-      const label = el('label', 'Status: ');
-      const select = document.createElement('select');
-      for (const status of ['new', 'in_progress', 'waiting', 'done']) {
-        const option = el('option', status.replaceAll('_', ' '));
-        option.value = status;
-        select.append(option);
-      }
-      select.value = task.status;
-      label.append(select);
-      const save = el('button', 'Save status');
-      const feedback = el('span', '', 'meta');
-      save.addEventListener('click', async () => {
-        save.disabled = true;
-        try {
-          await request('/api/tasks/' + task.id, 'PATCH', {
-            revision: task.revision, status: select.value
-          });
-          await refreshTasks();
-        } catch (error) {
-          feedback.textContent = String(error.message) + ' (refresh to retry)';
-        } finally { save.disabled = false; }
-      });
-      item.append(label, save, feedback);
-      taskList.append(item);
-    }
-  } catch (error) {
-    taskList.replaceChildren(el('p', 'Could not load tasks: ' + error.message, 'error'));
-  }
+    const [overview,rows]=await Promise.all([request('/api/tasks/summary'),request('/api/tasks')]);
+    cachedTasks=rows.tasks;
+    const summary=overview.summary;
+    taskSummary.replaceChildren();
+    for(const [label,count] of [
+      ['Total',summary.total],['New',summary.by_status.new],
+      ['In progress',summary.by_status.in_progress],['Waiting',summary.by_status.waiting],
+      ['Done',summary.by_status.done],['Due soon',summary.due_soon],['Overdue',summary.overdue]
+    ])taskSummary.append(el('span',label+': '+count,'task-count'));
+    renderTasks();
+  }catch(error){notify('Could not load tasks: '+error.message,true);}
 }
 async function showProposal(messageId) {
   const m = messages.find(message => message.id === messageId);
@@ -181,7 +248,8 @@ function selectMessage(id) {
     el('h3', m.subject), el('div', m.from + ' · ' + m.date, 'meta'),
     el('p', m.body), el('h4', 'Excerpt (not AI-generated)'), el('p', m.summary)
   );
-  const reply = el('button', 'Prepare an unsent reply draft', 'action');
+  const reply = iconButton('mail','Prepare an unsent reply draft');
+  reply.className += ' action';
   reply.addEventListener('click', async () => {
     reply.disabled = true;
     try {
@@ -191,7 +259,7 @@ function selectMessage(id) {
       if (selectedId === id) draft.replaceChildren(el('p', error.message, 'error'));
     } finally { reply.disabled = false; }
   });
-  const propose = el('button', 'Suggest task');
+  const propose = iconButton('plus','Suggest task');
   propose.addEventListener('click', async () => {
     propose.disabled = true;
     try { await showProposal(id); }
@@ -220,6 +288,11 @@ async function init() {
   } catch (error) {
     list.replaceChildren(el('p', 'Could not load demo: ' + error.message, 'error'));
   }
+  taskSearch.addEventListener('input',renderTasks);
+  taskFilter.addEventListener('change',renderTasks);
+  taskRefresh.prepend(icon('refresh'));
+  taskRefresh.classList.add('icon-button');
+  taskRefresh.addEventListener('click',async()=>{notify('');await refreshTasks();});
   await refreshTasks();
 }
 init();
