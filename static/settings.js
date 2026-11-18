@@ -134,6 +134,44 @@ async function init() {
     connect.addEventListener('click', () => authorise('readonly', connect, 'inbox'));
     grant.addEventListener('click', () => authorise('modify', grant, 'inbox'));
   } catch (error) { document.getElementById('access-status').textContent = 'Could not check Gmail: ' + error.message; }
+  // Sign in with Google: which Google accounts may sign in as this user.
+  const googleBox = document.getElementById('google-signin-settings'), googleList = document.getElementById('google-links');
+  async function showGoogle() {
+    const info = await request('/api/auth/google/links');
+    googleBox.hidden = !info.configured;
+    if (!info.configured) return;
+    googleList.replaceChildren(...info.links.map(link => {
+      const row = el('li', undefined, 'account-row');
+      const text = el('div', undefined, 'min-w-0');
+      text.append(el('strong', link.email || 'Google account', 'break-all'), el('div', 'Linked ' + formatWhen(link.linked_at * 1000), 'meta'));
+      const actions = el('div', undefined, 'account-actions');
+      const remove = el('button', 'Unlink', 'danger'); remove.type = 'button';
+      remove.addEventListener('click', async () => {
+        if (!confirm('Unlink ' + link.email + '?\n\nIt can no longer be used to sign in. Your password keeps working.')) return;
+        remove.disabled = true;
+        try { await request('/api/auth/google/unlink', 'POST', {id: link.id}); notify('Google account unlinked.'); await showGoogle(); }
+        catch (error) { notify(error.message, true); remove.disabled = false; }
+      });
+      actions.append(remove);
+      row.append(el('span', undefined, 'account-dot'), text, actions);
+      return row;
+    }));
+    document.getElementById('google-redirect').textContent = 'For the operator: the Google OAuth client must list ' + info.redirect_uri + ' as an authorised redirect URI.';
+  }
+  try {
+    await showGoogle();
+    const linkButton = document.getElementById('link-google');
+    linkButton.addEventListener('click', async () => {
+      linkButton.disabled = true;
+      try { location.assign((await request('/api/auth/google/link', 'POST', {})).authorization_url); }
+      catch (error) { notify(error.message, true); linkButton.disabled = false; }
+    });
+  } catch (error) { /* Without it the rest of the page still works. */ }
+  const googleOutcome = new URLSearchParams(location.search).get('google');
+  if (googleOutcome === 'linked') notify('Google account linked. You can now sign in with it.');
+  else if (googleOutcome === 'taken') notify('That Google account is already linked to another user.', true);
+  else if (googleOutcome === 'unverified') notify('Google says that email address is not verified, so it cannot be linked.', true);
+  else if (googleOutcome) notify('Linking the Google account did not work. Please try again.', true);
   const outcome = new URLSearchParams(location.search).get('gmail');
   if (outcome === 'write') notify('Gmail now allows Inbox Tend to change read/unread for that account. Your read/unread changes will be applied to Gmail.');
   else if (outcome === 'readonly') notify('That account is read-only. Read/unread changes stay in Inbox Tend.');

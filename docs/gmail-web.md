@@ -125,3 +125,28 @@ a list of ids. The change is always saved locally (`read_override`). With "Apply
 messages of every account that has the `gmail.modify` grant are also changed in Gmail with one `messages.batchModify` request
 (up to 1000 ids each, only the `UNREAD` label is removed); messages of read-only accounts are changed locally and reported.
 The list response carries `unread_in_view`, the number the button shows.
+
+## Sign in with Google
+
+The login page offers **Sign in with Google** when the Google OAuth client above is configured. It uses the same client
+(`INBOX_TEND_GOOGLE_CLIENT_ID` / `_SECRET`) with the scopes `openid email` only; reading mail stays a separate grant.
+
+**One more setting in Google Cloud:** under *Credentials → your OAuth client → Authorised redirect URIs* add the sign-in callback,
+which is the Gmail callback's address with a different path, for the internal host
+`https://inboxtend.scyllar.us/api/auth/google/callback`. (Settings → Account prints the exact value for your server.)
+No new `.env` value is needed.
+
+Who can sign in: nobody is registered through Google. A Google account is accepted only when
+
+1. it is **linked** to a user (Settings → Account → *Link a Google account*; matched by Google's stable `sub`, not by email,
+   so a later change of address does not matter), or
+2. its **verified** email address is exactly a user's username; it is then linked at that first sign-in.
+
+Anything else is turned away with a message. Passwords keep working, and a link can be removed at any time (*Unlink*).
+
+How it is protected: authorisation-code flow with PKCE (S256), a random `state` and `nonce`, and a short-lived `it_glogin` cookie
+(HttpOnly, SameSite=Lax, limited to `/api/auth/google`) that must come back with the callback, so a sign-in only completes in
+the browser that started it. The pending request is single use and expires after ten minutes. The ID token is taken directly
+from Google's token endpoint over TLS and its `iss`, `aud`, `exp`, `nonce` and `email_verified` claims are checked. Linking from
+Settings needs the signed-in session and the CSRF token, and the callback must arrive in that same session. Tables:
+`google_identities` (`sub`, `user_id`, `email`) and `google_login_pending`.

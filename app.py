@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 import ai
 import gmail_web
+import google_login
 import mailsearch
 import flags
 import topics
@@ -105,9 +106,10 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self,status,data,extra_headers=()):
         self._send(status,json.dumps(data,ensure_ascii=False).encode(),'application/json; charset=utf-8',extra_headers)
 
-    def _redirect(self,location):
+    def _redirect(self,location,extra_headers=()):
         self.send_response(303)
         self.send_header('Location',location)
+        for key,value in extra_headers: self.send_header(key,value)
         self.send_header('Cache-Control','no-store')
         self.send_header('Referrer-Policy','no-referrer')
         self.send_header('Content-Length','0')
@@ -193,6 +195,33 @@ class Handler(BaseHTTPRequestHandler):
         secure = '; Secure' if self.headers.get('X-Forwarded-Proto') == 'https' else ''
         return f'it_session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}{secure}'
 
+    def _glogin_cookie(self,token,max_age=google_login.PENDING_SECONDS):
+        """The short-lived cookie that ties a Google sign-in to the browser that started it."""
+        secure = '; Secure' if self.headers.get('X-Forwarded-Proto') == 'https' else ''
+        return f'it_glogin={token}; HttpOnly; SameSite=Lax; Path=/api/auth/google; Max-Age={max_age}{secure}'
+
+    def _google_callback(self):
+        """Google sends the person back here, signed in or not: sign in (or link, from Settings) or explain why not."""
+        query = parse_qs(urlparse(self.path).query)
+        clear = (('Set-Cookie',self._glogin_cookie('',0)),)
+        session = self._session()
+        back = '/login'
+        try:
+            if 'error' in query: raise google_login.GoogleLoginError('declined')
+            if len(query.get('state',[])) != 1 or len(query.get('code',[])) != 1 or not self.auth_manager: raise google_login.GoogleLoginError('failed')
+            with self._db() as db:
+                row,claims = google_login.finish(db,self.gmail_config,cookie_token(self.headers.get('Cookie'),'it_glogin'),query['state'][0],query['code'][0])
+                if row['purpose'] == 'link':
+                    back = '/user/settings'
+                    if not session or session['id'] != row['user_id']: raise google_login.GoogleLoginError('failed')
+                    google_login.link(db,session['id'],claims)
+                    return self._redirect('/user/settings?google=linked',clear)
+                user_id = google_login.sign_in(db,claims)
+            token,_ = self.auth_manager.new_session(user_id)
+            return self._redirect('/user/inbox',clear + (('Set-Cookie',self._cookie_header(token,SESSION_SECONDS)),))
+        except google_login.GoogleLoginError as exc:
+            return self._redirect(f'{back}?google={exc.code}',clear)
+
     def _route(self,write=False):
         path = urlparse(self.path).path
         if not self._host_ok(): raise RequestError(403,'Invalid Host')
@@ -221,6 +250,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/privacy':
                 return self._send(200,render_page('privacy'),'text/html; charset=utf-8')
             if path == '/api/health': return self._json(200,{'status':'ok'})
+        if not write and path == '/api/auth/providers':   # Public: lets the login page show only what works
+            return self._json(200,{'google':bool(self.auth_manager) and google_login.configured(self.gmail_config)})
+        if not write and path == '/api/auth/google/start':
+            if not self.auth_manager or not google_login.configured(self.gmail_config): return self._redirect('/login?google=off')
+            with self._db() as db: url,browser = google_login.begin(db,self.gmail_config,'login')
+            return self._redirect(url,(('Set-Cookie',self._glogin_cookie(browser)),))
+        if not write and path == '/api/auth/google/callback':
+            return self._google_callback()
         if write and path == '/api/auth/login' and self.command == 'POST':
             self._same_origin()
             data = self._read_json()
@@ -290,6 +327,16 @@ class Handler(BaseHTTPRequestHandler):
                     if not gmail_web.write_access(db,session['id']): prefs.save(db,session['id'],{'gmail_write_read':False})
                     connected = gmail_web.status(db,session['id'])
                 return self._json(200,{'connected':connected})
+            if path == '/api/auth/google/link' and self.command == 'POST':   # Settings -> Account: add a Google account that may sign in as this user
+                try:
+                    with self._db() as db: url,browser = google_login.begin(db,self.gmail_config,'link',session['id'])
+                except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
+                return self._json(200,{'authorization_url':url},(('Set-Cookie',self._glogin_cookie(browser)),))
+            if path == '/api/auth/google/unlink' and self.command == 'POST':
+                if not isinstance(data.get('id'),int) or isinstance(data.get('id'),bool): raise RequestError(400,'Invalid link')
+                with self._db() as db:
+                    if not google_login.unlink(db,session['id'],data['id']): raise RequestError(404,'Link not found')
+                return self._json(200,{'unlinked':True})
             if path == '/api/settings' and self.command == 'PATCH':
                 with self._db() as db:
                     prefs.save(db,session['id'],data)
@@ -410,6 +457,9 @@ class Handler(BaseHTTPRequestHandler):
                     if not removed: raise RequestError(404,'Task not found')
                     return self._json(200,{'deleted':True})
             raise RequestError(404,'Not found')
+        if path == '/api/auth/google/links':
+            with self._db() as db: found = google_login.links(db,session['id'])
+            return self._json(200,{'configured':google_login.configured(self.gmail_config),'links':found,'redirect_uri':google_login.redirect_uri(self.gmail_config)})
         if path == '/api/connectors/gmail/status':
             with self._db() as db:
                 connected = gmail_web.status(db,session['id'])

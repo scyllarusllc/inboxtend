@@ -152,6 +152,12 @@ def connection(path=DEFAULT_DB):
         db.execute('''CREATE TABLE IF NOT EXISTS message_topics (
             user_id INTEGER NOT NULL, message_id TEXT NOT NULL, topics TEXT NOT NULL DEFAULT '',
             provider TEXT NOT NULL DEFAULT '', guessed_at INTEGER NOT NULL, PRIMARY KEY (user_id, message_id))''')  # topics: 'money,job'; '' = none fits
+        db.execute('''CREATE TABLE IF NOT EXISTS google_identities (
+            id INTEGER PRIMARY KEY, sub TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            email TEXT NOT NULL DEFAULT '', linked_at INTEGER NOT NULL)''')   # Google accounts that may sign in as a user (by Google's stable id)
+        db.execute('''CREATE TABLE IF NOT EXISTS google_login_pending (
+            state_hash TEXT PRIMARY KEY, browser_hash TEXT NOT NULL, verifier TEXT NOT NULL, nonce TEXT NOT NULL,
+            purpose TEXT NOT NULL, user_id INTEGER, expires_at INTEGER NOT NULL)''')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_attachments_message ON gmail_attachments(user_id,message_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_inbox ON gmail_messages(user_id,in_inbox,internal_date DESC)')
     db.execute('PRAGMA foreign_keys=ON')

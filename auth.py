@@ -73,11 +73,11 @@ CONFIG_KEYS = ('INBOX_TEND_ADMIN_USERNAME', 'INBOX_TEND_ADMIN_PASSWORD_HASH',
                'INBOX_TEND_ATTACHMENT_MAX_BYTES', 'INBOX_TEND_CODEX_BIN', 'INBOX_TEND_CLAUDE_BIN')
 
 
-def cookie_token(header):
+def cookie_token(header, name='it_session'):
     try:
         jar = SimpleCookie()
         jar.load(header or '')
-        token = jar['it_session'].value if 'it_session' in jar else ''
+        token = jar[name].value if name in jar else ''
         return token if _TOKEN.fullmatch(token) else ''
     except Exception:
         return ''

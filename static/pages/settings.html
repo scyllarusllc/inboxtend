@@ -170,6 +170,13 @@
             <p class="meta wide">At least 12 characters. Changing it signs out your other sessions.</p>
             <button id="save-password" type="submit" class="action"><i class="fa-solid fa-key" aria-hidden="true"></i>Change password</button>
           </form>
+          <div id="google-signin-settings" class="mt-6" hidden>
+            <h3>Sign in with Google</h3>
+            <p class="meta">Link a Google account to sign in here with one click, without the password. Nobody is registered this way: only the Google accounts you link (or an account whose verified email is exactly your username) can sign in as you.</p>
+            <ul id="google-links" class="account-list" aria-label="Linked Google accounts"></ul>
+            <div class="settings-actions"><button id="link-google" type="button"><img src="/static/vendor/google/g.svg" alt="" width="16" height="16"><span>Link a Google account</span></button></div>
+            <p id="google-redirect" class="meta"></p>
+          </div>
         </section>
       </div>
     </div>

@@ -315,6 +315,8 @@
   #login-form { @apply grid gap-2; }
   #login-form label { @apply mt-2 font-medium text-slate-700; }
   #login-form button { @apply mt-5 w-full; }
+  .login-or { @apply my-4 flex items-center gap-3 text-xs uppercase tracking-wide text-slate-400 before:h-px before:flex-1 before:bg-slate-200 after:h-px after:flex-1 after:bg-slate-200; }
+  .google-button { @apply flex w-full items-center justify-center gap-2.5 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 no-underline shadow-sm hover:bg-slate-50; }
   #login-status { @apply text-sm text-rose-700 empty:hidden; }
   .login-footnote { @apply mt-5 text-xs text-slate-500; }
 }
