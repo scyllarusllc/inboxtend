@@ -131,7 +131,23 @@ function renderTasks() {
     const item=el('article',undefined,'task-item');
     item.dataset.deadline=task.deadline_state;
     const date=task.due_date?task.due_date+' '+(task.due_time || '23:59')+' ('+task.due_timezone+')':'No deadline';
-    item.append(el('h3',task.title),el('div','Priority: '+task.priority+' · '+date+' · '+task.deadline_state,'meta'),el('p',task.description));
+    const head=el('div',undefined,'task-header');
+    head.append(el('h3',task.title));
+    const labels=el('div',undefined,'task-labels');
+    const statusBadge=el('span',task.status.replaceAll('_',' '),'task-pill');
+    if(task.status==='done')statusBadge.dataset.tone='complete';
+    labels.append(statusBadge);
+    if(task.deadline_state==='overdue' || task.deadline_state==='due_soon'){
+      const dueBadge=el('span',task.deadline_state==='overdue'?'Overdue':'Due soon','task-pill');
+      dueBadge.dataset.tone=task.deadline_state==='overdue'?'warning':'info';
+      labels.append(dueBadge);
+    }
+    head.append(labels);
+    const meta=el('div',undefined,'task-metadata');
+    meta.append(el('span','Priority: '+task.priority),el('span','·'),el('span',date));
+    if(task.owner){meta.append(el('span','·'),el('span','Owner: '+task.owner));}
+    if(task.project_label){meta.append(el('span','·'),el('span','Project: '+task.project_label));}
+    item.append(head,meta,el('p',task.description));
     const label=el('label','Status: ');
     const select=document.createElement('select');
     for(const status of ['new','in_progress','waiting','done']){
@@ -169,7 +185,9 @@ function renderTasks() {
           if(typeof changes==='string'){
             try{changes=JSON.parse(changes);}catch(_){/* Display original */ }
           }
-          const line=el('li',event.action+' · '+event.created_at);
+          const timestamp=new Date(event.created_at);
+          const when=Number.isNaN(timestamp.getTime())?event.created_at:timestamp.toLocaleString();
+          const line=el('li',event.action+' · '+when);
           line.append(el('div',typeof changes==='string'?changes:JSON.stringify(changes),'meta'));
           ordered.append(line);
         }
