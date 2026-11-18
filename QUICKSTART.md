@@ -9,7 +9,7 @@ make dev PORT=8766       # choose another local port
 
 Open `http://127.0.0.1:8765`. The server listens on `127.0.0.1` only. Its SQLite file is `data/tasks.sqlite3` (ignored by Git); keep it private and back it up before removing it. Override the port with `INBOX_TEND_PORT=8766` if needed.
 
-To try Caddy locally, keep `make dev` running and start a separate Caddy process with `caddy run --config deploy/Caddyfile.local`. Open `http://localhost:18766` on the same VM or through an SSH tunnel. This example listens on loopback only; it does not modify the VM's existing Caddy service. If you use a different app port, update the example's upstream and Host/Origin values together. Public Caddy routing needs authentication and a reviewed trusted-origin design first; see [docs/deployment-internal.md](docs/deployment-internal.md).
+To try Caddy locally, keep `make dev` running and start a separate terminal with `make caddy-dev`. Open `http://localhost:18766` on the same VM or through an SSH tunnel. Both commands accept the same `PORT` value, for example `make dev PORT=8766` and `make caddy-dev PORT=8766`. This example listens on loopback only; it does not modify the VM's existing Caddy service. Public Caddy routing needs authentication and a reviewed trusted-origin design first; see [docs/deployment-internal.md](docs/deployment-internal.md).
 
 1. Open the fictional **Website project: response and start date** message, dated 2026-11-18. The demo also shows fictional outgoing correspondence and read-only text/CSV attachment previews.
 2. Review its rule-based proposal. The suggested deadline is 2026-11-20 at 17:00 Pacific/Saipan. Edit fields, then create the task.

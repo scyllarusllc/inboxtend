@@ -6,8 +6,8 @@
 
 http://localhost:18766 {
 	bind 127.0.0.1
-	reverse_proxy 127.0.0.1:8765 {
-		header_up Host 127.0.0.1:8765
-		header_up Origin http://127.0.0.1:8765
+	reverse_proxy 127.0.0.1:{$INBOX_TEND_PORT} {
+		header_up Host 127.0.0.1:{$INBOX_TEND_PORT}
+		header_up Origin http://127.0.0.1:{$INBOX_TEND_PORT}
 	}
 }
