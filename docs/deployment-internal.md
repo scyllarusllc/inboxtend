@@ -1,14 +1,14 @@
-# Internal subdomain deployment plan (not executed)
+# Internal subdomain status and deployment plan
 
-Target: `https://inboxtend.scyllar.us`. On 2026-11-18, DNS lookup returned Cloudflare addresses. This VM has Caddy listening on 80/443 and a loopback Inbox Tend process on port 8765. The application still has no built-in login or account isolation; any public route must enforce authentication before the proxy. The current Caddy configuration does not route this hostname to Inbox Tend.
+Target: `https://inboxtend.scyllar.us`. On 2026-11-18, Cloudflare was set to Full (strict) by the operator and this VM's Caddy was configured on 80/443 with an HTTPS Basic Auth gate and a proxy to `127.0.0.1:8765`. Caddy removes the Authorization header before forwarding. HTTP redirects to HTTPS. The password is in the Git-ignored, root-only `.env` file; only a bcrypt hash is in `/etc/caddy/Caddyfile`. The app is started manually with `make dev` by the operator, so availability depends on that process. It is still a fictional single-user demo, not a real-mail service.
 
 ## 2026-11-18 routing check
 
-A temporary Caddy site with HTTP-to-HTTPS redirect, Basic Auth and a loopback proxy to port 8765 validated locally. Direct origin HTTPS returned `401` as intended and Caddy obtained a valid certificate. Through Cloudflare, HTTPS redirected to the same HTTPS URL instead of reaching the authenticated route. This is consistent with Cloudflare connecting to the origin over HTTP (for example, Flexible SSL). The temporary site was rolled back and the original Caddy configuration reloaded. Before enabling the route, configure Cloudflare to use **Full (strict)** for this hostname, preferably with a hostname-specific rule; a zone-wide change could affect other sites. Then verify that an external HTTPS request receives `401` without credentials, followed by `200` with credentials. Do not pass Basic Auth credentials over an HTTP origin connection.
+The first route attempt produced a Cloudflare HTTPS redirect loop while origin TLS was not Full (strict), and was rolled back. After the operator changed the Cloudflare setting, the route was re-enabled. External unauthenticated `/api/messages` returned `401`; authenticated `/`, `/api/health` and `/api/tasks` returned `200`; an authenticated draft request returned `sent: false`. Caddy obtained a valid origin certificate. A short-lived systemd service was tried for reliability, then disabled and removed at the operator's request to manage `make dev` manually. No real email was connected or sent.
 
 ## Release gate
 
-The current app has **no login or account isolation** and deliberately rejects non-loopback Host headers. It is not safe to expose through the public reverse proxy, even on an "internal" name. Before deployment, implement and test an authenticated session or a tightly controlled identity-aware proxy, plus trusted proxy/origin handling and per-user data separation. Confirm the authenticated boundary cannot be bypassed by reaching the origin directly. Do not use the CSRF token as an auth credential.
+The current app has **no built-in login or account isolation** and deliberately rejects non-loopback Host headers. Caddy Basic Auth provides a single shared gate for this fictional demo only; it is not adequate for real mail or multiple users. Before connecting real mail, implement authenticated sessions and account isolation, verify trusted-origin handling, and confirm the origin cannot be bypassed. Do not use the CSRF token as an auth credential.
 
 ## Required operator inputs
 
@@ -24,4 +24,4 @@ The current app has **no login or account isolation** and deliberately rejects n
 4. Verify an unauthenticated request cannot see the inbox or task API; verify authorized access, CSRF, task isolation, persistence after restart, TLS certificate, logs, backup and restore. Only then enable real-mail consent and separately review OAuth scopes and retention.
 5. Roll back by routing to the previous release and restoring the pre-upgrade database copy only if data written since upgrade can safely be discarded. Otherwise stop writes and perform a planned data-preserving rollback. Do not blindly restore an old database over newer tasks.
 
-No production changes, DNS edits, services, tokens or real mail were used to create this plan.
+The running demo route is not approval to connect a real mailbox, publish private correspondence, or send email.
