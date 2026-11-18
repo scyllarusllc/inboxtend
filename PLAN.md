@@ -25,6 +25,7 @@ Updated 2026-11-18. Internal validation on a Scyllarus subdomain is the near-ter
 - [x] Inbox grouping: Conversations (default) / Messages / People, remembered per user, computed locally from SQLite (`peer_email`/`peer_name` columns, backfilled on upgrade). Open: tasks per conversation, unread state.
 - [x] Translation (opt-in, Settings): third Inbox column with the open message translated into the user's language by the chosen AI provider; saved per message and language in SQLite so no message is translated twice.
 - [x] Gmail connect / reconnect / disconnect and the access level live on the Settings page (disconnect asks for confirmation); the Inbox page keeps status, sync progress and Refresh.
+- [x] UI built on Tailwind CSS v4 and Font Awesome Free: one design system (`static/src/app.css`, compiled to the committed `static/styles.css`), self-hosted icons, unified controls on every page, mobile layouts checked; CI verifies the committed CSS (`docs/frontend.md`).
 - [x] Settings page (`/user/settings`): timezone for deadlines and displayed mail times, due-soon window, default priority, sync limits and sent-mail toggle, password change.
 - [x] systemd service (boot start, crash restart) and daily verified SQLite backups with retention: see `docs/operations.md`.
 - [ ] Privacy review, off-machine encrypted backups, retention policy and operational monitoring before ingesting real correspondence.

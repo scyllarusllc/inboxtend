@@ -148,12 +148,21 @@
   #messages { @apply grid grid-cols-[minmax(0,1fr)] gap-2; }
   .search-box { @apply mb-4; }
   .view-tabs, .filter-tabs { @apply flex w-full; }
-  .view-tabs button, .filter-tabs button { @apply flex-1; }
+  .view-tabs, .filter-tabs { @apply flex-nowrap; }
+  .view-tabs button, .filter-tabs button { @apply flex-1 whitespace-nowrap px-1.5; }
   .filter-tabs { @apply mt-2; }
   .action-bar { @apply mt-5 flex flex-wrap items-center gap-2; }
-  .search-box .meta { @apply mt-1.5 min-h-4; }
+  .search-box .meta { @apply mt-1.5 empty:hidden; }
   .message { @apply flex w-full flex-col items-stretch justify-start gap-0.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left font-normal shadow-none hover:border-indigo-300 hover:bg-indigo-50/40; }
-  .message[aria-pressed="true"] { @apply border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300; }
+  /* Age of the mail: today green, yesterday amber, earlier plain. Headings and rows share the colour. */
+  .message[data-age="today"] { @apply border-emerald-200 bg-emerald-50/70 hover:border-emerald-300 hover:bg-emerald-50; }
+  .message[data-age="yesterday"] { @apply border-amber-200 bg-amber-50/70 hover:border-amber-300 hover:bg-amber-50; }
+  .date-heading { @apply sticky top-0 z-10 flex items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide shadow-sm; }
+  .date-heading[data-age="today"] { @apply bg-emerald-100 text-emerald-800; }
+  .date-heading[data-age="yesterday"] { @apply bg-amber-100 text-amber-800; }
+  .date-heading[data-age="earlier"] { @apply bg-slate-200 text-slate-600; }
+  /* Selected beats every age tint and hover, whatever the pointer is doing. */
+  .message[aria-pressed="true"], .message[aria-pressed="true"][data-age], .message[aria-pressed="true"][data-age]:hover { @apply border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300; }
   .message > *, .message { @apply min-w-0; }
   .message > div:first-child, .group-name { @apply font-medium text-slate-900; }
   .message.unread > div:first-child, .message.unread .group-name { @apply font-bold; }
@@ -202,8 +211,12 @@
   .task-actions select { @apply w-auto; }
   .task-item details { @apply border-t border-slate-100 pt-3; }
   .task-item details > :not(summary) { @apply mt-3; }
-  .task-proposal { @apply mt-5 rounded-xl border border-indigo-200 bg-indigo-50/40 p-4; }
-  .task-proposal h4 { @apply mb-2; }
+  /* The suggested-task form is built by the script as a bare <form>; it gets the same grid as .task-form. */
+  .task-proposal { @apply mt-5 grid gap-x-5 gap-y-4 rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 sm:grid-cols-2; }
+  .task-proposal > h4, .task-proposal > p, .task-proposal > .ai-box, .task-proposal > button, .task-proposal > label:has(textarea), .task-proposal > label:has(input[name="title"]) { @apply sm:col-span-2; }
+  .task-proposal > label { @apply grid content-start gap-1.5 font-medium text-slate-700; }
+  .task-proposal > button { @apply justify-self-start; }
+  .task-proposal > .ai-box { @apply my-0; }
 
   /* Public pages: home, privacy, login */
   .public-page { @apply mx-auto max-w-6xl; }

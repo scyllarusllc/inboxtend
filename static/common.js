@@ -71,6 +71,19 @@ function aiProvider() { return AI_PROVIDERS[userSettings.ai_provider] || AI_PROV
 // Resolves after the user's saved settings are loaded (falls back to the defaults above on failure).
 const settingsReady = sessionReady.then(() => request('/api/settings')).then(result => { userSettings = result.settings; })
   .catch(() => {});
+// 'today' | 'yesterday' | 'earlier' for a timestamp (ms since epoch), by calendar day in the Settings timezone.
+function ageOf(ms) {
+  if (!ms) return 'earlier';
+  const day = value => {
+    try { return new Intl.DateTimeFormat('en-CA', {timeZone: userSettings.timezone, year: 'numeric', month: '2-digit', day: '2-digit'}).format(value); }
+    catch (_) { return new Date(value).toISOString().slice(0, 10); }
+  };
+  const today = day(new Date());
+  const [y, m, d] = today.split('-').map(Number);
+  const yesterday = new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);   // Calendar arithmetic, so daylight saving cannot skip a day.
+  const when = day(new Date(ms));
+  return when >= today ? 'today' : when === yesterday ? 'yesterday' : 'earlier';
+}
 // A Gmail timestamp (ms since epoch) shown in the timezone chosen in Settings.
 function formatWhen(ms, fallback = '') {
   if (!ms) return fallback;

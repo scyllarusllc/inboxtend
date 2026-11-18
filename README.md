@@ -12,7 +12,7 @@ By default suggestions are deterministic rules (the subject becomes the title, t
 
 - `app.py`: loopback-only standard-library HTTP server and authenticated Gmail routes. Task creation reads the message from the local database instead of trusting client-supplied content. Writes require a per-session CSRF token, loopback Host, same-origin request, JSON content type and a 16 KiB body limit.
 - `tasks.py`: SQLite tasks, migration from the initial branch schema, source-ID deduplication, optimistic revision conflicts, audit events and Saipan deadline states.
-- `static/`: responsive browser pages (Home, Inbox, Tasks, Privacy) sharing one header, footer and `common.js`. The visual hierarchy draws on the local `statistics.diy` project while keeping Inbox Tend's own HTML/CSS and no frontend build dependency. Dynamic content uses text nodes.
+- `static/`: responsive browser pages styled with Tailwind CSS (compiled ahead of time and committed; the app itself needs no Node) and Font Awesome Free icons (self-hosted), see [docs/frontend.md](docs/frontend.md); (Home, Inbox, Tasks, Privacy) sharing one header, footer and `common.js`. The visual hierarchy draws on the local `statistics.diy` project while keeping Inbox Tend's own HTML/CSS and no frontend build dependency. Dynamic content uses text nodes.
 - `gmail_web.py` and `connectors/gmail_readonly.py`: session-bound Web OAuth and read-only Gmail inbox panel, documented in [docs/gmail-web.md](docs/gmail-web.md). `gmail_oauth_local.py` remains a separate one-shot Desktop prototype.
 - `tests/`: local HTTP, persistence, migration, validation and connector tests.
 

@@ -107,7 +107,9 @@ class AppTests(unittest.TestCase):
         for page in pages:
             nav=page.split('aria-label="Main navigation">',1)[1].split('</nav>',1)[0]
             links=[(href,re.sub(r'<[^>]+>','',text)) for href,text in re.findall(r'<a href="([^"]+)"[^>]*>(.*?)</a>',nav)]  # Links carry an icon element now.
-            self.assertEqual(links[:4],[('/','Home'),('/user/inbox','Inbox'),('/user/tasks','Tasks'),('/privacy','Privacy')])
+            self.assertEqual(links[:3],[('/user/inbox','Inbox'),('/user/tasks','Tasks'),('/privacy','Privacy')])  # No Home link: the logo goes home.
+            self.assertNotIn('>Home<',nav)
+            self.assertIn('href="/" aria-label="Inbox Tend home"',page)
         self.assertIn('href="/user/inbox" aria-current="page"',pages[3])
         self.assertIn('href="/user/tasks" aria-current="page"',pages[4])
         self.assertIn('id="logout"',pages[3]);self.assertIn('id="logout"',pages[4])

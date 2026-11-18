@@ -19,7 +19,7 @@ from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
 ROOT = Path(__file__).resolve().parent
-NAV_ITEMS = (('home','/','Home','house'),('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'),('privacy','/privacy','Privacy','shield-halved'))
+NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'),('privacy','/privacy','Privacy','shield-halved'))
 # name -> (title, description, scripts, active nav item, signed in)
 PAGES = {
     'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', (), 'home', False),
@@ -38,7 +38,7 @@ def _nav_link(href, label, icon, current):
             % (href, ' aria-current="page"' if current else '', icon, label))
 
 def nav_html(active, signed_in):
-    """Identical four links on every page; only the current-page marker and the auth control vary."""
+    """Identical links on every page (the logo is the link home); only the current-page marker and the auth control vary."""
     links = ''.join(_nav_link(href, label, icon, key == active) for key, href, label, icon in NAV_ITEMS)
     if not signed_in:
         return links + _nav_link('/login', 'Sign in', 'right-to-bracket', False)

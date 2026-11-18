@@ -425,9 +425,26 @@ function renderList(data) {
   const openAt = items.findIndex(x => x.id === openKey);
   if (openAt >= listLimit) listLimit = Math.ceil((openAt + 1) / PAGE) * PAGE;   // Never hide the row that is open.
   const shown = items.slice(0, listLimit);
+  // Rows are newest first, so each age forms one block; a coloured heading opens it.
+  const ageOfItem = x => ageOf(data.groups ? x.last.internal_date : x.internal_date);
+  const perAge = {today: 0, yesterday: 0, earlier: 0};
+  for (const x of items) perAge[ageOfItem(x)]++;
+  const AGE_LABEL = {today: 'Today', yesterday: 'Yesterday', earlier: 'Earlier'};
+  let blockAge = null;
+  const openBlock = (age, button) => {
+    if (age !== blockAge) {
+      const heading = el('h4', undefined, 'date-heading');
+      heading.dataset.age = age;
+      heading.append(el('span', AGE_LABEL[age]), el('span', String(perAge[age])));
+      list.append(heading);
+      blockAge = age;
+    }
+    button.dataset.age = age;
+  };
   if (!data.groups) {
     for (const m of shown) {
       const button = rowButton(m.id, m.id === selectedId, m.unread);
+      openBlock(ageOfItem(m), button);
       button.append(el('div', m.subject || '(No subject)'),
         el('div', (folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender')) + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'));
       if (m.attachment_count) button.append(attachmentLabel(m.attachment_count));
@@ -437,6 +454,7 @@ function renderList(data) {
   } else {
     for (const g of shown) {
       const button = rowButton(g.id, currentGroup && g.id === currentGroup.id, g.unread_count > 0);
+      openBlock(ageOfItem(g), button);
       const last = g.last;
       const top = el('div', undefined, 'group-title');
       top.append(el('span', g.title || '(No subject)', 'group-name'));
