@@ -25,4 +25,4 @@ Run all tests:
 make test
 ```
 
-This is a local demo, not a production authenticated site. The separate Gmail OAuth command and read-only connector are experimental; they are not connected to this task flow. Demo agent assignment only records pending approval; no agent runs or receives message content. No Gmail sync, model extraction, reminders, sending, login, or multiuser isolation exists. Do not expose this server publicly or feed it real client email.
+This is a fictional demo, not a production email site. The VM's internal subdomain has a Caddy Basic Auth gate, but the app itself has no login or account isolation. The separate Gmail OAuth command and read-only connector are experimental; they are not connected to this task flow. Demo agent assignment only records pending approval; no agent runs or receives message content. No Gmail sync, model extraction, reminders, sending, login, or multiuser isolation exists. Do not feed it real client email.

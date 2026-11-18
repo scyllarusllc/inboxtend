@@ -8,6 +8,7 @@ from contextlib import contextmanager, closing
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
+from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
 ROOT = Path(__file__).resolve().parent
@@ -84,19 +85,28 @@ def proposal(message):
 
 class Handler(BaseHTTPRequestHandler):
     db_path = DEFAULT_DB
-    csrf_token = secrets.token_urlsafe(32)
+    auth_manager = None
 
-    def _send(self,status,payload,mime):
+    def _send(self,status,payload,mime,extra_headers=()):
         self.send_response(status)
         for key,value in (('Content-Type',mime),('Content-Length',str(len(payload))),('Cache-Control','no-store'),
                           ('X-Content-Type-Options','nosniff'),('Referrer-Policy','no-referrer'),
-                          ('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'")):
+                          ('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'")):
+            self.send_header(key,value)
+        for key,value in extra_headers:
             self.send_header(key,value)
         self.end_headers()
         self.wfile.write(payload)
 
-    def _json(self,status,data):
-        self._send(status,json.dumps(data,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+    def _json(self,status,data,extra_headers=()):
+        self._send(status,json.dumps(data,ensure_ascii=False).encode(),'application/json; charset=utf-8',extra_headers)
+
+    def _redirect(self,location):
+        self.send_response(303)
+        self.send_header('Location',location)
+        self.send_header('Cache-Control','no-store')
+        self.send_header('Content-Length','0')
+        self.end_headers()
 
     def _host_ok(self):
         host = self.headers.get('Host','')
@@ -131,7 +141,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError,UnicodeError):
             raise RequestError(400,'Invalid JSON request') from None
 
-    def _write_ok(self):
+    def _same_origin(self):
         if not self._host_ok():
             raise RequestError(403,'Invalid Host')
         origin = self.headers.get('Origin')
@@ -140,14 +150,59 @@ class Handler(BaseHTTPRequestHandler):
             raise RequestError(403,'Cross-origin write blocked')
         if self.headers.get('Sec-Fetch-Site') == 'cross-site':
             raise RequestError(403,'Cross-site write blocked')
-        if not secrets.compare_digest(self.headers.get('X-CSRF-Token',''),self.csrf_token):
+    def _session(self):
+        return self.auth_manager.session(cookie_token(self.headers.get('Cookie'))) if self.auth_manager else None
+
+    def _write_ok(self,session):
+        self._same_origin()
+        if not secrets.compare_digest(self.headers.get('X-CSRF-Token',''),session['csrf_token']):
             raise RequestError(403,'CSRF token required')
+
+    def _cookie_header(self,token,max_age):
+        secure = '; Secure' if self.headers.get('X-Forwarded-Proto') == 'https' else ''
+        return f'it_session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}{secure}'
 
     def _route(self,write=False):
         path = urlparse(self.path).path
-        if write:
-            self._write_ok()
+        if not self._host_ok(): raise RequestError(403,'Invalid Host')
+        if not write:
+            if path == '/':
+                return self._send(200,(ROOT/'static'/'home.html').read_bytes(),'text/html; charset=utf-8')
+            if path == '/login':
+                if self._session(): return self._redirect('/user/dashboard')
+                return self._send(200,(ROOT/'static'/'login.html').read_bytes(),'text/html; charset=utf-8')
+            if path == '/static/app.js':
+                return self._send(200,(ROOT/'static'/'app.js').read_bytes(),'text/javascript; charset=utf-8')
+            if path == '/static/login.js':
+                return self._send(200,(ROOT/'static'/'login.js').read_bytes(),'text/javascript; charset=utf-8')
+            if path == '/static/styles.css':
+                return self._send(200,(ROOT/'static'/'styles.css').read_bytes(),'text/css; charset=utf-8')
+            if path == '/api/health': return self._json(200,{'status':'ok','mode':'demo'})
+        if write and path == '/api/auth/login' and self.command == 'POST':
+            self._same_origin()
             data = self._read_json()
+            if not self.auth_manager:
+                raise RequestError(503,'Login is not configured')
+            result = self.auth_manager.authenticate(data.get('username'),data.get('password'))
+            if result == 'throttled': raise RequestError(429,'Too many attempts; try again in a few minutes')
+            if result == 'invalid': raise RequestError(401,'Invalid username or password')
+            token,_ = self.auth_manager.new_session(result['id'])
+            return self._json(200,{'authenticated':True,'user':{'username':result['username'],'role':result['role']}},
+                              (('Set-Cookie',self._cookie_header(token,SESSION_SECONDS)),))
+        session = self._session()
+        if not session:
+            if not write and path.startswith('/user/'):
+                return self._redirect('/login')
+            raise RequestError(401,'Sign in required')
+        if not write and path == '/user/dashboard':
+            return self._send(200,(ROOT/'static'/'index.html').read_bytes(),'text/html; charset=utf-8')
+        if write:
+            self._write_ok(session)
+            data = self._read_json()
+            if path == '/api/auth/logout' and self.command == 'POST':
+                self.auth_manager.revoke(cookie_token(self.headers.get('Cookie')))
+                return self._json(200,{'signed_out':True},
+                                  (('Set-Cookie',self._cookie_header('',0)),))
             if path == '/api/draft' and self.command == 'POST':
                 message = self._message(data.get('id'))
                 if not message: raise RequestError(404,'Message not found')
@@ -174,16 +229,10 @@ class Handler(BaseHTTPRequestHandler):
                     if not removed: raise RequestError(404,'Task not found')
                     return self._json(200,{'deleted':True})
             raise RequestError(404,'Not found')
-        if not self._host_ok(): raise RequestError(403,'Invalid Host')
-        if path == '/':
-            return self._send(200,(ROOT/'static'/'index.html').read_bytes(),'text/html; charset=utf-8')
-        if path == '/static/app.js':
-            return self._send(200,(ROOT/'static'/'app.js').read_bytes(),'text/javascript; charset=utf-8')
         if path == '/api/session':
-            return self._json(200,{'csrf_token':self.csrf_token,'mode':'demo'})
+            return self._json(200,{'csrf_token':session['csrf_token'],'user':{'username':session['username'],'role':session['role']},'mode':'demo'})
         if path == '/api/messages':
             return self._json(200,{'mode':'demo','messages':[dict(m,direction=m.get('direction','received'),summary=summarize(m),attachments=attachment_metadata(m['id'])) for m in MESSAGES]})
-        if path == '/api/health': return self._json(200,{'status':'ok','mode':'demo'})
         parts = path.strip('/').split('/')
         if len(parts)==5 and parts[:2]==['api','messages'] and parts[3]=='attachments':
             message = self._message(parts[2])
@@ -232,6 +281,9 @@ class RequestError(Exception):
 
 if __name__=='__main__':
     host,port='127.0.0.1',int(os.environ.get('INBOX_TEND_PORT','8765'))
+    config=read_config(ROOT/'.env')
+    Handler.auth_manager=AuthManager(DEFAULT_DB,username=config.get('INBOX_TEND_ADMIN_USERNAME',''),
+                                     password_hash=config.get('INBOX_TEND_ADMIN_PASSWORD_HASH',''))
     print(f'Inbox Tend local demo: http://{host}:{port}')
     print('Fictional messages only. No account connected. No email sending.')
     ThreadingHTTPServer((host,port),Handler).serve_forever()

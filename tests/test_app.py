@@ -42,7 +42,15 @@ class DemoTests(unittest.TestCase):
         self.assertNotIn('finished',draft_reply(MESSAGES[-1]))
     def test_list_and_page(self):
         self.assertEqual(len(self.request('/api/messages')['messages']),5)
-        with urlopen(self.url) as response: self.assertIn(b'Inbox Tend',response.read())
+        with urlopen(self.url) as response:
+            page=response.read()
+            self.assertIn(b'Inbox Tend',page)
+            self.assertIn(b'href="/static/styles.css"',page)
+            self.assertIn(b'id="task-summary"',page)
+            self.assertNotIn("'unsafe-inline'",response.headers['Content-Security-Policy'])
+        with urlopen(self.url+'/static/styles.css') as response:
+            self.assertEqual(response.headers.get_content_type(),'text/css')
+            self.assertIn(b'.workspace-grid',response.read())
     def test_create_dedup_persist_update_reopen_draft(self):
         fields={'message_id':'sample-website-followup','title':'Check start date and reply','description':'Verify agreement first',
                 'priority':'high','owner':'Demo owner','due_date':'2026-11-20','due_time':'17:00',

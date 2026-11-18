@@ -31,6 +31,7 @@ async function request(path, method = 'GET', body) {
   }
   const response = await fetch(path, options);
   const data = await response.json();
+  if (response.status === 401) { location.assign('/login'); throw Error('Session expired'); }
   if (!response.ok) throw Error(data.error || 'Request failed (' + response.status + ')');
   return data;
 }
@@ -72,7 +73,7 @@ function iconButton(name,label) {
 }
 function notify(message,error=false) {
   taskNotice.textContent=message;
-  taskNotice.className=error?'error':'meta';
+  taskNotice.className=error?'notice-banner error':'notice-banner';
 }
 
 function makeEditForm(task) {
@@ -217,7 +218,13 @@ async function refreshTasks() {
       ['Total',summary.total],['New',summary.by_status.new],
       ['In progress',summary.by_status.in_progress],['Waiting',summary.by_status.waiting],
       ['Done',summary.by_status.done],['Due soon',summary.due_soon],['Overdue',summary.overdue]
-    ])taskSummary.append(el('span',label+': '+count,'task-count'));
+    ]){
+      const card=el('div',undefined,'metric-card');
+      if(label==='Overdue')card.dataset.tone='warning';
+      if(label==='Due soon')card.dataset.tone='info';
+      card.append(el('span',label,'metric-label'),el('strong',String(count),'metric-value'));
+      taskSummary.append(card);
+    }
     renderTasks();
   }catch(error){notify('Could not load tasks: '+error.message,true);}
 }
@@ -374,6 +381,10 @@ async function init() {
   taskRefresh.prepend(icon('refresh'));
   taskRefresh.classList.add('icon-button');
   taskRefresh.addEventListener('click',async()=>{notify('');await refreshTasks();});
+  document.getElementById('logout').addEventListener('click',async()=>{
+    try{await request('/api/auth/logout','POST',{});location.assign('/login');}
+    catch(error){notify('Sign out failed: '+error.message,true);}
+  });
   await refreshTasks();
 }
 init();

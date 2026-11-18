@@ -1,0 +1,153 @@
+"""Single-admin local authentication; tokens are stored only as hashes in SQLite."""
+from __future__ import annotations
+from collections import deque
+from contextlib import closing
+from datetime import datetime, timezone
+from hashlib import pbkdf2_hmac, sha256
+from http.cookies import SimpleCookie
+from pathlib import Path
+import base64
+import hmac
+import os
+import re
+import secrets
+import threading
+import time
+from tasks import connection
+
+SESSION_SECONDS = 12 * 3600
+ROUNDS = 310_000
+_TOKEN = re.compile(r'^[A-Za-z0-9_-]{40,100}$')
+_DUMMY_HASH = None
+
+
+def _b64(data):
+    return base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii')
+
+
+def _unb64(value):
+    return base64.urlsafe_b64decode(value + '=' * (-len(value) % 4))
+
+
+def hash_password(password, salt=None):
+    if not isinstance(password, str) or not 12 <= len(password) <= 1024:
+        raise ValueError('Password must be 12–1024 characters')
+    salt = salt or secrets.token_bytes(16)
+    digest = pbkdf2_hmac('sha256', password.encode(), salt, ROUNDS)
+    return f'pbkdf2_sha256${ROUNDS}${_b64(salt)}${_b64(digest)}'
+
+
+def verify_password(password, encoded):
+    try:
+        kind, count, salt, expected = encoded.split('$')
+        rounds = int(count)
+        if kind != 'pbkdf2_sha256' or not 200_000 <= rounds <= 1_000_000:
+            return False
+        salt_bytes, expected_bytes = _unb64(salt), _unb64(expected)
+        if len(salt_bytes) != 16 or len(expected_bytes) != 32:
+            return False
+        value = pbkdf2_hmac('sha256', password.encode(), salt_bytes, rounds)
+        return hmac.compare_digest(value, expected_bytes)
+    except (AttributeError, ValueError, TypeError, UnicodeError):
+        return False
+
+
+def read_config(path):
+    """Read only named values; never execute a .env file as shell code."""
+    values = {}
+    if Path(path).is_file():
+        for line in Path(path).read_text().splitlines():
+            key, separator, value = line.partition('=')
+            if separator and key in ('INBOX_TEND_ADMIN_USERNAME', 'INBOX_TEND_ADMIN_PASSWORD_HASH'):
+                values[key] = value
+    for key in ('INBOX_TEND_ADMIN_USERNAME', 'INBOX_TEND_ADMIN_PASSWORD_HASH'):
+        if key in os.environ:
+            values[key] = os.environ[key]
+    return values
+
+
+def cookie_token(header):
+    try:
+        jar = SimpleCookie()
+        jar.load(header or '')
+        token = jar['it_session'].value if 'it_session' in jar else ''
+        return token if _TOKEN.fullmatch(token) else ''
+    except Exception:
+        return ''
+
+
+class AuthManager:
+    def __init__(self, db_path, *, username='', password_hash=''):
+        self.db_path = db_path
+        self.failures = deque()
+        self.lock = threading.Lock()
+        with closing(connection(db_path)) as db:
+            if db.execute('SELECT 1 FROM users LIMIT 1').fetchone() is None:
+                if not username or not password_hash or not self._valid_hash(password_hash):
+                    return
+                now = datetime.now(timezone.utc).isoformat()
+                with db:
+                    db.execute('INSERT INTO users(username,password_hash,role,created_at,updated_at) VALUES (?,?,?,?,?)',
+                               (username, password_hash, 'admin', now, now))
+
+    @staticmethod
+    def _valid_hash(value):
+        try:
+            kind, count, salt, digest = value.split('$')
+            return (kind == 'pbkdf2_sha256' and 200_000 <= int(count) <= 1_000_000
+                    and len(_unb64(salt)) == 16 and len(_unb64(digest)) == 32)
+        except (ValueError, TypeError, AttributeError):
+            return False
+
+    def authenticate(self, username, password):
+        if not isinstance(username, str) or not isinstance(password, str) or len(username) > 254 or len(password) > 1024:
+            return 'invalid'
+        now = time.monotonic()
+        with self.lock:
+            while self.failures and self.failures[0] < now - 300:
+                self.failures.popleft()
+            if len(self.failures) >= 10:
+                return 'throttled'
+        with closing(connection(self.db_path)) as db:
+            row = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
+            if row is None:
+                global _DUMMY_HASH
+                if _DUMMY_HASH is None:
+                    _DUMMY_HASH = hash_password('not-a-valid-user-password')
+                verify_password(password, _DUMMY_HASH)
+                valid = False
+            else:
+                valid = verify_password(password, row['password_hash'])
+            if not valid:
+                with self.lock:
+                    self.failures.append(time.monotonic())
+                return 'invalid'
+            with self.lock:
+                self.failures.clear()
+            return dict(row)
+
+    def new_session(self, user_id):
+        token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        now = int(time.time())
+        with closing(connection(self.db_path)) as db:
+            with db:
+                db.execute('DELETE FROM user_sessions WHERE expires_at<=?', (now,))
+                db.execute('INSERT INTO user_sessions(token_hash,user_id,csrf_token,expires_at,created_at) VALUES (?,?,?,?,?)',
+                           (sha256(token.encode()).hexdigest(), user_id, csrf, now + SESSION_SECONDS,
+                            datetime.now(timezone.utc).isoformat()))
+        return token, csrf
+
+    def session(self, token):
+        if not token or not _TOKEN.fullmatch(token):
+            return None
+        with closing(connection(self.db_path)) as db:
+            row = db.execute('''SELECT s.csrf_token,s.expires_at,u.id,u.username,u.role
+                                FROM user_sessions s JOIN users u ON u.id=s.user_id
+                                WHERE s.token_hash=?''', (sha256(token.encode()).hexdigest(),)).fetchone()
+            return dict(row) if row and row['expires_at'] > int(time.time()) else None
+
+    def revoke(self, token):
+        if token and _TOKEN.fullmatch(token):
+            with closing(connection(self.db_path)) as db:
+                with db:
+                    db.execute('DELETE FROM user_sessions WHERE token_hash=?', (sha256(token.encode()).hexdigest(),))

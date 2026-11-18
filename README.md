@@ -10,15 +10,15 @@ The sample website-project follow-up is fictional and dated 2026-11-18, with a p
 
 - `app.py`: loopback-only standard-library HTTP server and fictional-message API. Writes require a per-process CSRF token, loopback Host, same-origin request, JSON content type and a 16 KiB body limit.
 - `tasks.py`: SQLite tasks, migration from the initial branch schema, source-ID deduplication, optimistic revision conflicts, audit events and Saipan deadline states.
-- `static/`: browser review and task UI; dynamic content uses text nodes.
+- `static/`: responsive browser workspace with overview cards, inbox review, task controls and privacy guidance. The visual hierarchy draws on the local `statistics.diy` project while keeping Inbox Tend's own HTML/CSS and no frontend build dependency. Dynamic content uses text nodes.
 - `connectors/gmail_readonly.py` and `gmail_oauth_local.py`: separate experimental Gmail metadata reader and one-shot OAuth flow, documented in [docs/gmail-oauth-local.md](docs/gmail-oauth-local.md). Neither is wired to the dashboard.
 - `tests/`: local HTTP, persistence, migration, validation and connector tests.
 
 ## Security boundary
 
-This is a single-user local demo, **without authentication**. Bind remains `127.0.0.1`; do not publish it through a reverse proxy or accept real mail until authentication, account isolation, trusted-origin handling, secure credential storage and a deployment review are complete. The CSRF token protects local browser writes but is not login. There is no send, delete-mail, agent execution or model API endpoint. `DELETE /api/tasks/{id}` is a local explicit retention control and permanently removes that task and its audit entries.
+This is a single-user fictional demo, **without built-in authentication**. Bind remains `127.0.0.1`; the current internal subdomain is guarded by Caddy Basic Auth, which is sufficient only for this preview, not real mail or multiple users. Do not connect real correspondence until application authentication, account isolation, trusted-origin handling, secure credential storage and a deployment review are complete. The CSRF token protects local browser writes but is not login. There is no send, delete-mail, agent execution or model API endpoint. `DELETE /api/tasks/{id}` is a local explicit retention control and permanently removes that task and its audit entries.
 
-For an internal subdomain plan and open questions, see [docs/deployment-internal.md](docs/deployment-internal.md). [PLAN.md](PLAN.md) tracks future work. The domain `inboxtend.scyllar.us` is a proposed internal validation address, not an assertion that Inbox Tend is deployed there.
+For the internal subdomain's current setup and remaining gates, see [docs/deployment-internal.md](docs/deployment-internal.md). [docs/real-app-roadmap.md](docs/real-app-roadmap.md) sets out the next implementation stages. [PLAN.md](PLAN.md) tracks future work.
 
 ## License
 
