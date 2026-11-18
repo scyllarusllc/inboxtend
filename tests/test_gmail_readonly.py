@@ -34,12 +34,17 @@ class GmailReadOnlyTests(unittest.TestCase):
     def test_metadata_only(self):
         def mock(req, timeout):
             self.assertIn("format=metadata", req.full_url)
-            return FakeResponse({"id": "123", "threadId": "thread",
+            # Each header name is its own parameter; a stringified list makes Gmail return no headers.
+            for name in ("From", "To", "Subject", "Date"):
+                self.assertIn("metadataHeaders=" + name, req.full_url)
+            self.assertNotIn("%5B", req.full_url)
+            return FakeResponse({"id": "123", "threadId": "thread", "snippet": "We&#39;re here &amp; ready",
                                  "payload": {"headers": [
                                      {"name": "From", "value": "test@example.org"},
                                      {"name": "Subject", "value": "Hello"}]}})
         got = get_message_metadata("test-token", "123", opener=mock)
         self.assertEqual(got["headers"]["subject"], "Hello")
+        self.assertEqual(got["snippet"], "We're here & ready")
         self.assertNotIn("body", got)
 
     def test_rejects_invalid_id(self):

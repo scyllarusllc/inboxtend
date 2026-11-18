@@ -5,6 +5,7 @@ Require an access token with https://www.googleapis.com/auth/gmail.readonly.
 No sending, modifying, deleting, or draft-writing methods exist here.
 """
 from __future__ import annotations
+import html
 import json
 from urllib.parse import urlencode, quote
 from urllib.request import Request, urlopen
@@ -24,7 +25,7 @@ def _get_json(token: str, path: str, params: dict | None = None, *,
         raise ValueError("A runtime OAuth access token is required")
     if not path.startswith("/") or "://" in path or "?" in path:
         raise ValueError("Invalid Gmail API path")
-    url = API + path + (("?" + urlencode(params)) if params else "")
+    url = API + path + (("?" + urlencode(params, doseq=True)) if params else "")
     req = Request(url, method="GET",
                   headers={"Authorization": "Bearer " + token,
                            "Accept": "application/json"})
@@ -78,5 +79,6 @@ def get_message_metadata(token: str, message_id: str, *, opener=urlopen) -> dict
     for h in headers if isinstance(headers, list) else []:
         if isinstance(h, dict) and h.get("name", "").lower() in ("from", "to", "subject", "date"):
             safe_headers[h["name"].lower()] = h.get("value", "")
+    # Gmail returns the snippet HTML-escaped (e.g. &#39;); it is shown as text, so decode it.
     return {"id": raw.get("id"), "thread_id": raw.get("threadId"),
-            "snippet": raw.get("snippet", ""), "headers": safe_headers}
+            "snippet": html.unescape(raw.get("snippet", "")), "headers": safe_headers}

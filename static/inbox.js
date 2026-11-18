@@ -84,8 +84,11 @@ const gmailStatus = document.getElementById('gmail-status');
 const gmailConnect = document.getElementById('gmail-connect');
 const gmailDisconnect = document.getElementById('gmail-disconnect');
 const gmailRefresh = document.getElementById('gmail-refresh');
+let refreshRun = 0;
 async function refreshGmail() {
+  const run = ++refreshRun;  // A newer refresh supersedes this one, so rows are never appended twice.
   const state = await request('/api/connectors/gmail/status');
+  if (run !== refreshRun) return;
   gmailConnect.hidden = !state.configured;
   gmailConnect.textContent = state.connected ? 'Reconnect Gmail' : 'Connect Gmail';
   gmailDisconnect.hidden = !state.connected;
@@ -97,7 +100,9 @@ async function refreshGmail() {
   draft.replaceChildren();
   messages = []; selectedId = null;
   if (!state.connected) { list.textContent = 'Connect Gmail to see your inbox.'; return; }
+  list.textContent = 'Loading inbox…';
   const data = await request('/api/connectors/gmail/messages');
+  if (run !== refreshRun) return;
   messages = data.messages;
   if (!messages.length) { list.textContent = 'No inbox messages found.'; return; }
   for (const m of messages) {
