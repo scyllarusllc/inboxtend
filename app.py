@@ -10,6 +10,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 import gmail_web
+import settings as prefs
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
@@ -21,16 +22,20 @@ PAGES = {
     'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', ('/static/login.js',), None, False),
     'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js'), 'inbox', True),
     'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/tasks.js'), 'tasks', True),
+    'settings': ('Settings · Inbox Tend', 'Timezone, display, mail sync and account settings.', ('/static/common.js','/static/settings.js'), 'settings', True),
     'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), 'privacy', False),
 }
 STATIC_FILES = {'/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript',
-                '/static/tasks.js':'text/javascript','/static/login.js':'text/javascript'}
+                '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript'}
 
 def nav_html(active, signed_in):
     """Identical four links on every page; only the current-page marker and the auth control vary."""
     links = ''.join('<a href="%s"%s>%s</a>' % (href, ' aria-current="page"' if key == active else '', label)
                     for key, href, label in NAV_ITEMS)
-    return links + ('<button id="logout" type="button">Sign out</button>' if signed_in else '<a href="/login">Sign in</a>')
+    if not signed_in:
+        return links + '<a href="/login">Sign in</a>'
+    current = ' aria-current="page"' if active == 'settings' else ''
+    return links + f'<a href="/user/settings"{current}>Settings</a><button id="logout" type="button">Sign out</button>'
 
 def render_page(name):
     """Compose trusted static page content with one shared header and footer."""
@@ -58,14 +63,15 @@ def draft_reply(message):
             "I will review the details and follow up after checking the record. "
             "This is a draft for your review.\n\nBest regards")
 
-def proposal(message):
+def proposal(message, user=None):
     """Rule-based starting point for a task; no deadline is inferred."""
+    user = user or prefs.DEFAULTS
     subject = (message.get('subject') or '').strip() or '(No subject)'
     return {'source':{'provider':'gmail','message_id':message['id'],'thread_id':message['thread_id'],
                       'subject':subject,'date':message['date']},
             'inferred':{'title':subject[:200],'description':summarize(message),
-                        'priority':'medium','due_date':None,'due_time':None,
-                        'due_timezone':'Pacific/Saipan','project_label':'','customer_label':''},
+                        'priority':user['default_priority'],'due_date':None,'due_time':None,
+                        'due_timezone':user['timezone'],'project_label':'','customer_label':''},
             'note':'Rule-based suggestion from the Gmail subject and snippet; no deadline was inferred.'}
 
 class Handler(BaseHTTPRequestHandler):
@@ -204,7 +210,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._redirect('/user/inbox?gmail=connected')
         if not write and path == '/user/dashboard':
             return self._redirect('/user/inbox')  # Legacy URL
-        if not write and path in ('/user/inbox','/user/tasks'):
+        if not write and path in ('/user/inbox','/user/tasks','/user/settings'):
             return self._send(200,render_page(path.rsplit('/',1)[1]),'text/html; charset=utf-8')
         if write:
             self._write_ok(session)
@@ -224,6 +230,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/connectors/gmail/disconnect' and self.command == 'POST':
                 with self._db() as db: gmail_web.disconnect(db,session['id'])
                 return self._json(200,{'connected':False})
+            if path == '/api/settings' and self.command == 'PATCH':
+                with self._db() as db:
+                    prefs.save(db,session['id'],data)
+                    return self._json(200,{'settings':prefs.effective(db,session['id'],self.gmail_config)})
+            if path == '/api/auth/password' and self.command == 'POST':
+                result = self.auth_manager.change_password(session['id'],data.get('current'),data.get('new'),cookie_token(self.headers.get('Cookie')))
+                if result == 'throttled': raise RequestError(429,'Too many attempts; try again in a few minutes')
+                if result == 'invalid': raise RequestError(403,'Current password is incorrect')
+                return self._json(200,{'changed':True})
             if path == '/api/auth/logout' and self.command == 'POST':
                 self.auth_manager.revoke(cookie_token(self.headers.get('Cookie')))
                 return self._json(200,{'signed_out':True},
@@ -234,6 +249,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/tasks' and self.command == 'POST':
                 message = dict(self._gmail_message(session,data.get('message_id')),provider='gmail')
                 with self._db() as db:
+                    data.setdefault('due_timezone',prefs.effective(db,session['id'],self.gmail_config)['timezone'])
                     existing = task_for_source(db,'gmail',message['id'],session['id'])
                     if existing:
                         return self._json(409,{'error':'Task already exists','task':existing})
@@ -267,6 +283,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
                 rows,stamp = gmail_web.cached_inbox(db,session['id'],folder),gmail_web.last_sync(db,session['id'])
             return self._json(200,{'messages':rows,'folder':folder,'last_sync':stamp,'read_only':True})
+        if path == '/api/settings':
+            with self._db() as db: values = prefs.effective(db,session['id'],self.gmail_config)
+            return self._json(200,{'settings':values,'defaults':prefs.DEFAULTS,'username':session['username']})
         if path == '/api/session':
             return self._json(200,{'csrf_token':session['csrf_token'],'user':{'username':session['username'],'role':session['role']}})
         parts = path.strip('/').split('/')
@@ -288,13 +307,19 @@ class Handler(BaseHTTPRequestHandler):
                     disposition = f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(row['filename'])}"
                     return self._send(200,content,'application/octet-stream',(('Content-Disposition',disposition),))
         if len(parts)==6 and parts[:4]==['api','connectors','gmail','messages'] and parts[5]=='proposal':
-            return self._json(200,proposal(self._gmail_message(session,parts[4])))
+            message = self._gmail_message(session,parts[4])
+            with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
+            return self._json(200,proposal(message,user))
         if path == '/api/tasks/summary':
-            with self._db() as db: summary = task_summary(db,user_id=session['id'])
-            return self._json(200,{'summary':summary,'timezone':'Pacific/Saipan'})
+            with self._db() as db:
+                summary = task_summary(db,user_id=session['id'])
+                zone = prefs.effective(db,session['id'],self.gmail_config)['timezone']
+            return self._json(200,{'summary':summary,'timezone':zone})
         if path == '/api/tasks':
-            with self._db() as db: rows = list_tasks(db,user_id=session['id'])
-            return self._json(200,{'tasks':rows,'timezone':'Pacific/Saipan'})
+            with self._db() as db:
+                rows = list_tasks(db,user_id=session['id'])
+                zone = prefs.effective(db,session['id'],self.gmail_config)['timezone']
+            return self._json(200,{'tasks':rows,'timezone':zone})
         if len(parts) in (3,4) and parts[:2]==['api','tasks'] and parts[2].isdigit():
             with self._db() as db:
                 task = get_task(db,int(parts[2]),user_id=session['id'])

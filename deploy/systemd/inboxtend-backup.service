@@ -1,0 +1,9 @@
+[Unit]
+Description=Inbox Tend SQLite backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/github/inboxtend
+ExecStart=/usr/bin/python3 scripts/backup.py
+NoNewPrivileges=yes
+PrivateTmp=yes

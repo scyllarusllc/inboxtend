@@ -17,6 +17,7 @@ except ImportError:  # Everything except Gmail works without the optional depend
     AESGCM = None
 from connectors.gmail_readonly import SCOPES, GmailReadError, list_message_ids, get_message_full, get_attachment
 from tasks import connection
+import settings as prefs
 
 AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 TOKEN = 'https://oauth2.googleapis.com/token'
@@ -144,15 +145,20 @@ def _int_setting(config,key,lo,hi):
     except (TypeError,ValueError): value = DEFAULTS[key]
     return max(lo,min(hi,value))
 
-def sync_settings(config):
+def sync_settings(config, user=None):
+    """Sync limits: the user's saved preferences (see settings.py) win over the .env values."""
+    user = user or {}
     query = str(config.get('INBOX_TEND_SYNC_QUERY') or DEFAULTS['INBOX_TEND_SYNC_QUERY'])[:1024]
     sent_query = str(config.get('INBOX_TEND_SYNC_SENT_QUERY') or DEFAULTS['INBOX_TEND_SYNC_SENT_QUERY'])[:1024]
-    return {'query':query,'sent_query':sent_query,'max_messages':_int_setting(config,'INBOX_TEND_SYNC_MAX_MESSAGES',1,5000),
-            'attachment_max':_int_setting(config,'INBOX_TEND_ATTACHMENT_MAX_BYTES',0,100 * 1024 * 1024)}
+    max_messages = user.get('sync_max_messages', _int_setting(config,'INBOX_TEND_SYNC_MAX_MESSAGES',1,5000))
+    attachment_max = (user['attachment_max_mb'] * 1024 * 1024 if 'attachment_max_mb' in user
+                      else _int_setting(config,'INBOX_TEND_ATTACHMENT_MAX_BYTES',0,100 * 1024 * 1024))
+    return {'query':query,'sent_query':sent_query,'max_messages':max_messages,
+            'attachment_max':attachment_max,'sync_sent':user.get('sync_sent',True)}
 
 def _row(r):
     return {'id':r['message_id'],'thread_id':r['thread_id'],'from':r['from_addr'],'to':r['to_addr'],
-            'subject':r['subject'],'date':r['date_header'],'snippet':r['snippet'],
+            'subject':r['subject'],'date':r['date_header'],'internal_date':r['internal_date'],'snippet':r['snippet'],
             'direction':'sent' if '"SENT"' in (r['label_ids'] or '') else 'received'}
 
 def _fetch(token,message_id,attachment_max):
@@ -236,12 +242,12 @@ def _reconcile(db,user_id,column,ids):
 def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
     """Download every inbox and sent message not stored in full yet (bodies and attachments), then reconcile
     the folder flags. Each message is committed as it arrives, so an interrupted sync resumes where it stopped."""
-    settings = sync_settings(config)
+    settings = sync_settings(config,prefs.stored(db,user_id))
     token = _access_token(db,config,user_id,opener=opener)
     inbox_ids = _listing(token,settings['query'],settings['max_messages'])
-    sent_ids = _listing(token,settings['sent_query'],settings['max_messages'])
+    sent_ids = _listing(token,settings['sent_query'],settings['max_messages']) if settings['sync_sent'] else None
     have_full = {r[0] for r in db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND has_full=1',(user_id,))}
-    todo = [i for i in dict.fromkeys(inbox_ids + sent_ids) if i not in have_full]
+    todo = [i for i in dict.fromkeys(inbox_ids + (sent_ids or [])) if i not in have_full]
     done = failed = 0
     first_error = None
     report(total=len(todo),done=0,failed=0)
@@ -260,7 +266,8 @@ def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
         raise GmailReadError(first_error or 'No messages could be downloaded')
     with db:
         _reconcile(db,user_id,'in_inbox',inbox_ids)
-        _reconcile(db,user_id,'in_sent',sent_ids)
+        if sent_ids is not None:  # Sent mail sync switched off: keep what is stored, change nothing.
+            _reconcile(db,user_id,'in_sent',sent_ids)
         db.execute('UPDATE gmail_connections SET last_sync=? WHERE user_id=?',(int(time.time()),user_id))
     if failed:
         report(error=f'{failed} message(s) could not be downloaded; press Refresh to retry.')
@@ -301,7 +308,7 @@ def message(db,config,user_id,message_id,*,opener=urlopen):
     row = db.execute('SELECT * FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,message_id)).fetchone()
     if row and row['has_full']: return _detail(db,user_id,row)
     token = _access_token(db,config,user_id,opener=opener)
-    try: item = _fetch(token,message_id,sync_settings(config)['attachment_max'])
+    try: item = _fetch(token,message_id,sync_settings(config,prefs.stored(db,user_id))['attachment_max'])
     except ValueError: raise GmailReadError('Invalid message ID') from None
     with db: _store(db,user_id,item)
     return _detail(db,user_id,db.execute('SELECT * FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,item['id'])).fetchone())

@@ -5,11 +5,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 import json
 import sqlite3
+import settings
 
 STATES = ('new', 'in_progress', 'waiting', 'done')
 PRIORITIES = ('low', 'medium', 'high')
 DEFAULT_DB = Path(__file__).resolve().parent / 'data' / 'tasks.sqlite3'
-SAIPAN = ZoneInfo('Pacific/Saipan')
 
 
 def connection(path=DEFAULT_DB):
@@ -83,6 +83,9 @@ def connection(path=DEFAULT_DB):
             id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, message_id TEXT NOT NULL,
             part_id TEXT NOT NULL DEFAULT '', filename TEXT NOT NULL, mime_type TEXT NOT NULL,
             size_bytes INTEGER NOT NULL DEFAULT 0, content BLOB, skipped_reason TEXT NOT NULL DEFAULT '')''')
+        db.execute('''CREATE TABLE IF NOT EXISTS user_settings (
+            user_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, key))''')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_attachments_message ON gmail_attachments(user_id,message_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_inbox ON gmail_messages(user_id,in_inbox,internal_date DESC)')
     db.execute('PRAGMA foreign_keys=ON')
@@ -100,12 +103,11 @@ def _deadline(date, time, zone):
         return None
     if not isinstance(date, str) or not isinstance(time, str) or not isinstance(zone, str):
         raise ValueError('Date and time are required together')
-    if zone != 'Pacific/Saipan':
-        raise ValueError('Only Pacific/Saipan is supported')
+    tz = ZoneInfo(settings.valid_timezone(zone))
     try:
         if len(date) != 10 or len(time) != 5:
             raise ValueError()
-        local = datetime.fromisoformat(f'{date}T{time}').replace(tzinfo=SAIPAN)
+        local = datetime.fromisoformat(f'{date}T{time}').replace(tzinfo=tz)
         if local.strftime('%Y-%m-%d') != date or local.strftime('%H:%M') != time:
             raise ValueError()
         return local
@@ -117,7 +119,7 @@ def _now():
     return datetime.now(timezone.utc).isoformat(timespec='microseconds')
 
 
-def decorate(row, now=None):
+def decorate(row, now=None, due_soon_hours=48):
     item = dict(row)
     item['deadline_state'] = 'none'
     if item['status'] != 'done' and item['due_date']:
@@ -126,14 +128,19 @@ def decorate(row, now=None):
         current = now or datetime.now(timezone.utc)
         if current.tzinfo is None:
             raise ValueError('now must be timezone-aware')
-        delta = due - current.astimezone(SAIPAN)
-        item['deadline_state'] = 'overdue' if delta.total_seconds() < 0 else ('due_soon' if delta <= timedelta(hours=48) else 'upcoming')
+        delta = due - current  # Both are timezone-aware, so the task's own zone is respected.
+        item['deadline_state'] = 'overdue' if delta.total_seconds() < 0 else ('due_soon' if delta <= timedelta(hours=due_soon_hours) else 'upcoming')
     return item
 
 
+def _soon(db, user_id):
+    return settings.stored(db, user_id).get('due_soon_hours', settings.DEFAULTS['due_soon_hours'])
+
+
 def list_tasks(db, now=None, user_id=1):
+    hours = _soon(db, user_id)
     rows = db.execute("SELECT * FROM tasks WHERE user_id=? ORDER BY status='done', due_date IS NULL, due_date, due_time, id", (user_id,))
-    return [decorate(r, now) for r in rows]
+    return [decorate(r, now, hours) for r in rows]
 
 
 
@@ -153,12 +160,12 @@ def task_summary(db, now=None, user_id=1):
 
 def get_task(db, task_id, now=None, user_id=1):
     row = db.execute('SELECT * FROM tasks WHERE id=? AND user_id=?', (task_id,user_id)).fetchone()
-    return decorate(row, now) if row else None
+    return decorate(row, now, _soon(db, user_id)) if row else None
 
 
 def task_for_source(db, provider, message_id, user_id=1):
     row = db.execute('SELECT * FROM tasks WHERE source_provider=? AND message_id=? AND user_id=?', (provider, message_id,user_id)).fetchone()
-    return decorate(row) if row else None
+    return decorate(row, due_soon_hours=_soon(db, user_id)) if row else None
 
 
 def create_task(db, message, fields, user_id=1):
@@ -233,7 +240,7 @@ def update_task(db, task_id, fields, user_id=1):
         zone = changes.get('due_timezone',row['due_timezone'])
         _deadline(date,time,zone)
         if not changes:
-            return decorate(row)
+            return decorate(row, due_soon_hours=_soon(db, user_id))
         now = _now()
         assignments = ', '.join(f'{key}=?' for key in changes)
         cursor = db.execute(f'UPDATE tasks SET {assignments}, updated_at=?, revision=revision+1 WHERE id=? AND revision=?',

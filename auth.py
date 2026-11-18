@@ -134,6 +134,34 @@ class AuthManager:
                 self.failures.clear()
             return dict(row)
 
+    def change_password(self, user_id, current, new, keep_token=''):
+        """Returns 'ok', 'invalid' (wrong current password) or 'throttled'. Other sessions are signed out."""
+        if not isinstance(current, str) or not isinstance(new, str) or len(current) > 1024:
+            return 'invalid'
+        with self.lock:
+            now = time.monotonic()
+            while self.failures and self.failures[0] < now - 300:
+                self.failures.popleft()
+            if len(self.failures) >= 10:
+                return 'throttled'
+        with closing(connection(self.db_path)) as db:
+            row = db.execute('SELECT password_hash FROM users WHERE id=?', (user_id,)).fetchone()
+            if row is None or not verify_password(current, row['password_hash']):
+                with self.lock:
+                    self.failures.append(time.monotonic())
+                return 'invalid'
+            if new == current:
+                raise ValueError('The new password must differ from the current one')
+            encoded = hash_password(new)  # ValueError (400) unless 12-1024 characters
+            keep = sha256(keep_token.encode()).hexdigest() if keep_token else ''
+            with db:
+                db.execute('UPDATE users SET password_hash=?,updated_at=? WHERE id=?',
+                           (encoded, datetime.now(timezone.utc).isoformat(), user_id))
+                db.execute('DELETE FROM user_sessions WHERE user_id=? AND token_hash!=?', (user_id, keep))
+            with self.lock:
+                self.failures.clear()
+            return 'ok'
+
     def new_session(self, user_id):
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         now = int(time.time())
