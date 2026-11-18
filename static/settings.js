@@ -46,6 +46,8 @@ function readForm() {
     default_priority: form.default_priority.value,
     inbox_view: form.inbox_view.value,
     sync_sent: form.sync_sent.checked,
+    mark_read_on_open: form.mark_read_on_open.checked,
+    gmail_write_read: form.gmail_write_read.checked,
     sync_max_messages: Number(form.sync_max_messages.value),
     attachment_max_mb: Number(form.attachment_max_mb.value),
     ai_enabled: form.ai_enabled.checked,
@@ -82,6 +84,25 @@ async function init() {
     saved.ai_model.hidden = saved.ai_model_choice.value !== OTHER_MODEL;
     if (!saved.ai_model.hidden) saved.ai_model.focus();
   });
+  // Gmail access level: read-only by default, write only after an explicit re-authorisation.
+  try {
+    const gmail = await request('/api/connectors/gmail/status');
+    const line = document.getElementById('access-status'), grant = document.getElementById('grant-modify'), back = document.getElementById('grant-readonly');
+    line.textContent = !gmail.configured ? 'Gmail is not configured on this server (see docs/gmail-web.md).'
+      : !gmail.connected ? 'Gmail is not connected yet. Connecting from here with change access also works.'
+      : gmail.write_access ? 'Current access: read and change read/unread (gmail.modify).' : 'Current access: read-only (gmail.readonly).';
+    grant.hidden = !gmail.configured || gmail.write_access;
+    back.hidden = !gmail.configured || !gmail.connected || !gmail.write_access;
+    prefsForm.elements.gmail_write_read.disabled = !gmail.write_access;
+    const authorise = async (access, button) => {
+      button.disabled = true;
+      try { location.assign((await request('/api/connectors/gmail/connect', 'POST', {access})).authorization_url); }
+      catch (error) { notify(error.message, true); button.disabled = false; }
+    };
+    grant.addEventListener('click', () => authorise('modify', grant));
+    back.addEventListener('click', () => authorise('readonly', back));
+  } catch (error) { document.getElementById('access-status').textContent = 'Could not check Gmail: ' + error.message; }
+  if (new URLSearchParams(location.search).get('gmail') === 'write') notify('Gmail now allows Inbox Tend to change read/unread. Your read/unread changes will be applied to Gmail.');
   const aiTest = document.getElementById('ai-test'), aiResult = document.getElementById('ai-test-result');
   aiTest.addEventListener('click', async () => {
     aiTest.disabled = true; aiResult.textContent = ' Asking the AI…';

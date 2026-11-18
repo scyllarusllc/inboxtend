@@ -72,7 +72,8 @@ class GmailWebTests(unittest.TestCase):
                 'attachments':[dict(a) for a in attachments]}
     TOKEN=staticmethod(lambda *a,**k:Response({'token_type':'Bearer','access_token':'short-lived'}))
     def _sync(self,ids,fulls,config=CONFIG,attachments=None,user_id=1):
-        with patch.object(gmail_web,'list_message_ids',return_value={'message_ids':ids,'next_page_token':None}), \
+        listing=lambda t,**k:{'message_ids':[] if 'is:unread' in k.get('query','') else ids,'next_page_token':None}
+        with patch.object(gmail_web,'list_message_ids',side_effect=listing), \
              patch.object(gmail_web,'get_message_full',side_effect=lambda t,i:fulls[i]) as got, \
              patch.object(gmail_web,'get_attachment',side_effect=lambda t,m,a,max_bytes:(attachments or {})[a]) as att:
             gmail_web.run_sync(self.db,config,user_id,opener=self.TOKEN)

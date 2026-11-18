@@ -2,7 +2,8 @@
 const list = document.getElementById('messages');
 const detail = document.getElementById('detail');
 const draft = document.getElementById('draft');
-let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null;
+let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null, gmailWriteAccess = false;
+const writesToGmail = () => gmailWriteAccess && userSettings.gmail_write_read;
 const translationPanel = document.getElementById('translation-panel');
 const translationBox = document.getElementById('translation');
 const translationCaption = document.getElementById('translation-caption');
@@ -133,6 +134,20 @@ function renderAttachments(message) {
   block.append(el('p', 'Attachments are untrusted. They are only downloaded, never opened or run by this app.', 'meta'));
   return block;
 }
+function showCounts(counts) {
+  folderInbox.textContent = 'Inbox (' + counts.inbox + (counts.unread ? ' · ' + counts.unread + ' unread' : '') + ')';
+  folderSent.textContent = 'Sent (' + counts.sent + ')';
+}
+// Marks a message read/unread in Inbox Tend (never in Gmail) and updates the lists without reloading them.
+async function setRead(id, markRead) {
+  const result = await request('/api/connectors/gmail/messages/' + encodeURIComponent(id) + '/read', 'POST', {read: markRead});
+  if (result.gmail_error) notify('Saved here, but Gmail was not updated: ' + result.gmail_error, true);
+  for (const m of messages) if (m.id === id) m.unread = result.unread;
+  for (const g of groups) g.unread_count = g.messages.filter(m => m.unread).length;
+  request('/api/connectors/gmail/status').then(state => showCounts(state.counts)).catch(() => {});
+  renderList(groups.length ? {groups} : {messages});
+  return result.unread;
+}
 async function selectMessage(id) {
   selectedId = id;
   const m = messages.find(message => message.id === id) || {id, subject: '', from: '', date: ''};
@@ -163,6 +178,7 @@ async function selectMessage(id) {
       const item = el('button', undefined, 'message');
       item.type = 'button';
       item.setAttribute('aria-pressed', String(t.id === id));
+      if (t.unread) item.className += ' unread';
       item.append(el('div', (t.direction === 'sent' ? 'Sent · ' : 'Received · ') + (t.subject || '(No subject)')),
         el('div', formatWhen(t.internal_date, t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
       item.addEventListener('click', () => selectMessage(t.id));
@@ -177,6 +193,7 @@ async function selectMessage(id) {
       const item = el('button', undefined, 'message');
       item.type = 'button';
       item.setAttribute('aria-pressed', String(t.id === id));
+      if (t.unread) item.className += ' unread';
       item.append(el('div', (t.direction === 'sent' ? 'Sent · To ' + (t.to || 'unknown') : 'Received · From ' + (t.from || 'unknown'))),
         el('div', formatWhen(t.internal_date, t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
       item.addEventListener('click', () => selectMessage(t.id));
@@ -203,6 +220,21 @@ async function selectMessage(id) {
     finally { propose.disabled = false; }
   });
   detail.append(full.direction === 'sent' ? propose : reply, ...(full.direction === 'sent' ? [] : [el('span', ' '), propose]));
+  let toggle = null;
+  if (full.direction !== 'sent') {
+    const autoRead = full.unread && userSettings.mark_read_on_open;  // Opening it marks it read (below).
+    let unread = full.unread && !autoRead;
+    toggle = iconButton('check', unread ? 'Mark as read' : 'Mark as unread');
+    toggle.addEventListener('click', async () => {
+      toggle.disabled = true;
+      try { unread = await setRead(id, unread); toggle.lastChild.textContent = unread ? 'Mark as read' : 'Mark as unread'; }
+      catch (error) { notify('Could not change the read state: ' + error.message, true); }
+      toggle.disabled = false;
+    });
+    detail.append(el('span', ' '), toggle, el('span', writesToGmail() ? ' (also updated in Gmail)' : ' (kept in Inbox Tend only; Gmail is not changed)', 'meta'));
+  }
+  // Opening a message marks it read, in Inbox Tend only.
+  if (full.unread && userSettings.mark_read_on_open && full.direction !== 'sent') setRead(id, true).catch(() => { if (toggle) toggle.lastChild.textContent = 'Mark as read'; });
   if (userSettings.ai_enabled) detail.append(aiControls(id, full.direction === 'sent'));
 }
 function aiControls(id, isSent) {
@@ -278,8 +310,8 @@ let refreshRun = 0;
 function syncLabel(state) {
   return state.last_sync ? ' Last synced ' + formatWhen(state.last_sync * 1000) + '.' : '';
 }
-function rowButton(key, pressed) {
-  const button = el('button', undefined, 'message');
+function rowButton(key, pressed, unread = false) {
+  const button = el('button', undefined, unread ? 'message unread' : 'message');
   button.dataset.id = key;
   button.setAttribute('aria-pressed', String(pressed));
   return button;
@@ -303,7 +335,7 @@ function renderList(data) {
   if (!messages.length) { list.textContent = folder === 'sent' ? 'No sent messages found.' : 'No inbox messages found.'; return; }
   if (!data.groups) {
     for (const m of messages) {
-      const button = rowButton(m.id, m.id === selectedId);
+      const button = rowButton(m.id, m.id === selectedId, m.unread);
       button.append(el('div', m.subject || '(No subject)'),
         el('div', (folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender')) + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'));
       if (m.attachment_count) button.append(attachmentLabel(m.attachment_count));
@@ -313,11 +345,15 @@ function renderList(data) {
     return;
   }
   for (const g of groups) {
-    const button = rowButton(g.id, currentGroup && g.id === currentGroup.id);
+    const button = rowButton(g.id, currentGroup && g.id === currentGroup.id, g.unread_count > 0);
     const last = g.last;
     const top = el('div', undefined, 'group-title');
     top.append(el('span', g.title || '(No subject)', 'group-name'));
-    if (g.count > 1) top.append(el('span', String(g.count), 'count-badge'));
+    if (g.count > 1) {
+      const badge = el('span', g.unread_count ? g.unread_count + '/' + g.count : String(g.count), g.unread_count ? 'count-badge unread-badge' : 'count-badge');
+      badge.title = g.unread_count ? g.unread_count + ' unread of ' + g.count + ' messages' : g.count + ' messages';
+      top.append(badge);
+    }
     const who = g.kind === 'person' ? (g.address || '') : (g.participants || []).join(', ');
     button.append(top, el('div', (who ? who + ' · ' : '') + formatWhen(last.internal_date, last.date || 'No date'), 'meta'),
       el('div', (last.direction === 'sent' ? 'You: ' : '') + (g.kind === 'person' ? (last.subject || '') + ' — ' : '') + (last.snippet || ''), 'meta group-snippet'));
@@ -358,8 +394,8 @@ async function refreshGmail(startSync = false) {
     const data = await request('/api/connectors/gmail/messages?folder=' + folder + '&view=' + view);
     if (run !== refreshRun) return;
     renderList(data);
-    folderInbox.textContent = 'Inbox (' + state.counts.inbox + ')';
-    folderSent.textContent = 'Sent (' + state.counts.sent + ')';
+    showCounts(state.counts);
+    gmailWriteAccess = state.write_access;
     gmailStatus.textContent = 'Gmail connected. ' + state.stored + ' message(s) saved locally (inbox and sent).' + syncLabel(state) +
       (sync.running ? ' Syncing… ' + sync.done + ' of ' + sync.total + ' new message(s).' : '') +
       (!sync.running && sync.error ? ' ' + sync.error : '');
@@ -371,7 +407,7 @@ async function refreshGmail(startSync = false) {
 gmailConnect.addEventListener('click', async () => {
   gmailConnect.disabled = true;
   try {
-    const result = await request('/api/connectors/gmail/connect','POST',{});
+    const result = await request('/api/connectors/gmail/connect','POST',{access: gmailWriteAccess ? 'modify' : 'readonly'});
     location.assign(result.authorization_url);
   } catch (error) { gmailStatus.textContent = error.message; gmailConnect.disabled = false; }
 });

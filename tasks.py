@@ -74,6 +74,10 @@ def connection(path=DEFAULT_DB):
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_connections (user_id INTEGER PRIMARY KEY, refresh_token BLOB NOT NULL, connected_at INTEGER NOT NULL)''')
         if 'last_sync' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
             db.execute('ALTER TABLE gmail_connections ADD COLUMN last_sync INTEGER')
+        if 'scopes' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
+            db.execute("ALTER TABLE gmail_connections ADD COLUMN scopes TEXT NOT NULL DEFAULT ''")  # '' = read-only (older connections)
+        if 'level' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_oauth_pending)')}:
+            db.execute("ALTER TABLE gmail_oauth_pending ADD COLUMN level TEXT NOT NULL DEFAULT 'readonly'")
         # Local copy of Gmail messages (headers, bodies, attachments), per app user.
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_messages (
             user_id INTEGER NOT NULL, message_id TEXT NOT NULL, thread_id TEXT NOT NULL DEFAULT '',
@@ -89,6 +93,7 @@ def connection(path=DEFAULT_DB):
             'size_estimate': 'INTEGER NOT NULL DEFAULT 0', 'has_full': 'INTEGER NOT NULL DEFAULT 0',
             'in_sent': 'INTEGER NOT NULL DEFAULT 0',
             'peer_email': "TEXT NOT NULL DEFAULT ''", 'peer_name': "TEXT NOT NULL DEFAULT ''",
+            'read_override': 'INTEGER',  # NULL = follow Gmail's UNREAD label; 1 = read here; 0 = unread here.
         }.items():
             if name not in message_columns:
                 db.execute(f'ALTER TABLE gmail_messages ADD COLUMN {name} {definition}')

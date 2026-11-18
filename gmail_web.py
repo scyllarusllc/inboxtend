@@ -16,6 +16,7 @@ try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except ImportError:  # Everything except Gmail works without the optional dependency.
     AESGCM = None
+from connectors.gmail_modify import MODIFY_SCOPE, GmailWriteError, set_unread as gmail_set_unread
 from connectors.gmail_readonly import SCOPES, GmailReadError, list_message_ids, get_message_full, get_attachment
 from tasks import connection, peer_for
 import settings as prefs
@@ -23,6 +24,7 @@ import settings as prefs
 AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 TOKEN = 'https://oauth2.googleapis.com/token'
 SCOPE = SCOPES[0]
+LEVELS = ('readonly','modify')
 
 class GmailConnectionError(RuntimeError):
     pass
@@ -68,19 +70,20 @@ def _post(url, fields, *, opener=urlopen):
     except (URLError, OSError, TimeoutError, ValueError):
         raise GmailConnectionError('Google authorization request failed') from None
 
-def begin(db, config, user_id, session_token):
+def begin(db, config, user_id, session_token, level='readonly'):
     if not configured(config): raise GmailConnectionError('Gmail is not configured')
+    if level not in LEVELS: raise GmailConnectionError('Unknown access level')
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
     challenge = _b64(hashlib.sha256(verifier.encode()).digest())
     session_hash = hashlib.sha256(session_token.encode()).hexdigest()
     with db:
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=? OR expires_at<?', (user_id,int(time.time())))
-        db.execute('INSERT INTO gmail_oauth_pending(state_hash,user_id,session_hash,verifier,expires_at) VALUES (?,?,?,?,?)',
-                   (hashlib.sha256(state.encode()).hexdigest(),user_id,session_hash,verifier,int(time.time())+300))
+        db.execute('INSERT INTO gmail_oauth_pending(state_hash,user_id,session_hash,verifier,expires_at,level) VALUES (?,?,?,?,?,?)',
+                   (hashlib.sha256(state.encode()).hexdigest(),user_id,session_hash,verifier,int(time.time())+300,level))
     return AUTHORIZE + '?' + urlencode({
         'client_id':config['INBOX_TEND_GOOGLE_CLIENT_ID'],
         'redirect_uri':config['INBOX_TEND_GOOGLE_REDIRECT_URI'],
-        'response_type':'code','scope':SCOPE,'state':state,'code_challenge':challenge,
+        'response_type':'code','scope':SCOPE if level == 'readonly' else MODIFY_SCOPE,'state':state,'code_challenge':challenge,
         'code_challenge_method':'S256','access_type':'offline','prompt':'consent',
         'include_granted_scopes':'false'})
 
@@ -99,17 +102,28 @@ def finish(db, config, user_id, session_token, state, code, *, opener=urlopen):
                            'code':code,'code_verifier':row['verifier'],
                            'redirect_uri':config['INBOX_TEND_GOOGLE_REDIRECT_URI'],
                            'grant_type':'authorization_code'},opener=opener)
-    if (set(result.get('scope','').split()) != {SCOPE} or result.get('token_type','').lower() != 'bearer'
+    granted = set(result.get('scope','').split())
+    scope_ok = granted == {SCOPE} if row['level'] == 'readonly' else (MODIFY_SCOPE in granted and granted <= {SCOPE, MODIFY_SCOPE})
+    if (not scope_ok or result.get('token_type','').lower() != 'bearer'
         or not isinstance(result.get('refresh_token'),str) or not result['refresh_token']
         or not isinstance(result.get('access_token'),str) or not result['access_token']):
-        raise GmailConnectionError('Google did not grant the required read-only offline access')
+        raise GmailConnectionError('Google did not grant the requested access')
     key = _key(config)
     nonce = secrets.token_bytes(12)
     encrypted = nonce + AESGCM(key).encrypt(nonce,result['refresh_token'].encode(),str(user_id).encode())
     with db:
-        db.execute('INSERT INTO gmail_connections(user_id,refresh_token,connected_at) VALUES (?,?,?) '
-                   'ON CONFLICT(user_id) DO UPDATE SET refresh_token=excluded.refresh_token,connected_at=excluded.connected_at',
-                   (user_id,encrypted,int(time.time())))
+        db.execute('INSERT INTO gmail_connections(user_id,refresh_token,connected_at,scopes) VALUES (?,?,?,?) '
+                   'ON CONFLICT(user_id) DO UPDATE SET refresh_token=excluded.refresh_token,connected_at=excluded.connected_at,scopes=excluded.scopes',
+                   (user_id,encrypted,int(time.time()),' '.join(sorted(granted))))
+    return row['level']
+
+def _granted(db,user_id):
+    row = db.execute('SELECT scopes FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
+    return set((row['scopes'] if row else '').split()) or {SCOPE}   # Connections made before write access existed are read-only.
+
+def write_access(db,user_id):
+    """True when the user granted gmail.modify (an opt-in; the default connection is read-only)."""
+    return MODIFY_SCOPE in _granted(db,user_id)
 
 def status(db,user_id):
     return db.execute('SELECT 1 FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone() is not None
@@ -121,6 +135,11 @@ def disconnect(db,user_id):
         db.execute('DELETE FROM message_translations WHERE user_id=?',(user_id,))  # Disconnecting also removes the local copy
         db.execute('DELETE FROM gmail_attachments WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_messages WHERE user_id=?',(user_id,))
+
+def _scope_matches(returned,expected):
+    if MODIFY_SCOPE in expected:
+        return MODIFY_SCOPE in returned and returned <= {SCOPE,MODIFY_SCOPE}
+    return returned == {SCOPE}
 
 def _access_token(db,config,user_id,*,opener=urlopen):
     row = db.execute('SELECT refresh_token FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
@@ -135,8 +154,8 @@ def _access_token(db,config,user_id,*,opener=urlopen):
                            'refresh_token':refresh,'grant_type':'refresh_token'},opener=opener)
     if (not isinstance(result.get('access_token'),str) or not result['access_token']
         or result.get('token_type','').lower() != 'bearer'
-        or ('scope' in result and set(result['scope'].split()) != {SCOPE})):
-        raise GmailConnectionError('Google did not return read-only access')
+        or ('scope' in result and not _scope_matches(set(result['scope'].split()),_granted(db,user_id)))):
+        raise GmailConnectionError('Google returned different access than was granted; reconnect Gmail')
     return result['access_token']
 
 DEFAULTS = {'INBOX_TEND_SYNC_QUERY':'in:inbox','INBOX_TEND_SYNC_SENT_QUERY':'in:sent','INBOX_TEND_SYNC_MAX_MESSAGES':200,
@@ -158,10 +177,45 @@ def sync_settings(config, user=None):
     return {'query':query,'sent_query':sent_query,'max_messages':max_messages,
             'attachment_max':attachment_max,'sync_sent':user.get('sync_sent',True)}
 
+def _is_unread(r):
+    """Unread = Gmail's UNREAD label as of the last sync, unless the user marked it read/unread here."""
+    override = r['read_override'] if 'read_override' in r.keys() else None
+    return '"UNREAD"' in (r['label_ids'] or '') if override is None else override == 0
+
 def _row(r):
     return {'id':r['message_id'],'thread_id':r['thread_id'],'from':r['from_addr'],'to':r['to_addr'],
             'subject':r['subject'],'date':r['date_header'],'internal_date':r['internal_date'],'snippet':r['snippet'],
-            'direction':'sent' if '"SENT"' in (r['label_ids'] or '') else 'received'}
+            'direction':'sent' if '"SENT"' in (r['label_ids'] or '') else 'received','unread':_is_unread(r)}
+
+def set_read(db,config,user_id,message_id,read,*,write=False,opener=urlopen):
+    """Mark a message read or unread. Always recorded in Inbox Tend; with `write` (the user's choice) and the
+    gmail.modify grant, the UNREAD label is changed in Gmail too. A failed Gmail update keeps the local state
+    and is reported, never raised. Returns None if the message is unknown."""
+    row = db.execute('SELECT label_ids FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,message_id)).fetchone()
+    if row is None: return None
+    want_unread = not read
+    outcome = {'unread':want_unread,'gmail_changed':False,'gmail_error':None}
+    if write:
+        if not write_access(db,user_id):
+            outcome['gmail_error'] = 'Write access to Gmail has not been granted (Settings → Gmail access).'
+        else:
+            try:
+                gmail_set_unread(_access_token(db,config,user_id,opener=opener),message_id,want_unread)
+                try: labels = json.loads(row['label_ids'] or '[]')
+                except ValueError: labels = []
+                labels = [x for x in labels if x != 'UNREAD'] + (['UNREAD'] if want_unread else [])
+                with db:  # Gmail now agrees, so no local override is needed.
+                    db.execute('UPDATE gmail_messages SET label_ids=?,read_override=NULL WHERE user_id=? AND message_id=?',
+                               (json.dumps(labels),user_id,message_id))
+                outcome['gmail_changed'] = True
+                return outcome
+            except (GmailConnectionError,GmailWriteError,ValueError) as exc:
+                outcome['gmail_error'] = str(exc)
+    gmail_unread = '"UNREAD"' in (row['label_ids'] or '')
+    override = None if want_unread == gmail_unread else (0 if want_unread else 1)  # Back in step with Gmail: follow it again.
+    with db:
+        db.execute('UPDATE gmail_messages SET read_override=? WHERE user_id=? AND message_id=?',(override,user_id,message_id))
+    return outcome
 
 def _fetch(token,message_id,attachment_max):
     """Network only (runs in worker threads): the message plus the attachments small enough to keep."""
@@ -223,7 +277,7 @@ def grouped_inbox(db,user_id,folder,view):
     if view == 'messages':
         return {'messages':cached_inbox(db,user_id,folder)}
     column = FOLDERS[folder]
-    rows = db.execute('SELECT message_id,thread_id,from_addr,to_addr,subject,date_header,snippet,internal_date,label_ids,'
+    rows = db.execute('SELECT message_id,thread_id,from_addr,to_addr,subject,date_header,snippet,internal_date,label_ids,read_override,'
                       f'peer_email,peer_name,{column} AS in_folder,'
                       '(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
                       'FROM gmail_messages m WHERE user_id=? ORDER BY internal_date DESC, message_id DESC',(user_id,))  # Metadata-only rows (older syncs) group fine too.
@@ -251,6 +305,7 @@ def grouped_inbox(db,user_id,folder,view):
         group['last'] = messages[0]
         group['count'] = len(messages)
         group['attachment_count'] = sum(m['attachment_count'] for m in messages)
+        group['unread_count'] = sum(1 for m in messages if m['unread'])
         if view == 'people':
             group['title'] = who(group['address'], '(Unknown)')
         else:
@@ -271,7 +326,8 @@ def group_name(address):
 
 def folder_counts(db,user_id):
     row = db.execute('SELECT COALESCE(SUM(in_inbox),0),COALESCE(SUM(in_sent),0) FROM gmail_messages WHERE user_id=?',(user_id,)).fetchone()
-    return {'inbox':row[0],'sent':row[1]}
+    unread = sum(1 for r in db.execute('SELECT label_ids,read_override FROM gmail_messages WHERE user_id=? AND in_inbox=1',(user_id,)) if _is_unread(r))
+    return {'inbox':row[0],'sent':row[1],'unread':unread}
 
 def stored_count(db,user_id):
     return db.execute('SELECT COUNT(*) FROM gmail_messages WHERE user_id=? AND has_full=1',(user_id,)).fetchone()[0]
@@ -296,6 +352,19 @@ def _reconcile(db,user_id,column,ids):
                        (user_id,*ids)).fetchone()[0] or 0
     db.execute(f'UPDATE gmail_messages SET {column}=0 WHERE user_id=? AND {column}=1 AND internal_date>=? '
                f'AND message_id NOT IN ({marks})',(user_id,floor,*ids))
+
+def _refresh_unread(db,user_id,listed_ids,unread_ids):
+    """Stored messages keep the labels they had when downloaded, so a message read in Gmail since would stay
+    "unread" here. For the messages in the sync window, set or clear UNREAD from Gmail's current answer."""
+    if not listed_ids: return
+    marks = ','.join('?' * len(listed_ids))
+    for row in db.execute(f'SELECT message_id,label_ids FROM gmail_messages WHERE user_id=? AND message_id IN ({marks})',(user_id,*listed_ids)).fetchall():
+        try: labels = json.loads(row['label_ids'] or '[]')
+        except ValueError: labels = []
+        want = row['message_id'] in unread_ids
+        if want == ('UNREAD' in labels): continue
+        labels = [x for x in labels if x != 'UNREAD'] + (['UNREAD'] if want else [])
+        db.execute('UPDATE gmail_messages SET label_ids=? WHERE user_id=? AND message_id=?',(json.dumps(labels),user_id,row['message_id']))
 
 def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
     """Download every inbox and sent message not stored in full yet (bodies and attachments), then reconcile
@@ -322,7 +391,9 @@ def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
                 report(done=done,failed=failed)
     if todo and not done:
         raise GmailReadError(first_error or 'No messages could be downloaded')
+    unread_ids = set(_listing(token,f"({settings['query']}) is:unread",settings['max_messages']))
     with db:
+        _refresh_unread(db,user_id,inbox_ids,unread_ids)
         _reconcile(db,user_id,'in_inbox',inbox_ids)
         if sent_ids is not None:  # Sent mail sync switched off: keep what is stored, change nothing.
             _reconcile(db,user_id,'in_sent',sent_ids)

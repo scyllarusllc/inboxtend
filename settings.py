@@ -19,6 +19,8 @@ DEFAULTS = {
     'default_priority': 'medium',   # Priority pre-selected when suggesting a task.
     'inbox_view': 'threads',        # How the Inbox lists mail: threads (conversations), messages or people.
     'sync_sent': True,              # Also mirror sent mail.
+    'mark_read_on_open': True,      # Opening a message marks it read.
+    'gmail_write_read': False,      # Also apply read/unread to Gmail (needs the gmail.modify grant; set when it is granted).
     'sync_max_messages': 200,       # Per folder.
     'attachment_max_mb': 10,        # Larger attachments are recorded as metadata only.
     # Optional AI assistant (Codex CLI). Off by default: nothing leaves this server until the user turns it on
@@ -35,7 +37,7 @@ DEFAULTS = {
     'translate_language': '',
 }
 _INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'ai_timeout': (10, 1800)}
-_BOOLS = ('sync_sent', 'ai_enabled', 'ai_attachments', 'translate_enabled')
+_BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled')
 
 
 def valid_timezone(name) -> str:

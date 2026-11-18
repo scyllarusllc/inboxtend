@@ -56,6 +56,8 @@
         <h2 id="sync-heading">Mail sync</h2>
         <div class="task-form">
           <label class="check"><input name="sync_sent" type="checkbox"> Also sync sent mail</label>
+          <label class="check"><input name="mark_read_on_open" type="checkbox"> Mark a message as read when I open it
+            <span class="meta">By default read state is kept in Inbox Tend only. It reaches Gmail only if you allow that under <em>Gmail access</em> below.</span></label>
           <label>Messages per folder
             <input name="sync_max_messages" type="number" min="1" max="5000" step="1" required>
             <span class="meta">Most recent messages to mirror from the inbox and from sent mail (1–5000).</span>
@@ -66,6 +68,17 @@
           </label>
         </div>
         <p class="meta">Changes apply to the next sync. Already stored mail is kept. The Gmail searches themselves (<code>INBOX_TEND_SYNC_QUERY</code>, <code>INBOX_TEND_SYNC_SENT_QUERY</code>) are set in <code>.env</code>.</p>
+      </section>
+
+      <section class="panel settings-section" aria-labelledby="access-heading">
+        <h2 id="access-heading">Gmail access</h2>
+        <p id="access-status" role="status">Checking…</p>
+        <p>By default Inbox Tend can only <strong>read</strong> your mail. You may additionally let it mark messages <strong>read or unread in Gmail</strong>. That needs Google&rsquo;s broader <code>gmail.modify</code> permission, which Google describes as &ldquo;read, compose and send emails &hellip; except permanent deletion&rdquo;. Inbox Tend&rsquo;s code only ever changes the unread flag of one message at a time (it cannot send, delete or trash mail), but the permission itself allows more, so grant it only on a server you trust. You can withdraw it here or at <code>myaccount.google.com/permissions</code>.</p>
+        <div class="settings-actions"><button id="grant-modify" type="button">Allow changing read/unread in Gmail…</button><button id="grant-readonly" type="button" hidden>Return to read-only access…</button></div>
+        <div class="task-form">
+          <label class="check"><input name="gmail_write_read" type="checkbox" disabled> Apply read/unread changes to Gmail too
+            <span class="meta">Pause this to keep read state local without withdrawing the permission. A failed Gmail update never loses the local change.</span></label>
+        </div>
       </section>
 
       <section class="panel settings-section" aria-labelledby="ai-heading">

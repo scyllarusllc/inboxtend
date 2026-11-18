@@ -222,10 +222,11 @@ class Handler(BaseHTTPRequestHandler):
                 raise RequestError(400,'Invalid OAuth callback')
             try:
                 with self._db() as db:
-                    gmail_web.finish(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),query['state'][0],query['code'][0])
+                    level = gmail_web.finish(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),query['state'][0],query['code'][0])
+                    prefs.save(db,session['id'],{'gmail_write_read':level == 'modify'})  # Granting write access turns it on; read-only turns it off.
             except gmail_web.GmailConnectionError:
                 return self._redirect('/user/inbox?gmail=failed')
-            return self._redirect('/user/inbox?gmail=connected')
+            return self._redirect('/user/settings?gmail=write' if level == 'modify' else '/user/inbox?gmail=connected')
         if not write and path == '/user/dashboard':
             return self._redirect('/user/inbox')  # Legacy URL
         if not write and path in ('/user/inbox','/user/tasks','/user/settings'):
@@ -236,7 +237,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/connectors/gmail/connect' and self.command == 'POST':
                 try:
                     with self._db() as db:
-                        url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')))
+                        access = data.get('access','readonly')
+                        if access not in gmail_web.LEVELS: raise RequestError(400,'Unknown access level')
+                        url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),access)
                 except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
                 return self._json(200,{'authorization_url':url})
             if path == '/api/connectors/gmail/sync' and self.command == 'POST':
@@ -257,6 +260,14 @@ class Handler(BaseHTTPRequestHandler):
                 if result == 'throttled': raise RequestError(429,'Too many attempts; try again in a few minutes')
                 if result == 'invalid': raise RequestError(403,'Current password is incorrect')
                 return self._json(200,{'changed':True})
+            parts_w = path.strip('/').split('/')
+            if len(parts_w) == 6 and parts_w[:4] == ['api','connectors','gmail','messages'] and parts_w[5] == 'read' and self.command == 'POST':
+                if not isinstance(data.get('read'),bool): raise RequestError(400,'"read" must be true or false')
+                with self._db() as db:
+                    user = prefs.effective(db,session['id'],self.gmail_config)
+                    outcome = gmail_web.set_read(db,self.gmail_config,session['id'],parts_w[4],data['read'],write=user['gmail_write_read'])
+                if outcome is None: raise RequestError(404,'Message not found')
+                return self._json(200,dict(outcome,id=parts_w[4]))
             if path == '/api/translate' and self.command == 'POST':
                 with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
                 if not user['translate_enabled']: raise RequestError(403,'Translation is turned off in Settings')
@@ -339,8 +350,9 @@ class Handler(BaseHTTPRequestHandler):
                 stamp = gmail_web.last_sync(db,session['id']) if connected else None
                 stored = gmail_web.stored_count(db,session['id']) if connected else 0
                 counts = gmail_web.folder_counts(db,session['id']) if connected else {'inbox':0,'sent':0}
+                writable = gmail_web.write_access(db,session['id']) if connected else False
             return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,
-                                   'last_sync':stamp,'stored':stored,'counts':counts,'sync':gmail_web.sync_progress(session['id'])})
+                                   'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'sync':gmail_web.sync_progress(session['id'])})
         if path == '/api/connectors/gmail/messages':  # Local copy only; POST /sync talks to Gmail.
             query = parse_qs(urlparse(self.path).query)
             folder = query.get('folder',['inbox'])[0]
