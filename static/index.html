@@ -82,6 +82,19 @@ button.action{min-height:42px}
 .conversation-message[data-direction=received]{margin-right:clamp(12px,8%,44px)}
 .conversation-message p{margin:7px 0 0;overflow-wrap:anywhere}
 @media(max-width:520px){.conversation-message[data-direction=sent]{margin-left:10px}.conversation-message[data-direction=received]{margin-right:10px}}
+
+/* Safe, local-only attachment previews */
+.attachment-section{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.attachment-heading{display:flex;align-items:center;gap:6px;font-size:.9rem;margin:0 0 8px}
+.attachment-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.attachment-meta{display:grid;gap:2px;min-width:0;overflow-wrap:anywhere;font-size:.9rem}
+.attachment-row button{border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;min-height:38px;padding:7px 10px;cursor:pointer}
+.attachment-row button:disabled{opacity:.6;cursor:not-allowed}
+.attachment-preview{grid-column:1/-1;font-size:.85rem;line-height:1.5;margin:0;padding:12px;border:1px solid var(--line);border-radius:8px;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.attachment-preview[hidden]{display:none}
+.message .ultra-icon{width:14px;height:14px}
+@media(max-width:520px){.attachment-row{grid-template-columns:1fr}.attachment-row button{justify-self:start}}
+
 </style></head><body>
 <header><div><h1>Inbox Tend</h1><div class="meta">Your inbox, thoughtfully handled.</div></div><span class="tag">LOCAL DEMO</span></header>
 <div class="notice"><strong>Demonstration only.</strong> Fictional messages. No Gmail, AI model, remote agent or email sending. Summaries are excerpts; drafts are templates.</div>
