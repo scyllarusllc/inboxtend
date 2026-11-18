@@ -74,6 +74,14 @@ button.action{min-height:42px}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.message{transition:none}}
 
+
+.conversation-thread{display:grid;gap:10px;margin:14px 0}
+.conversation-thread h4{margin:0}
+.conversation-message{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface)}
+.conversation-message[data-direction=sent]{margin-left:clamp(12px,8%,44px);border-left:3px solid var(--accent)}
+.conversation-message[data-direction=received]{margin-right:clamp(12px,8%,44px)}
+.conversation-message p{margin:7px 0 0;overflow-wrap:anywhere}
+@media(max-width:520px){.conversation-message[data-direction=sent]{margin-left:10px}.conversation-message[data-direction=received]{margin-right:10px}}
 </style></head><body>
 <header><div><h1>Inbox Tend</h1><div class="meta">Your inbox, thoughtfully handled.</div></div><span class="tag">LOCAL DEMO</span></header>
 <div class="notice"><strong>Demonstration only.</strong> Fictional messages. No Gmail, AI model, remote agent or email sending. Summaries are excerpts; drafts are templates.</div>
