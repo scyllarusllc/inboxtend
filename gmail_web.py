@@ -6,6 +6,7 @@ import json
 import secrets
 import threading
 import time
+import concurrent.futures as cf
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
 from email.utils import parseaddr
@@ -17,7 +18,7 @@ try:
 except ImportError:  # Everything except Gmail works without the optional dependency.
     AESGCM = None
 from connectors.gmail_modify import MODIFY_SCOPE, GmailWriteError, set_unread as gmail_set_unread
-from connectors.gmail_readonly import SCOPES, GmailReadError, list_message_ids, get_message_full, get_attachment
+from connectors.gmail_readonly import SCOPES, GmailReadError, GmailRateLimitError, cooldown_remaining, get_totals, list_message_ids, get_message_full, get_attachment
 from tasks import connection, peer_for
 import settings as prefs
 
@@ -354,6 +355,24 @@ def _reconcile(db,user_id,column,ids):
     db.execute(f'UPDATE gmail_messages SET {column}=0 WHERE user_id=? AND {column}=1 AND internal_date>=? '
                f'AND message_id NOT IN ({marks})',(user_id,floor,*ids))
 
+def remote_counts(db,config,user_id,*,max_age=600,force=False,opener=urlopen):
+    """How many messages Gmail holds (mailbox, inbox, sent), cached for `max_age` seconds so that polling the
+    status never calls Google more than a few times an hour. Never raises: on failure the older value (or None)
+    is returned."""
+    row = db.execute('SELECT remote_counts FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
+    try: cached = json.loads(row['remote_counts']) if row and row['remote_counts'] else None
+    except ValueError: cached = None
+    if cached and not force and time.time() - cached.get('checked_at',0) < max_age: return cached
+    try:
+        totals = get_totals(_access_token(db,config,user_id,opener=opener),opener=opener)
+    except (GmailConnectionError,GmailReadError,ValueError):
+        return cached
+    if all(v is None for v in totals.values()): return cached   # An unexpected answer: keep what we had.
+    totals['checked_at'] = int(time.time())
+    with db:
+        db.execute('UPDATE gmail_connections SET remote_counts=? WHERE user_id=?',(json.dumps(totals),user_id))
+    return totals
+
 def _refresh_unread(db,user_id,listed_ids,unread_ids):
     """Stored messages keep the labels they had when downloaded, so a message read in Gmail since would stay
     "unread" here. For the messages in the sync window, set or clear UNREAD from Gmail's current answer."""
@@ -372,6 +391,7 @@ def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
     the folder flags. Each message is committed as it arrives, so an interrupted sync resumes where it stopped."""
     settings = sync_settings(config,prefs.stored(db,user_id))
     token = _access_token(db,config,user_id,opener=opener)
+    remote_counts(db,config,user_id,force=True,opener=opener)  # So the page can show "x of y" while syncing.
     inbox_ids = _listing(token,settings['query'],settings['max_messages'])
     sent_ids = _listing(token,settings['sent_query'],settings['max_messages']) if settings['sync_sent'] else None
     have_full = {r[0] for r in db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND has_full=1',(user_id,))}
@@ -380,15 +400,22 @@ def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
     first_error = None
     report(total=len(todo),done=0,failed=0)
     if todo:
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        limited_in_a_row = 0
+        with ThreadPoolExecutor(max_workers=3) as pool:
             futures = {pool.submit(_fetch,token,i,settings['attachment_max']):i for i in todo}
             for future in as_completed(futures):
                 try:
                     item = future.result()
                     with db: _store(db,user_id,item)
-                    done += 1
+                    done += 1; limited_in_a_row = 0
+                except cf.CancelledError:
+                    continue
                 except (GmailReadError,ValueError) as exc:
                     failed += 1; first_error = first_error or str(exc)
+                    limited_in_a_row = limited_in_a_row + 1 if isinstance(exc,GmailRateLimitError) else 0
+                    if limited_in_a_row >= 4:  # Gmail keeps refusing even after backing off: stop hammering it.
+                        pool.shutdown(wait=False,cancel_futures=True)
+                        break
                 report(done=done,failed=failed)
     if todo and not done:
         raise GmailReadError(first_error or 'No messages could be downloaded')
@@ -399,15 +426,17 @@ def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
         if sent_ids is not None:  # Sent mail sync switched off: keep what is stored, change nothing.
             _reconcile(db,user_id,'in_sent',sent_ids)
         db.execute('UPDATE gmail_connections SET last_sync=? WHERE user_id=?',(int(time.time()),user_id))
-    if failed:
-        report(error=f'{failed} message(s) could not be downloaded; press Refresh to retry.')
+    skipped = len(todo) - done
+    if skipped:
+        note = first_error or 'Reason unknown.'
+        report(error=f"{skipped} message(s) could not be downloaded. {note}" + ('' if 'press Refresh' in note.lower() else ' Press Refresh to retry; what is saved is kept.'))
 
 # Progress of the background sync, per app user (in memory; a restart simply ends a running sync).
 _PROGRESS, _LOCK = {}, threading.Lock()
 
 def sync_progress(user_id):
     with _LOCK:
-        return dict(_PROGRESS.get(user_id) or {'running':False,'total':0,'done':0,'failed':0,'error':None})
+        return dict(_PROGRESS.get(user_id) or {'running':False,'total':0,'done':0,'failed':0,'error':None},rate_limited_s=int(cooldown_remaining()))
 
 def _update(user_id,**fields):
     with _LOCK:

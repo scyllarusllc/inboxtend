@@ -74,6 +74,8 @@ def connection(path=DEFAULT_DB):
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_connections (user_id INTEGER PRIMARY KEY, refresh_token BLOB NOT NULL, connected_at INTEGER NOT NULL)''')
         if 'last_sync' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
             db.execute('ALTER TABLE gmail_connections ADD COLUMN last_sync INTEGER')
+        if 'remote_counts' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
+            db.execute("ALTER TABLE gmail_connections ADD COLUMN remote_counts TEXT NOT NULL DEFAULT ''")  # JSON: totals in Gmail, cached
         if 'scopes' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
             db.execute("ALTER TABLE gmail_connections ADD COLUMN scopes TEXT NOT NULL DEFAULT ''")  # '' = read-only (older connections)
         if 'level' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_oauth_pending)')}:

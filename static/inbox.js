@@ -134,6 +134,16 @@ function renderAttachments(message) {
   block.append(el('p', 'Attachments are untrusted. They are only downloaded, never opened or run by this app.', 'meta'));
   return block;
 }
+// "Synced x of y" next to what Gmail itself reports, so it is clear how much of the mailbox is here.
+function showTotals(state) {
+  const line = document.getElementById('gmail-counts'), remote = state.remote, n = value => Number(value).toLocaleString();
+  if (!remote) { line.textContent = ''; return; }
+  const part = (name, here, there) => there == null ? name + ' ' + n(here) : name + ' ' + n(here) + ' of ' + n(there) + (there ? ' (' + Math.min(100, Math.round(here * 100 / there)) + '%)' : '');
+  const behind = (remote.inbox != null && state.counts.inbox < remote.inbox) || (remote.sent != null && state.counts.sent < remote.sent);
+  line.textContent = (remote.all != null ? 'Your Gmail holds ' + n(remote.all) + ' messages in total. ' : '') +
+    'Synced here: ' + part('Inbox', state.counts.inbox, remote.inbox) + ' · ' + part('Sent', state.counts.sent, remote.sent) + '.' +
+    (behind ? ' Each folder keeps its ' + n(state.sync_limit) + ' most recent messages; raise “Messages per folder” in Settings to sync more.' : ' Everything in these folders is synced.');
+}
 function showCounts(counts) {
   folderInbox.textContent = 'Inbox (' + counts.inbox + (counts.unread ? ' · ' + counts.unread + ' unread' : '') + ')';
   folderSent.textContent = 'Sent (' + counts.sent + ')';
@@ -418,9 +428,10 @@ async function refreshGmail(startSync = false) {
     if (run !== refreshRun) return;
     renderList(data);
     showCounts(state.counts);
+    showTotals(state);
     gmailWriteAccess = state.write_access;
     gmailStatus.textContent = 'Gmail connected. ' + state.stored + ' message(s) saved locally (inbox and sent).' + syncLabel(state) +
-      (sync.running ? ' Syncing… ' + sync.done + ' of ' + sync.total + ' new message(s).' : '') +
+      (sync.running ? ' Syncing… ' + sync.done + ' of ' + sync.total + ' new message(s).' + (sync.rate_limited_s > 0 ? ' Gmail is limiting requests, so the download is paused for about ' + sync.rate_limited_s + ' s and then continues.' : '') : '') +
       (!sync.running && sync.error ? ' ' + sync.error : '');
     if (!sync.running) return;
     await new Promise(resolve => setTimeout(resolve, 2000));

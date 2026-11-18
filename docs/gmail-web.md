@@ -52,3 +52,31 @@ scope includes the read operations). Granting it turns on **Apply read/unread ch
 - **Google Cloud setup:** add `https://www.googleapis.com/auth/gmail.modify` to the scopes of your OAuth consent
   screen (*Google Auth Platform → Data access*). It is a restricted scope: an app in *Testing* mode works for the test
   users you list (with Google's unverified-app warning), while publishing it for everyone requires Google's verification.
+
+## Rate limits
+
+Downloading hundreds of full messages in a row makes Google answer `403` with the reason `rateLimitExceeded` (it also
+uses `429`, and `5xx` for transient faults). These are not permission errors. `connectors/gmail_readonly.py` therefore:
+
+- **retries** such responses after 3, 6, 12, 24 and 48 seconds (plus a little jitter), or after the `Retry-After`
+  header when Google sends one;
+- shares one **cooldown** between all download threads, so when one request is limited every request waits instead
+  of hammering Gmail; the Inbox page says so while it is paused ("Gmail is limiting requests…");
+- gives up on a request only after those retries, raising `GmailRateLimitError`. After four such failures in a row the
+  sync stops by itself and says so; everything already saved is kept, and **Refresh inbox** continues where it stopped;
+- never retries real permission problems (`accessNotConfigured`, `insufficientPermissions`, …), and reports Google's
+  machine-readable reason code (a fixed vocabulary, never response text). The old hint "check that the Gmail API is
+  enabled" is shown only for `accessNotConfigured`.
+
+Downloads run with three parallel workers. A first sync of a few hundred messages can take several minutes when Google
+limits the rate; it runs in the background and the progress is shown on the Inbox page.
+
+## How much of the mailbox is synced
+
+The Inbox page shows what Gmail itself holds next to what is saved here, e.g. *“Your Gmail holds 5,916 messages in
+total. Synced here: Inbox 200 of 4,631 (4%) · Sent 200 of 1,225 (16%).”* The totals come from three read-only calls
+(`users.getProfile`, `users.labels.get` for `INBOX` and `SENT`; counts only, the address in the profile is dropped).
+They are cached in `gmail_connections.remote_counts` for ten minutes, refreshed at the start of every sync, and
+returned as `remote` by `GET /api/connectors/gmail/status` together with `sync_limit`. Each folder keeps only its most
+recent `sync_limit` messages (Settings → Messages per folder, up to 5000), so a large mailbox shows as partly synced
+until that number is raised.

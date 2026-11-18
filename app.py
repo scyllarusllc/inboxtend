@@ -354,8 +354,10 @@ class Handler(BaseHTTPRequestHandler):
                 stored = gmail_web.stored_count(db,session['id']) if connected else 0
                 counts = gmail_web.folder_counts(db,session['id']) if connected else {'inbox':0,'sent':0}
                 writable = gmail_web.write_access(db,session['id']) if connected else False
+                remote = gmail_web.remote_counts(db,self.gmail_config,session['id']) if connected else None
+                limit = prefs.effective(db,session['id'],self.gmail_config)['sync_max_messages'] if connected else None
             return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,
-                                   'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'sync':gmail_web.sync_progress(session['id'])})
+                                   'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'remote':remote,'sync_limit':limit,'sync':gmail_web.sync_progress(session['id'])})
         if path == '/api/connectors/gmail/messages':  # Local copy only; POST /sync talks to Gmail.
             query = parse_qs(urlparse(self.path).query)
             folder = query.get('folder',['inbox'])[0]

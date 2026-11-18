@@ -9,7 +9,10 @@ import base64
 import codecs
 import html
 import json
+import random
 import re
+import threading
+import time
 from html.parser import HTMLParser
 from urllib.parse import urlencode, quote
 from urllib.request import Request, urlopen
@@ -23,6 +26,43 @@ class GmailReadError(RuntimeError):
     """Safe error without response bodies or credentials."""
 
 
+class GmailRateLimitError(GmailReadError):
+    """Gmail kept refusing with a rate limit even after waiting and retrying."""
+
+
+# Gmail answers "too many requests" with HTTP 429, but also with HTTP 403 and reason rateLimitExceeded.
+_RATE_REASONS = {"rateLimitExceeded", "userRateLimitExceeded"}
+_RETRY_DELAYS = (3, 6, 12, 24, 48)  # Seconds before each retry; the last wait is followed by one final attempt.
+_cooldown = {"until": 0.0}          # Shared by all worker threads: when one is limited, every request waits.
+_cooldown_lock = threading.Lock()
+_sleep = time.sleep                 # Replaceable in tests.
+
+
+def cooldown_remaining() -> float:
+    """Seconds until requests resume after a rate limit (0 when not limited)."""
+    return max(0.0, _cooldown["until"] - time.monotonic())
+
+
+def _error_reasons(exc: HTTPError) -> set:
+    """Google's machine-readable reason codes (e.g. rateLimitExceeded), never free text from the response."""
+    try:
+        err = json.loads(exc.read(20_000)).get("error", {})
+        found = {x.get("reason") for x in err.get("errors", []) if isinstance(x, dict)}
+        found |= {d.get("reason") for d in err.get("details", []) if isinstance(d, dict)}
+    except Exception:
+        return set()
+    return {r for r in found if isinstance(r, str) and re.fullmatch(r"[A-Za-z_]{3,40}", r)}
+
+
+def _describe(code: int, reasons: set) -> str:
+    if reasons & _RATE_REASONS or code == 429:
+        return (f"Gmail is rate-limiting requests (HTTP {code}); it still refused after waiting. "
+                "Wait a few minutes, then press Refresh: what is already saved is kept.")
+    if code == 403 and ({"accessNotConfigured"} & reasons):
+        return f"Gmail API rejected the read request (HTTP 403). Check that the Gmail API is enabled for the Google Cloud project."
+    return f"Gmail API rejected the read request (HTTP {code})." + (f" Reason: {', '.join(sorted(reasons))}." if reasons else "")
+
+
 def _get_json(token: str, path: str, params: dict | None = None, *,
               opener=urlopen, max_bytes: int = 2_000_000) -> dict:
     if not isinstance(token, str) or not token.strip():
@@ -33,23 +73,37 @@ def _get_json(token: str, path: str, params: dict | None = None, *,
     req = Request(url, method="GET",
                   headers={"Authorization": "Bearer " + token,
                            "Accept": "application/json"})
-    try:
-        with opener(req, timeout=15) as response:
-            data = response.read(max_bytes + 1)
-        if len(data) > max_bytes:
-            raise GmailReadError("Gmail response exceeds size limit")
-        obj = json.loads(data)
-        if not isinstance(obj, dict):
-            raise ValueError("Unexpected Gmail response type")
-        return obj
-    except HTTPError as exc:
-        # Do not print the response body; it may include account information.
-        hint = " Check that the Gmail API is enabled for the Google Cloud project." if exc.code == 403 else ""
-        raise GmailReadError(f"Gmail API rejected the read request (HTTP {exc.code}).{hint}") from None
-    except (URLError, TimeoutError, OSError):
-        raise GmailReadError("Gmail API connection failed") from None
-    except (ValueError, UnicodeError):
-        raise GmailReadError("Invalid Gmail API JSON response") from None
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        wait = cooldown_remaining()
+        if wait:
+            _sleep(wait)
+        try:
+            with opener(req, timeout=15) as response:
+                data = response.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise GmailReadError("Gmail response exceeds size limit")
+            obj = json.loads(data)
+            if not isinstance(obj, dict):
+                raise ValueError("Unexpected Gmail response type")
+            return obj
+        except HTTPError as exc:
+            # Do not print the response body; it may include account information.
+            reasons = _error_reasons(exc)
+            limited = exc.code == 429 or (exc.code == 403 and bool(reasons & _RATE_REASONS))
+            if (limited or exc.code in (500, 502, 503, 504)) and attempt < len(_RETRY_DELAYS):
+                try:
+                    delay = min(120.0, float(exc.headers.get("Retry-After")))
+                except (TypeError, ValueError, AttributeError):
+                    delay = _RETRY_DELAYS[attempt] + random.random()
+                with _cooldown_lock:
+                    _cooldown["until"] = max(_cooldown["until"], time.monotonic() + delay)
+                continue
+            error = GmailRateLimitError if limited else GmailReadError
+            raise error(_describe(exc.code, reasons)) from None
+        except (URLError, TimeoutError, OSError):
+            raise GmailReadError("Gmail API connection failed") from None
+        except (ValueError, UnicodeError):
+            raise GmailReadError("Invalid Gmail API JSON response") from None
 
 
 def list_message_ids(token: str, *, max_results: int = 20, query: str = "",
@@ -230,3 +284,19 @@ def get_attachment(token: str, message_id: str, attachment_id: str, *,
     if len(data) > max_bytes:
         raise GmailReadError("Attachment exceeds size limit")
     return data
+
+
+# ---- Mailbox totals (counts only; the profile also holds the address, which is deliberately not returned) ----
+
+def _count(value) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def get_totals(token: str, *, opener=urlopen) -> dict:
+    """How many messages Gmail holds: whole mailbox, inbox and sent, plus unread in the inbox."""
+    profile = _get_json(token, "/profile", opener=opener)
+    inbox = _get_json(token, "/labels/INBOX", opener=opener)
+    sent = _get_json(token, "/labels/SENT", opener=opener)
+    return {"all": _count(profile.get("messagesTotal")), "threads": _count(profile.get("threadsTotal")),
+            "inbox": _count(inbox.get("messagesTotal")), "inbox_unread": _count(inbox.get("messagesUnread")),
+            "sent": _count(sent.get("messagesTotal"))}
