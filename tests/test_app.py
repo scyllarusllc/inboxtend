@@ -8,25 +8,33 @@ from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from app import Handler, MESSAGES, draft_reply, summarize
+from auth import AuthManager, hash_password
 from tasks import connection, decorate, create_task, get_task, update_task, events, ConflictError
 
 class DemoTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
+        path_for_test = Path(cls.tmp.name) / 'tasks.sqlite3'
         class TestHandler(Handler):
-            db_path = Path(cls.tmp.name) / 'tasks.sqlite3'
+            db_path = path_for_test
+            auth_manager = AuthManager(path_for_test,username='admin@example.test',
+                                       password_hash=hash_password('fictional-test-password-123'))
         cls.server = ThreadingHTTPServer(('127.0.0.1',0),TestHandler)
         cls.thread = threading.Thread(target=cls.server.serve_forever,daemon=True)
         cls.thread.start()
         cls.url = f'http://127.0.0.1:{cls.server.server_port}'
+        login=Request(cls.url+'/api/auth/login',data=json.dumps({'username':'admin@example.test','password':'fictional-test-password-123'}).encode(),
+                      headers={'Content-Type':'application/json'},method='POST')
+        with urlopen(login) as response:
+            cls.cookie=response.headers['Set-Cookie'].split(';',1)[0]
         cls.csrf = cls.request('/api/session')['csrf_token']
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown();cls.server.server_close();cls.thread.join();cls.tmp.cleanup()
     @classmethod
     def request(cls,path,method='GET',body=None,headers=None):
-        h = headers or {}
+        h = {'Cookie':cls.cookie,**(headers or {})}
         if body is not None:
             h = {'Content-Type':'application/json','X-CSRF-Token':cls.csrf,**h}
             body = json.dumps(body).encode()
@@ -46,11 +54,54 @@ class DemoTests(unittest.TestCase):
             page=response.read()
             self.assertIn(b'Inbox Tend',page)
             self.assertIn(b'href="/static/styles.css"',page)
+            self.assertNotIn(b'id="task-summary"',page)
+        with urlopen(Request(self.url+'/user/dashboard',headers={'Cookie':self.cookie})) as response:
+            page=response.read()
             self.assertIn(b'id="task-summary"',page)
             self.assertNotIn("'unsafe-inline'",response.headers['Content-Security-Policy'])
         with urlopen(self.url+'/static/styles.css') as response:
             self.assertEqual(response.headers.get_content_type(),'text/css')
             self.assertIn(b'.workspace-grid',response.read())
+    def test_private_routes_require_login(self):
+        for path in ('/api/messages','/api/tasks','/api/session'):
+            with self.assertRaises(HTTPError) as error:
+                urlopen(self.url+path)
+            self.assertEqual(error.exception.code,401)
+            error.exception.close()
+        with urlopen(self.url+'/user/dashboard') as response:
+            self.assertIn(b'Sign in to Inbox Tend',response.read())
+        with urlopen(self.url+'/login') as response:
+            self.assertIn(b'id="login-form"',response.read())
+    def test_login_logout_and_csrf(self):
+        cross_site=Request(self.url+'/api/auth/login',data=b'{"username":"admin@example.test","password":"fictional-test-password-123"}',
+                           headers={'Content-Type':'application/json','Origin':'https://evil.example'},method='POST')
+        with self.assertRaises(HTTPError) as error:urlopen(cross_site)
+        self.assertEqual(error.exception.code,403)
+        error.exception.close()
+        wrong=Request(self.url+'/api/auth/login',data=b'{"username":"admin@example.test","password":"wrong"}',
+                      headers={'Content-Type':'application/json'},method='POST')
+        with self.assertRaises(HTTPError) as error:urlopen(wrong)
+        self.assertEqual(error.exception.code,401)
+        error.exception.close()
+        login=Request(self.url+'/api/auth/login',data=b'{"username":"admin@example.test","password":"fictional-test-password-123"}',
+                      headers={'Content-Type':'application/json','X-Forwarded-Proto':'https'},method='POST')
+        with urlopen(login) as response:
+            cookie=response.headers['Set-Cookie']
+            self.assertIn('HttpOnly',cookie)
+            self.assertIn('SameSite=Lax',cookie)
+            self.assertIn('Secure',cookie)
+            token_cookie=cookie.split(';',1)[0]
+        with urlopen(Request(self.url+'/api/session',headers={'Cookie':token_cookie})) as response:
+            csrf=json.load(response)['csrf_token']
+        logout=Request(self.url+'/api/auth/logout',data=b'{}',method='POST',
+                       headers={'Cookie':token_cookie,'Content-Type':'application/json','X-CSRF-Token':csrf})
+        with urlopen(logout) as response:
+            self.assertEqual(json.load(response),{'signed_out':True})
+            self.assertIn('Max-Age=0',response.headers['Set-Cookie'])
+        with self.assertRaises(HTTPError) as error:
+            urlopen(Request(self.url+'/api/session',headers={'Cookie':token_cookie}))
+        self.assertEqual(error.exception.code,401)
+        error.exception.close()
     def test_create_dedup_persist_update_reopen_draft(self):
         fields={'message_id':'sample-website-followup','title':'Check start date and reply','description':'Verify agreement first',
                 'priority':'high','owner':'Demo owner','due_date':'2026-11-20','due_time':'17:00',
@@ -114,5 +165,9 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(task['source_provider'],'demo')
             self.assertEqual(task['due_timezone'],'Pacific/Saipan')
             self.assertEqual(task['deadline_state'] in ('upcoming','due_soon','overdue'),True)
+        AuthManager(path,username='admin@example.test',password_hash=hash_password('fictional-test-password-123'))
+        with connection(path) as db:
+            self.assertEqual(get_task(db,1)['title'],'Old task')
+            self.assertEqual(db.execute('SELECT username FROM users').fetchone()[0],'admin@example.test')
 
 if __name__=='__main__':unittest.main()

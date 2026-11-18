@@ -10,29 +10,37 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from app import Handler
+from auth import AuthManager, hash_password
 
 
 class LocalWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory()
-        cls.original_path = Handler.db_path
-        Handler.db_path = Path(cls.temp.name) / "tasks.sqlite3"
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        path = Path(cls.temp.name) / "tasks.sqlite3"
+        class TestHandler(Handler):
+            db_path = path
+            auth_manager = AuthManager(path, username='admin@example.test',
+                                       password_hash=hash_password('fictional-test-password-123'))
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.base = "http://127.0.0.1:" + str(cls.server.server_address[1])
+        login = Request(cls.base + '/api/auth/login',
+                        data=json.dumps({'username':'admin@example.test','password':'fictional-test-password-123'}).encode(),
+                        headers={'Content-Type':'application/json'}, method='POST')
+        with urlopen(login) as response:
+            cls.cookie = response.headers['Set-Cookie'].split(';',1)[0]
 
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join(timeout=5)
-        Handler.db_path = cls.original_path
         cls.temp.cleanup()
 
     def call(self, path, method="GET", payload=None, csrf=None):
-        headers = {}
+        headers = {'Cookie':self.cookie}
         data = None
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")

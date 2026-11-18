@@ -83,8 +83,11 @@ class AuthManager:
         self.lock = threading.Lock()
         with closing(connection(db_path)) as db:
             if db.execute('SELECT 1 FROM users LIMIT 1').fetchone() is None:
-                if not username or not password_hash or not self._valid_hash(password_hash):
+                if not username and not password_hash:
                     return
+                if (not isinstance(username,str) or not 1 <= len(username) <= 254
+                        or username != username.strip() or not self._valid_hash(password_hash)):
+                    raise ValueError('Invalid admin bootstrap configuration')
                 now = datetime.now(timezone.utc).isoformat()
                 with db:
                     db.execute('INSERT INTO users(username,password_hash,role,created_at,updated_at) VALUES (?,?,?,?,?)',

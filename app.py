@@ -91,7 +91,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         for key,value in (('Content-Type',mime),('Content-Length',str(len(payload))),('Cache-Control','no-store'),
                           ('X-Content-Type-Options','nosniff'),('Referrer-Policy','no-referrer'),
-                          ('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'")):
+                          ('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")):
             self.send_header(key,value)
         for key,value in extra_headers:
             self.send_header(key,value)
