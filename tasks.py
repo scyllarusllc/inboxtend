@@ -86,6 +86,11 @@ def connection(path=DEFAULT_DB):
         db.execute('''CREATE TABLE IF NOT EXISTS user_settings (
             user_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL,
             PRIMARY KEY (user_id, key))''')
+        db.execute('''CREATE TABLE IF NOT EXISTS message_translations (
+            user_id INTEGER NOT NULL, message_id TEXT NOT NULL, language_key TEXT NOT NULL, language TEXT NOT NULL,
+            subject TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', source_language TEXT NOT NULL DEFAULT '',
+            same_language INTEGER NOT NULL DEFAULT 0, provider TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL, PRIMARY KEY (user_id, message_id, language_key))''')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_attachments_message ON gmail_attachments(user_id,message_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_inbox ON gmail_messages(user_id,in_inbox,internal_date DESC)')
     db.execute('PRAGMA foreign_keys=ON')

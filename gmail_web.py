@@ -117,7 +117,8 @@ def disconnect(db,user_id):
     with db:
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))
-        db.execute('DELETE FROM gmail_attachments WHERE user_id=?',(user_id,))  # Disconnecting also removes the local copy
+        db.execute('DELETE FROM message_translations WHERE user_id=?',(user_id,))  # Disconnecting also removes the local copy
+        db.execute('DELETE FROM gmail_attachments WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_messages WHERE user_id=?',(user_id,))
 
 def _access_token(db,config,user_id,*,opener=urlopen):
@@ -333,3 +334,19 @@ def _detail(db,user_id,row):
 def attachment(db,user_id,message_id,attachment_id):
     return db.execute('SELECT * FROM gmail_attachments WHERE user_id=? AND message_id=? AND id=?',
                       (user_id,message_id,attachment_id)).fetchone()
+
+def get_translation(db,user_id,message_id,language):
+    row = db.execute('SELECT * FROM message_translations WHERE user_id=? AND message_id=? AND language_key=?',
+                     (user_id,message_id,language.casefold())).fetchone()
+    return None if row is None else {'subject':row['subject'],'body':row['body'],'source_language':row['source_language'],
+                                     'already_in_language':bool(row['same_language']),'language':row['language'],
+                                     'provider':row['provider'],'model':row['model'],'created_at':row['created_at']}
+
+def save_translation(db,user_id,message_id,language,result,provider,model):
+    with db:
+        db.execute('''INSERT INTO message_translations(user_id,message_id,language_key,language,subject,body,source_language,same_language,provider,model,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,message_id,language_key) DO UPDATE SET language=excluded.language,
+            subject=excluded.subject,body=excluded.body,source_language=excluded.source_language,same_language=excluded.same_language,
+            provider=excluded.provider,model=excluded.model,created_at=excluded.created_at''',
+            (user_id,message_id,language.casefold(),language,result['subject'],result['body'],result['source_language'],
+             int(result['already_in_language']),provider,model,int(time.time())))

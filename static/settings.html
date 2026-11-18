@@ -23,7 +23,7 @@
       <div>
         <p class="eyebrow">Your workspace</p>
         <h1 id="page-title">Settings</h1>
-        <p class="intro-copy">Timezone, task defaults, mail sync, the AI assistant and your account. Settings are saved in this server’s SQLite database.</p>
+        <p class="intro-copy">Timezone, task defaults, mail sync, the AI assistant, translation and your account. Settings are saved in this server’s SQLite database.</p>
       </div>
     </section>
 
@@ -65,27 +65,53 @@
       </section>
 
       <section class="panel settings-section" aria-labelledby="ai-heading">
-        <h2 id="ai-heading">AI assistant (Codex CLI)</h2>
-        <p>Uses the <code>codex</code> command on this server to suggest tasks (with quoted evidence from the message) and to draft replies. <strong>Off by default.</strong> When on, pressing an AI button sends that one message&rsquo;s sender, date, subject and text, and optionally small text attachments, to OpenAI through this server&rsquo;s Codex login. Nothing is sent automatically, no reply is ever sent, and every result is only a suggestion you review.</p>
-        <p id="ai-status" class="meta" role="status">Checking Codex…</p>
+        <h2 id="ai-heading">AI assistant</h2>
+        <p>Uses an AI command-line tool installed on this server to suggest tasks (with quoted evidence from the message) and to draft replies. <strong>Off by default.</strong> When on, pressing an AI button sends that one message&rsquo;s sender, date, subject and text, and optionally small text attachments, to the provider&rsquo;s service (OpenAI for Codex, Anthropic for Claude) through this server&rsquo;s login for that tool. Nothing is sent automatically, no reply is ever sent, and every result is only a suggestion you review.</p>
         <div class="task-form">
           <label class="check"><input name="ai_enabled" type="checkbox"> Enable the AI assistant</label>
-          <label>Model (optional)
-            <input name="ai_model" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Codex default">
-            <span class="meta">Leave empty to use Codex&rsquo;s own default model.</span>
+          <label>Provider
+            <select name="ai_provider">
+              <option value="codex">Codex CLI (OpenAI)</option>
+              <option value="claude">Claude Code CLI (Anthropic)</option>
+            </select>
+            <span id="ai-status" class="meta" role="status">Checking…</span>
+          </label>
+          <label>Model
+            <select name="ai_model_choice"><option value="">Provider default</option></select>
+            <input name="ai_model" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Model name" hidden>
+            <span class="meta">The list comes from the provider&rsquo;s tool. Choose <em>Other…</em> to type a name that is not listed.</span>
           </label>
           <label>Output language
             <input name="ai_language" type="text" maxlength="40" autocomplete="off" placeholder="Same as the email">
             <span class="meta">For example English or Chinese. Applies to titles, descriptions, notes and drafts.</span>
           </label>
           <label>Timeout (seconds)
-            <input name="ai_timeout" type="number" min="10" max="95" step="1" required>
-            <span class="meta">Keep it under about 100 s so a proxy in front does not cut the request first.</span>
+            <input name="ai_timeout" type="number" min="10" max="1800" step="1" required>
+            <span class="meta">10–1800 seconds. A proxy in front of this server (Cloudflare cuts requests at about 100 s) may end slower requests early; translations are still saved on the server, so reloading the message then shows them.</span>
           </label>
           <label class="check"><input name="ai_attachments" type="checkbox"> Also send small text/CSV attachments (up to 3 files, 8,000 characters each)</label>
         </div>
-        <div class="settings-actions"><button id="ai-test" type="button">Test Codex</button><span id="ai-test-result" class="meta" role="status"></span></div>
-        <p class="meta">The test sends a fixed message with no mail data, using the saved settings (save first). The path of the Codex program is set by the server operator with <code>INBOX_TEND_CODEX_BIN</code> in <code>.env</code>, not here.</p>
+        <div class="settings-actions"><button id="ai-test" type="button">Test the AI</button><span id="ai-test-result" class="meta" role="status"></span></div>
+        <p class="meta">The test sends a fixed message with no mail data, using the saved provider and model (save first). The program paths are set by the server operator with <code>INBOX_TEND_CODEX_BIN</code> and <code>INBOX_TEND_CLAUDE_BIN</code> in <code>.env</code>, not here.</p>
+      </section>
+
+      <section class="panel settings-section" aria-labelledby="translate-heading">
+        <h2 id="translate-heading">Translation</h2>
+        <p>Shows a translation of the open message in a third column on the Inbox page. It uses the provider and model chosen under <em>AI assistant</em> above. <strong>Off by default.</strong> When on, <strong>every message you open</strong> is sent to that provider (OpenAI for Codex, Anthropic for Claude) to be translated, without a button press. Each translation is saved in this server&rsquo;s database, so a message is translated only once per language and reopening it costs nothing. Attachments are not translated.</p>
+        <div class="task-form">
+          <label class="check"><input name="translate_enabled" type="checkbox"> Translate messages I open</label>
+          <label>Translate into
+            <input name="translate_language" type="text" list="language-list" maxlength="40" autocomplete="off" placeholder="e.g. English or Chinese (Simplified)">
+            <datalist id="language-list">
+              <option value="English"></option><option value="Chinese (Simplified)"></option><option value="Chinese (Traditional)"></option>
+              <option value="Spanish"></option><option value="French"></option><option value="German"></option><option value="Portuguese"></option>
+              <option value="Italian"></option><option value="Japanese"></option><option value="Korean"></option><option value="Russian"></option>
+              <option value="Arabic"></option><option value="Hindi"></option><option value="Indonesian"></option><option value="Vietnamese"></option>
+              <option value="Turkish"></option><option value="Dutch"></option><option value="Polish"></option><option value="Thai"></option>
+            </datalist>
+            <span class="meta">Your preferred language. <button id="use-browser-language" type="button" class="link-button">Use this browser&rsquo;s language</button></span>
+          </label>
+        </div>
       </section>
 
       <div class="settings-actions"><button id="save-prefs" type="submit" class="action">Save settings</button></div>

@@ -35,7 +35,7 @@
       <div class="panel"><p id="gmail-status" role="status">Checking Gmail connection…</p>
         <div class="task-tools"><button id="gmail-connect" type="button">Connect Gmail</button><button id="gmail-disconnect" type="button" hidden>Disconnect Gmail</button><button id="gmail-refresh" type="button" hidden>Refresh inbox</button></div>
       </div>
-      <div class="workspace-grid">
+      <div id="inbox-grid" class="workspace-grid">
         <section class="panel inbox-panel" aria-labelledby="messages-heading">
           <div class="panel-heading"><h3 id="messages-heading">Mail</h3><div class="folder-tabs" role="group" aria-label="Folder"><button id="folder-inbox" type="button" aria-pressed="true">Inbox</button><button id="folder-sent" type="button" aria-pressed="false">Sent</button></div></div>
           <div id="messages">Connect Gmail to see your inbox.</div>
@@ -44,6 +44,10 @@
           <div class="panel-heading"><h3 id="review-heading">Message review</h3><span class="panel-caption">Nothing is sent automatically</span></div>
           <div id="detail">Choose a message to see its details.</div>
           <div id="draft"></div>
+        </section>
+        <section id="translation-panel" class="panel translation-panel" aria-labelledby="translation-heading" hidden>
+          <div class="panel-heading"><h3 id="translation-heading">Translation</h3><span id="translation-caption" class="panel-caption"></span></div>
+          <div id="translation">Choose a message to see its translation.</div>
         </section>
       </div>
     </section>

@@ -2,10 +2,38 @@
 const prefsForm = document.getElementById('prefs-form');
 const passwordForm = document.getElementById('password-form');
 
+const OTHER_MODEL = '__other__';
+let aiProviders = {};
+async function loadModels(provider, selected) {
+  // Fills the model dropdown for a provider; `selected` is a saved model name to preselect.
+  const choice = prefsForm.elements.ai_model_choice, custom = prefsForm.elements.ai_model;
+  choice.replaceChildren();
+  const first = el('option', 'Provider default'); first.value = ''; choice.append(first);
+  try {
+    const result = await request('/api/ai/models?provider=' + encodeURIComponent(provider));
+    for (const model of result.models) {
+      const option = el('option', model.label + (model.id !== model.label ? ' (' + model.id + ')' : '')); option.value = model.id;
+      if (model.note) option.title = model.note;
+      choice.append(option);
+    }
+  } catch (error) { /* The list is only a convenience: the custom field still works. */ }
+  const other = el('option', 'Other…'); other.value = OTHER_MODEL; choice.append(other);
+  const known = [...choice.options].some(option => option.value === selected);
+  choice.value = !selected ? '' : (known ? selected : OTHER_MODEL);
+  custom.value = choice.value === OTHER_MODEL ? selected : '';
+  custom.hidden = choice.value !== OTHER_MODEL;
+}
+function showProviderStatus() {
+  const info = aiProviders[prefsForm.elements.ai_provider.value];
+  const line = document.getElementById('ai-status');
+  line.textContent = !info ? '' : (!info.available
+    ? info.name + ' CLI was not found on this server. Install it and sign in with ' + info.login_hint + ', then reload this page.'
+    : (info.version || info.name) + ' at ' + info.path + ' · ' + (info.logged_in ? (info.login || 'signed in') : 'not signed in: run ' + info.login_hint + ' as the user that runs Inbox Tend'));
+}
 function fillForm(values) {
   for (const [key, value] of Object.entries(values)) {
     const control = prefsForm.elements[key];
-    if (!control) continue;
+    if (!control || key === 'ai_model') continue;
     if (control.type === 'checkbox') control.checked = Boolean(value);
     else control.value = value;
   }
@@ -20,12 +48,16 @@ function readForm() {
     sync_max_messages: Number(form.sync_max_messages.value),
     attachment_max_mb: Number(form.attachment_max_mb.value),
     ai_enabled: form.ai_enabled.checked,
-    ai_model: form.ai_model.value.trim(),
+    ai_provider: form.ai_provider.value,
+    ai_model: form.ai_model_choice.value === OTHER_MODEL ? form.ai_model.value.trim() : form.ai_model_choice.value,
     ai_language: form.ai_language.value.trim(),
     ai_timeout: Number(form.ai_timeout.value),
-    ai_attachments: form.ai_attachments.checked
+    ai_attachments: form.ai_attachments.checked,
+    translate_enabled: form.translate_enabled.checked,
+    translate_language: form.translate_language.value.trim()
   };
 }
+let savedModel = '';
 async function init() {
   try { await sessionReady; } catch (error) { notify('Could not load session: ' + error.message, true); return; }
   const list = document.getElementById('timezone-list');
@@ -35,23 +67,31 @@ async function init() {
   try {
     const result = await request('/api/settings');
     fillForm(result.settings);
+    savedModel = result.settings.ai_model || '';
     document.getElementById('account-name').textContent = result.username;
   } catch (error) { notify('Could not load settings: ' + error.message, true); return; }
 
-  const aiStatus = document.getElementById('ai-status');
-  try {
-    const ai = await request('/api/ai/status');
-    aiStatus.textContent = !ai.available
-      ? 'Codex CLI was not found on this server. Install it and run `codex login`, then reload this page.'
-      : (ai.version || 'Codex CLI') + ' at ' + ai.path + ' · ' + (ai.logged_in ? (ai.login || 'logged in') : 'not logged in: run `codex login` as the user that runs Inbox Tend');
-  } catch (error) { aiStatus.textContent = 'Could not check Codex: ' + error.message; }
+  try { aiProviders = (await request('/api/ai/status')).providers; }
+  catch (error) { document.getElementById('ai-status').textContent = 'Could not check the AI tools: ' + error.message; }
+  const saved = prefsForm.elements;
+  await loadModels(saved.ai_provider.value, savedModel);
+  showProviderStatus();
+  saved.ai_provider.addEventListener('change', async () => { await loadModels(saved.ai_provider.value, ''); showProviderStatus(); });
+  saved.ai_model_choice.addEventListener('change', () => {
+    saved.ai_model.hidden = saved.ai_model_choice.value !== OTHER_MODEL;
+    if (!saved.ai_model.hidden) saved.ai_model.focus();
+  });
   const aiTest = document.getElementById('ai-test'), aiResult = document.getElementById('ai-test-result');
   aiTest.addEventListener('click', async () => {
-    aiTest.disabled = true; aiResult.textContent = ' Asking Codex…';
-    try { const result = await request('/api/ai/test', 'POST', {}); aiResult.textContent = ' Codex answered in ' + result.seconds + ' s.'; }
+    aiTest.disabled = true; aiResult.textContent = ' Asking the AI…';
+    try { const result = await request('/api/ai/test', 'POST', {}); aiResult.textContent = ' ' + result.provider + ' answered in ' + result.seconds + ' s.'; }
     catch (error) { aiResult.textContent = ' ' + error.message; }
     aiTest.disabled = false;
   });
+  const browserLanguage = () => {
+    try { return new Intl.DisplayNames(['en'], {type: 'language'}).of(navigator.language || 'en') || 'English'; } catch (_) { return 'English'; }
+  };
+  document.getElementById('use-browser-language').addEventListener('click', () => { prefsForm.elements.translate_language.value = browserLanguage(); });
   document.getElementById('use-browser-timezone').addEventListener('click', () => {
     prefsForm.elements.timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
   });
@@ -62,6 +102,8 @@ async function init() {
     try {
       const result = await request('/api/settings', 'PATCH', readForm());
       fillForm(result.settings);
+      await loadModels(result.settings.ai_provider, result.settings.ai_model || '');
+      showProviderStatus();
       notify('Settings saved.');
     } catch (error) { notify(error.message, true); }
     save.disabled = false;

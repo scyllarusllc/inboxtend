@@ -3,6 +3,44 @@ const list = document.getElementById('messages');
 const detail = document.getElementById('detail');
 const draft = document.getElementById('draft');
 let messages = [], selectedId = null, folder = 'inbox';
+const translationPanel = document.getElementById('translation-panel');
+const translationBox = document.getElementById('translation');
+const translationCaption = document.getElementById('translation-caption');
+function clearTranslation() {
+  translationBox.replaceChildren('Choose a message to see its translation.');
+  translationCaption.textContent = '';
+}
+// The third column. Translations are saved on the server, so reopening a message never calls the AI again;
+// only the Retranslate button forces a new one.
+async function showTranslation(id, force = false) {
+  const language = userSettings.translate_language;
+  translationCaption.textContent = language;
+  if (!language) { translationBox.replaceChildren(el('p', 'Choose the language to translate into on the Settings page.', 'meta')); return; }
+  translationBox.replaceChildren(el('p', 'Translating into ' + language + '… the first time can take up to ' + userSettings.ai_timeout + ' seconds; it is saved for next time.', 'meta'));
+  let result;
+  try { result = (await request('/api/translate', 'POST', {id, force})).translation; }
+  catch (error) {
+    if (selectedId !== id) return;
+    const retry = iconButton('refresh', 'Try again');
+    retry.addEventListener('click', () => showTranslation(id));
+    translationBox.replaceChildren(el('p', error.message, 'error'), retry);
+    return;
+  }
+  if (selectedId !== id) return;
+  const nodes = [];
+  if (result.already_in_language) {
+    nodes.push(el('p', 'This message is already in ' + result.language + '; no translation was needed.', 'meta'));
+  } else {
+    if (result.subject) nodes.push(el('h3', result.subject));
+    nodes.push(el('pre', result.body || '(No text content)', 'message-body'));  // Text only, never HTML.
+  }
+  const when = new Date(result.created_at * 1000);
+  const info = el('p', (result.source_language ? 'From ' + result.source_language + ' · ' : '') + 'translated by ' + result.provider +
+    ' (' + result.model + ') · ' + (result.cached ? 'saved ' + formatWhen(when.getTime()) : 'just now'), 'meta');
+  const again = iconButton('refresh', 'Retranslate');
+  again.addEventListener('click', () => showTranslation(id, true));
+  translationBox.replaceChildren(...nodes, info, again);
+}
 async function showProposal(messageId, prepared) {
   const m = messages.find(message => message.id === messageId);
   if (!m) return;
@@ -13,7 +51,7 @@ async function showProposal(messageId, prepared) {
   form.append(el('h4', 'Review suggested task'), el('p', proposal.note, 'meta'));
   if (proposal.ai) {
     const box = el('div', undefined, 'ai-box');
-    box.append(el('p', 'AI suggestion · confidence ' + proposal.ai.confidence + ' · model: ' + proposal.ai.model, 'meta'));
+    box.append(el('p', 'AI suggestion · confidence ' + proposal.ai.confidence + ' · ' + (proposal.ai.provider || 'AI') + ' · model: ' + proposal.ai.model, 'meta'));
     for (const quote of proposal.ai.evidence) box.append(el('blockquote', (quote.verified ? '✓ ' : '⚠ Not found word for word in the message: ') + quote.text, quote.verified ? '' : 'unverified'));
     if (!proposal.ai.evidence.length) box.append(el('p', 'The AI gave no supporting quote.', 'meta'));
     if (proposal.ai.notes) box.append(el('p', 'Notes: ' + proposal.ai.notes, 'meta'));
@@ -108,6 +146,7 @@ async function selectMessage(id) {
   try { full = (await request('/api/connectors/gmail/messages/' + encodeURIComponent(id))).message; }
   catch (error) { if (selectedId === id) detail.append(el('p', error.message, 'error')); return; }
   if (selectedId !== id) return;
+  if (userSettings.translate_enabled) showTranslation(id);
   const head = [el('h3', full.subject || '(No subject)'),
     el('div', 'From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date'), 'meta')];
   if (full.to) head.push(el('div', 'To ' + full.to, 'meta'));
@@ -154,8 +193,8 @@ async function selectMessage(id) {
 }
 function aiControls(id, isSent) {
   const box = el('div', undefined, 'ai-actions');
-  box.append(el('h4', 'AI assistant (Codex)'),
-    el('p', 'Sends this message’s text to OpenAI through the server’s Codex login only when you press a button.', 'meta'));
+  box.append(el('h4', 'AI assistant (' + aiProvider().name + ')'),
+    el('p', 'Sends this message’s text to ' + aiProvider().vendor + ' through the server’s ' + aiProvider().name + ' login only when you press a button.', 'meta'));
   const status = el('p', '', 'meta');
   const guidance = document.createElement('input');
   guidance.type = 'text'; guidance.maxLength = 500; guidance.className = 'ai-guidance';
@@ -164,7 +203,7 @@ function aiControls(id, isSent) {
   const write = iconButton('mail', 'Draft reply with AI');
   const run = async (button, work) => {
     suggest.disabled = write.disabled = true;
-    status.textContent = 'Asking Codex… this can take up to ' + userSettings.ai_timeout + ' seconds.';
+    status.textContent = 'Asking ' + aiProvider().name + '… this can take up to ' + userSettings.ai_timeout + ' seconds.';
     try { await work(); status.textContent = ''; }
     catch (error) { status.textContent = error.message; }
     suggest.disabled = write.disabled = false;
@@ -196,7 +235,7 @@ function chooseFolder(next) {
   folderInbox.setAttribute('aria-pressed', String(next === 'inbox'));
   folderSent.setAttribute('aria-pressed', String(next === 'sent'));
   selectedId = null;
-  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren();
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
 }
 folderInbox.addEventListener('click', () => chooseFolder('inbox'));
@@ -213,7 +252,7 @@ function renderList(data) {
   const previous = selectedId;
   list.replaceChildren();
   messages = data.messages;
-  if (!messages.some(m => m.id === previous)) { selectedId = null; detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); }
+  if (!messages.some(m => m.id === previous)) { selectedId = null; detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); }
   if (!messages.length) { list.textContent = folder === 'sent' ? 'No sent messages found.' : 'No inbox messages found.'; return; }
   for (const m of messages) {
     const button = el('button', undefined, 'message');
@@ -249,7 +288,7 @@ async function refreshGmail(startSync = false) {
     if (!state.connected) {
       gmailStatus.textContent = state.configured ? 'Gmail is not connected. Connect it to review your inbox.' : 'Gmail connection is not configured. See docs/gmail-web.md.';
       list.textContent = 'Connect Gmail to see your inbox.';
-      detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren();
+      detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
       messages = []; selectedId = null; gmailRefresh.disabled = false;
       return;
     }
@@ -292,6 +331,10 @@ gmailRefresh.addEventListener('click', async () => {
 async function init() {
   try { await sessionReady; } catch (error) { notify('Could not load session: ' + error.message, true); return; }
   await settingsReady;
+  if (userSettings.translate_enabled) {
+    translationPanel.hidden = false;
+    document.getElementById('inbox-grid').classList.add('has-translation');
+  }
   try { await refreshGmail(); } catch (error) { gmailStatus.textContent = error.message; list.textContent = ''; }
 }
 init();

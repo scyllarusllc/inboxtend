@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 PRIORITIES = ('low', 'medium', 'high')
+AI_PROVIDERS = ('codex', 'claude')
 DEFAULTS = {
     'timezone': 'Pacific/Saipan',   # Default for new task deadlines; also how mail times are displayed.
     'due_soon_hours': 48,           # A task due within this many hours is flagged "due soon".
@@ -21,13 +22,18 @@ DEFAULTS = {
     # Optional AI assistant (Codex CLI). Off by default: nothing leaves this server until the user turns it on
     # AND presses an AI button.
     'ai_enabled': False,
-    'ai_model': '',                 # Empty = Codex's own default model.
+    'ai_provider': 'codex',         # codex (Codex CLI) or claude (Claude Code CLI).
+    'ai_model': '',                 # Empty = the provider's own default model.
     'ai_language': '',              # Empty = write in the language of the email.
-    'ai_timeout': 60,               # Seconds; capped below the typical 100 s proxy timeout.
+    'ai_timeout': 60,               # Seconds (10-1800). A proxy in front may cut slower requests.
     'ai_attachments': False,        # Also send small text/CSV attachments with the email.
+    # Translation of the open message into the user's language, shown beside the message. Uses the AI provider
+    # and model above. Enabling it means every message the user opens is sent to that provider.
+    'translate_enabled': False,
+    'translate_language': '',
 }
-_INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'ai_timeout': (10, 95)}
-_BOOLS = ('sync_sent', 'ai_enabled', 'ai_attachments')
+_INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'ai_timeout': (10, 1800)}
+_BOOLS = ('sync_sent', 'ai_enabled', 'ai_attachments', 'translate_enabled')
 
 
 def valid_timezone(name) -> str:
@@ -53,11 +59,15 @@ def _clean(key, value):
         if not isinstance(value, bool):
             raise ValueError(f'Invalid value for {key}')
         return value
+    if key == 'ai_provider':
+        if value not in AI_PROVIDERS:
+            raise ValueError('Unknown AI provider')
+        return value
     if key == 'ai_model':
         if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}|', value.strip()):
             raise ValueError('Invalid model name')
         return value.strip()
-    if key == 'ai_language':
+    if key in ('ai_language', 'translate_language'):
         if not isinstance(value, str) or len(value.strip()) > 40 or any(ord(c) < 32 or ord(c) == 127 for c in value):
             raise ValueError('Language must be at most 40 characters')
         return value.strip()

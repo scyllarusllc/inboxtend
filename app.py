@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import time
 import sqlite3
 from html import escape
 from contextlib import contextmanager, closing
@@ -255,12 +256,35 @@ class Handler(BaseHTTPRequestHandler):
                 if result == 'throttled': raise RequestError(429,'Too many attempts; try again in a few minutes')
                 if result == 'invalid': raise RequestError(403,'Current password is incorrect')
                 return self._json(200,{'changed':True})
+            if path == '/api/translate' and self.command == 'POST':
+                with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
+                if not user['translate_enabled']: raise RequestError(403,'Translation is turned off in Settings')
+                language = user['translate_language'].strip()
+                if not language: raise RequestError(400,'Choose the language to translate into in Settings')
+                message = self._gmail_message(session,data.get('id'))
+                force = data.get('force') is True
+                def answer(found,cached):
+                    return self._json(200,{'translation':dict(found,cached=cached,provider=ai.PROVIDERS.get(found['provider'],{}).get('name',found['provider']))})
+                with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
+                if found and not force: return answer(found,True)
+                try:
+                    with ai.translation_guard(session['id'],user['ai_timeout']):
+                        with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
+                        if found and not force:  # Reaching the lock with a stored result means another request finished while this one queued.
+                            return answer(found,True)
+                        result = ai.translate(self.gmail_config,message,language,user)
+                        provider = ai.provider_of(user)
+                        with self._db() as db: gmail_web.save_translation(db,session['id'],message['id'],language,result,provider,user['ai_model'] or 'provider default')
+                        with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
+                        return answer(found,False)
+                except ai.AIBusy as exc: raise RequestError(429,str(exc)) from None
+                except ai.AIError as exc: raise RequestError(424,str(exc)) from None
             if path.startswith('/api/ai/') and self.command == 'POST':
                 try:
                     with ai.guard(session['id']):
                         if path == '/api/ai/test':
                             with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
-                            return self._json(200,{'ok':True,'seconds':ai.ping(self.gmail_config,model=user['ai_model'],timeout=user['ai_timeout'])})
+                            return self._json(200,{'ok':True,'seconds':ai.ping(self.gmail_config,user),'provider':ai.PROVIDERS[ai.provider_of(user)]['name']})
                         if path == '/api/ai/task':
                             message,files,user = self._ai_inputs(session,data.get('id'))
                             result = ai.suggest_task(self.gmail_config,message,files,user)
@@ -268,9 +292,10 @@ class Handler(BaseHTTPRequestHandler):
                             inferred = dict(base['inferred'],title=result['title'],description=result['description'],priority=result['priority'],
                                             due_date=result['due_date'],due_time=result['due_time'],owner=result['owner'] or '')
                             return self._json(200,{'source':base['source'],'inferred':inferred,
-                                                   'note':'AI suggestion from Codex. Check it against the message before saving.',
+                                                   'note':'AI suggestion from '+ai.PROVIDERS[ai.provider_of(user)]['name']+'. Check it against the message before saving.',
                                                    'ai':{'confidence':result['confidence'],'evidence':result['evidence'],'notes':result['notes'],
-                                                         'model':user['ai_model'] or 'Codex default'}})
+                                                         'provider':ai.PROVIDERS[ai.provider_of(user)]['name'],
+                                                         'model':user['ai_model'] or 'provider default'}})
                         if path == '/api/ai/reply':
                             message,files,user = self._ai_inputs(session,data.get('id'))
                             guidance = data.get('guidance','')
@@ -323,8 +348,12 @@ class Handler(BaseHTTPRequestHandler):
                 rows,stamp = gmail_web.cached_inbox(db,session['id'],folder),gmail_web.last_sync(db,session['id'])
             return self._json(200,{'messages':rows,'folder':folder,'last_sync':stamp,'read_only':True})
         if path == '/api/ai/status':
-            with self._db() as db: enabled = prefs.effective(db,session['id'],self.gmail_config)['ai_enabled']
-            return self._json(200,dict(ai.status(self.gmail_config),enabled=enabled))
+            with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
+            return self._json(200,dict(ai.status(self.gmail_config),enabled=user['ai_enabled'],provider=ai.provider_of(user)))
+        if path == '/api/ai/models':
+            provider = parse_qs(urlparse(self.path).query).get('provider',[ai.DEFAULT_PROVIDER])[0]
+            if provider not in ai.PROVIDERS: raise RequestError(400,'Unknown AI provider')
+            return self._json(200,{'provider':provider,'models':ai.models(self.gmail_config,provider)})
         if path == '/api/settings':
             with self._db() as db: values = prefs.effective(db,session['id'],self.gmail_config)
             return self._json(200,{'settings':values,'defaults':prefs.DEFAULTS,'username':session['username']})

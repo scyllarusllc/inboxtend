@@ -76,7 +76,9 @@ function notify(message,error=false) {
 
 // Resolves once the session (and CSRF token) is known; page scripts await it.
 const sessionReady = request('/api/session').then(session => { csrfToken = session.csrf_token; });
-let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', ai_enabled: false};
+let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: ''};
+const AI_PROVIDERS = {codex: {name: 'Codex', vendor: 'OpenAI'}, claude: {name: 'Claude', vendor: 'Anthropic'}};
+function aiProvider() { return AI_PROVIDERS[userSettings.ai_provider] || AI_PROVIDERS.codex; }
 // Resolves after the user's saved settings are loaded (falls back to the defaults above on failure).
 const settingsReady = sessionReady.then(() => request('/api/settings')).then(result => { userSettings = result.settings; })
   .catch(() => {});
