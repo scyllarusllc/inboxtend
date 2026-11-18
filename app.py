@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
-from tasks import connection, DEFAULT_DB, list_tasks, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
+from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
 ROOT = Path(__file__).resolve().parent
 MESSAGES = [
@@ -145,6 +145,9 @@ class Handler(BaseHTTPRequestHandler):
             message = self._message(parts[2])
             if not message: raise RequestError(404,'Message not found')
             return self._json(200,proposal(message))
+        if path == '/api/tasks/summary':
+            with self._db() as db: summary = task_summary(db)
+            return self._json(200,{'summary':summary,'timezone':'Pacific/Saipan','mode':'demo'})
         if path == '/api/tasks':
             with self._db() as db: rows = list_tasks(db)
             return self._json(200,{'tasks':rows,'timezone':'Pacific/Saipan'})
