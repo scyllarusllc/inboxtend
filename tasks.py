@@ -15,7 +15,9 @@ SAIPAN = ZoneInfo('Pacific/Saipan')
 def connection(path=DEFAULT_DB):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
     db = sqlite3.connect(path, timeout=5)
+    path.chmod(0o600)
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA busy_timeout=5000')
     db.execute('PRAGMA journal_mode=WAL')
@@ -38,6 +40,7 @@ def connection(path=DEFAULT_DB):
         'revision': 'INTEGER NOT NULL DEFAULT 1',
         'assigned_agent': "TEXT NOT NULL DEFAULT ''",
         'agent_status': "TEXT NOT NULL DEFAULT 'unassigned'",
+        'user_id': 'INTEGER NOT NULL DEFAULT 1',
     }
     with db:
         for name, definition in additions.items():
@@ -55,6 +58,8 @@ def connection(path=DEFAULT_DB):
             token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             csrf_token TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL)''')
         db.execute('CREATE INDEX IF NOT EXISTS user_sessions_expiry ON user_sessions(expires_at)')
+        db.execute('''CREATE TABLE IF NOT EXISTS gmail_oauth_pending (state_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, session_hash TEXT NOT NULL, verifier TEXT NOT NULL, expires_at INTEGER NOT NULL)''')
+        db.execute('''CREATE TABLE IF NOT EXISTS gmail_connections (user_id INTEGER PRIMARY KEY, refresh_token BLOB NOT NULL, connected_at INTEGER NOT NULL)''')
     db.execute('PRAGMA foreign_keys=ON')
     return db
 
@@ -101,15 +106,15 @@ def decorate(row, now=None):
     return item
 
 
-def list_tasks(db, now=None):
-    rows = db.execute("SELECT * FROM tasks ORDER BY status='done', due_date IS NULL, due_date, due_time, id")
+def list_tasks(db, now=None, user_id=1):
+    rows = db.execute("SELECT * FROM tasks WHERE user_id=? ORDER BY status='done', due_date IS NULL, due_date, due_time, id", (user_id,))
     return [decorate(r, now) for r in rows]
 
 
 
-def task_summary(db, now=None):
+def task_summary(db, now=None, user_id=1):
     """Aggregated read-only counters for a local dashboard."""
-    rows = list_tasks(db, now)
+    rows = list_tasks(db, now, user_id)
     by_status = {status: 0 for status in STATES}
     overdue = due_soon = 0
     for item in rows:
@@ -121,17 +126,17 @@ def task_summary(db, now=None):
 
 
 
-def get_task(db, task_id, now=None):
-    row = db.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+def get_task(db, task_id, now=None, user_id=1):
+    row = db.execute('SELECT * FROM tasks WHERE id=? AND user_id=?', (task_id,user_id)).fetchone()
     return decorate(row, now) if row else None
 
 
-def task_for_source(db, provider, message_id):
-    row = db.execute('SELECT * FROM tasks WHERE source_provider=? AND message_id=?', (provider, message_id)).fetchone()
+def task_for_source(db, provider, message_id, user_id=1):
+    row = db.execute('SELECT * FROM tasks WHERE source_provider=? AND message_id=? AND user_id=?', (provider, message_id,user_id)).fetchone()
     return decorate(row) if row else None
 
 
-def create_task(db, message, fields):
+def create_task(db, message, fields, user_id=1):
     title = _text(fields.get('title'), 'title', 200, True)
     description = _text(fields.get('description'), 'description', 1000)
     owner = _text(fields.get('owner', ''), 'owner', 120)
@@ -156,24 +161,24 @@ def create_task(db, message, fields):
         with db:
             cursor = db.execute('''INSERT INTO tasks
                 (message_id,title,description,owner,due_date,priority,status,created_at,updated_at,
-                 source_provider,thread_id,project_label,customer_label,due_time,due_timezone,source_url,review_state)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                 source_provider,thread_id,project_label,customer_label,due_time,due_timezone,source_url,review_state,user_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                 (message_id,title,description,owner,date,priority,'new',now,now,
-                 provider,thread_id,project,customer,time,zone,source_url,'reviewed'))
+                 provider,thread_id,project,customer,time,zone,source_url,'reviewed',user_id))
             task_id = cursor.lastrowid
             db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES (?,?,?,?)',
                        (task_id,'created',json.dumps({'source_provider':provider,'message_id':message_id}),now))
     except sqlite3.IntegrityError as exc:
         raise ValueError('A task already exists for this message') from exc
-    return get_task(db, task_id)
+    return get_task(db, task_id, user_id=user_id)
 
 
-def update_task(db, task_id, fields):
+def update_task(db, task_id, fields, user_id=1):
     allowed = {'title','description','owner','priority','due_date','due_time','due_timezone','status','project_label','customer_label','review_state','assigned_agent'}
     if not fields or set(fields) - allowed - {'revision'}:
         raise ValueError('Invalid update fields')
     with db:
-        row = db.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+        row = db.execute('SELECT * FROM tasks WHERE id=? AND user_id=?', (task_id,user_id)).fetchone()
         if row is None:
             return None
         if fields.get('revision') != row['revision']:
@@ -212,16 +217,16 @@ def update_task(db, task_id, fields):
             raise ConflictError('Task changed; reload before saving')
         db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES (?,?,?,?)',
                    (task_id,'updated',json.dumps(changes),now))
-    return get_task(db,task_id)
+    return get_task(db,task_id,user_id=user_id)
 
 
-def events(db, task_id):
-    return [dict(r) for r in db.execute('SELECT * FROM task_events WHERE task_id=? ORDER BY id',(task_id,))]
+def events(db, task_id, user_id=1):
+    return [dict(r) for r in db.execute('SELECT e.* FROM task_events e JOIN tasks t ON t.id=e.task_id WHERE e.task_id=? AND t.user_id=? ORDER BY e.id',(task_id,user_id))]
 
 
-def delete_task(db, task_id):
+def delete_task(db, task_id, user_id=1):
     with db:
-        return db.execute('DELETE FROM tasks WHERE id=?',(task_id,)).rowcount == 1
+        return db.execute('DELETE FROM tasks WHERE id=? AND user_id=?',(task_id,user_id)).rowcount == 1
 
 
 class ConflictError(Exception):

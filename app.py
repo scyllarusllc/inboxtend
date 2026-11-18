@@ -9,6 +9,7 @@ from contextlib import contextmanager, closing
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
+import gmail_web
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
@@ -113,6 +114,7 @@ def proposal(message):
 class Handler(BaseHTTPRequestHandler):
     db_path = DEFAULT_DB
     auth_manager = None
+    gmail_config = {}
 
     def _send(self,status,payload,mime,extra_headers=()):
         self.send_response(status)
@@ -132,6 +134,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(303)
         self.send_header('Location',location)
         self.send_header('Cache-Control','no-store')
+        self.send_header('Referrer-Policy','no-referrer')
         self.send_header('Content-Length','0')
         self.end_headers()
 
@@ -221,11 +224,33 @@ class Handler(BaseHTTPRequestHandler):
             if not write and path.startswith('/user/'):
                 return self._redirect('/login')
             raise RequestError(401,'Sign in required')
+        if not write and path == '/api/connectors/gmail/callback':
+            from urllib.parse import parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            if 'error' in query:
+                return self._redirect('/user/dashboard?gmail=declined')
+            if len(query.get('state',[])) != 1 or len(query.get('code',[])) != 1:
+                raise RequestError(400,'Invalid OAuth callback')
+            try:
+                with self._db() as db:
+                    gmail_web.finish(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),query['state'][0],query['code'][0])
+            except gmail_web.GmailConnectionError:
+                return self._redirect('/user/dashboard?gmail=failed')
+            return self._redirect('/user/dashboard?gmail=connected')
         if not write and path == '/user/dashboard':
             return self._send(200,render_page('index'),'text/html; charset=utf-8')
         if write:
             self._write_ok(session)
             data = self._read_json()
+            if path == '/api/connectors/gmail/connect' and self.command == 'POST':
+                try:
+                    with self._db() as db:
+                        url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')))
+                except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
+                return self._json(200,{'authorization_url':url})
+            if path == '/api/connectors/gmail/disconnect' and self.command == 'POST':
+                with self._db() as db: gmail_web.disconnect(db,session['id'])
+                return self._json(200,{'connected':False})
             if path == '/api/auth/logout' and self.command == 'POST':
                 self.auth_manager.revoke(cookie_token(self.headers.get('Cookie')))
                 return self._json(200,{'signed_out':True},
@@ -238,24 +263,33 @@ class Handler(BaseHTTPRequestHandler):
                 message = self._message(data.get('message_id'))
                 if not message: raise RequestError(404,'Message not found')
                 with self._db() as db:
-                    existing = task_for_source(db,'demo',message['id'])
+                    existing = task_for_source(db,'demo',message['id'],session['id'])
                     if existing:
                         return self._json(409,{'error':'Task already exists','task':existing})
-                    task = create_task(db,message,data)
+                    task = create_task(db,message,data,session['id'])
                 return self._json(201,{'task':task})
             parts = path.strip('/').split('/')
             if len(parts)==3 and parts[:2]==['api','tasks'] and parts[2].isdigit():
                 task_id = int(parts[2])
                 if self.command == 'PATCH':
-                    with self._db() as db: task = update_task(db,task_id,data)
+                    with self._db() as db: task = update_task(db,task_id,data,session['id'])
                     if task is None: raise RequestError(404,'Task not found')
                     return self._json(200,{'task':task})
                 if self.command == 'DELETE':
                     if data.get('confirm') != 'DELETE': raise RequestError(400,'Explicit DELETE confirmation required')
-                    with self._db() as db: removed = delete_task(db,task_id)
+                    with self._db() as db: removed = delete_task(db,task_id,session['id'])
                     if not removed: raise RequestError(404,'Task not found')
                     return self._json(200,{'deleted':True})
             raise RequestError(404,'Not found')
+        if path == '/api/connectors/gmail/status':
+            with self._db() as db: connected = gmail_web.status(db,session['id'])
+            return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected})
+        if path == '/api/connectors/gmail/messages':
+            try:
+                with self._db() as db: rows = gmail_web.inbox(db,self.gmail_config,session['id'])
+            except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
+            except gmail_web.GmailReadError as exc: raise RequestError(502,str(exc)) from None
+            return self._json(200,{'messages':rows,'mode':'gmail','read_only':True})
         if path == '/api/session':
             return self._json(200,{'csrf_token':session['csrf_token'],'user':{'username':session['username'],'role':session['role']},'mode':'demo'})
         if path == '/api/messages':
@@ -272,16 +306,16 @@ class Handler(BaseHTTPRequestHandler):
             if not message: raise RequestError(404,'Message not found')
             return self._json(200,proposal(message))
         if path == '/api/tasks/summary':
-            with self._db() as db: summary = task_summary(db)
+            with self._db() as db: summary = task_summary(db,user_id=session['id'])
             return self._json(200,{'summary':summary,'timezone':'Pacific/Saipan','mode':'demo'})
         if path == '/api/tasks':
-            with self._db() as db: rows = list_tasks(db)
+            with self._db() as db: rows = list_tasks(db,user_id=session['id'])
             return self._json(200,{'tasks':rows,'timezone':'Pacific/Saipan'})
         if len(parts) in (3,4) and parts[:2]==['api','tasks'] and parts[2].isdigit():
             with self._db() as db:
-                task = get_task(db,int(parts[2]))
+                task = get_task(db,int(parts[2]),user_id=session['id'])
                 if not task: raise RequestError(404,'Task not found')
-                if len(parts)==4 and parts[3]=='events': return self._json(200,{'events':events(db,task['id'])})
+                if len(parts)==4 and parts[3]=='events': return self._json(200,{'events':events(db,task['id'],session['id'])})
                 if len(parts)==3: return self._json(200,{'task':task})
         raise RequestError(404,'Not found')
 
@@ -294,6 +328,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(409,{'error':str(exc)})
         except ValueError as exc:
             self._json(400,{'error':str(exc)})
+        except gmail_web.GmailConnectionError:
+            self._json(503,{'error':'Gmail connection unavailable'})
         except sqlite3.Error:
             self._json(503,{'error':'Task database unavailable'})
 
@@ -309,8 +345,8 @@ class RequestError(Exception):
 if __name__=='__main__':
     host,port='127.0.0.1',int(os.environ.get('INBOX_TEND_PORT','8765'))
     config=read_config(ROOT/'.env')
+    Handler.gmail_config=config
     Handler.auth_manager=AuthManager(DEFAULT_DB,username=config.get('INBOX_TEND_ADMIN_USERNAME',''),
                                      password_hash=config.get('INBOX_TEND_ADMIN_PASSWORD_HASH',''))
-    print(f'Inbox Tend local demo: http://{host}:{port}')
-    print('Fictional messages only. No account connected. No email sending.')
+    print(f'Inbox Tend: http://{host}:{port}')
     ThreadingHTTPServer((host,port),Handler).serve_forever()

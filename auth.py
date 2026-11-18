@@ -58,12 +58,17 @@ def read_config(path):
     if Path(path).is_file():
         for line in Path(path).read_text().splitlines():
             key, separator, value = line.partition('=')
-            if separator and key in ('INBOX_TEND_ADMIN_USERNAME', 'INBOX_TEND_ADMIN_PASSWORD_HASH'):
+            if separator and key in CONFIG_KEYS:
                 values[key] = value
-    for key in ('INBOX_TEND_ADMIN_USERNAME', 'INBOX_TEND_ADMIN_PASSWORD_HASH'):
+    for key in CONFIG_KEYS:
         if key in os.environ:
             values[key] = os.environ[key]
     return values
+
+
+CONFIG_KEYS = ('INBOX_TEND_ADMIN_USERNAME', 'INBOX_TEND_ADMIN_PASSWORD_HASH',
+               'INBOX_TEND_GOOGLE_CLIENT_ID', 'INBOX_TEND_GOOGLE_CLIENT_SECRET',
+               'INBOX_TEND_GOOGLE_REDIRECT_URI', 'INBOX_TEND_TOKEN_KEY')
 
 
 def cookie_token(header):

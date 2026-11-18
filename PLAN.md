@@ -14,8 +14,8 @@ Updated 2026-11-18. Internal validation on a Scyllarus subdomain is the near-ter
 
 ## Before real-mail or internal web deployment
 
-- [ ] Account isolation for real mail. The first single-admin session slice and public/private route checks are implemented; Caddy supplies HTTPS.
-- [ ] Secure OAuth token storage outside Git, reconnect/disconnect flow and explicit per-account consent. Current one-shot local OAuth prototype retains access tokens only in memory and is not in the dashboard.
+- [x] Gmail connections and task queries are scoped to the signed-in app user. The service still has one bootstrapped administrator; legacy task uniqueness needs migration before multiuser rollout.
+- [x] Web OAuth with session-bound state and PKCE, encrypted refresh token storage, and explicit connect/reconnect/disconnect. The Desktop prototype remains separate.
 - [ ] Gmail pagination, incremental history sync, retry/backoff, account-scoped deduplication and deleted/moved-message reconciliation. The existing connector only reads IDs and metadata.
 - [ ] Privacy review, encrypted backups, retention policy and operational monitoring before ingesting real correspondence.
 - [ ] Optional AI extraction behind configuration, with cited evidence, uncertainty labels and no provider secrets in code.

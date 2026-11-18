@@ -5,7 +5,7 @@
         <h1 id="page-title">Follow every request through.</h1>
         <p class="intro-copy">Review a conversation, confirm the next step, and keep its deadline and status visible.</p>
       </div>
-      <div class="preview-callout" role="note"><strong>Fictional data only</strong><span>No Gmail connection, AI extraction, agent execution, or email sending.</span></div>
+      <div class="preview-callout" role="note"><strong>Review before action</strong><span>Gmail access is read-only. Demo tasks and reply templates remain fictional.</span></div>
     </section>
 
     <div id="task-notice" class="notice-banner" role="status" aria-live="polite"></div>
@@ -13,6 +13,14 @@
     <section class="overview-section" aria-labelledby="overview-heading">
       <div class="section-heading"><div><p class="eyebrow">Overview</p><h2 id="overview-heading">At a glance</h2></div><span class="section-hint">Deadlines use Pacific/Saipan (UTC+10)</span></div>
       <div id="task-summary" class="summary-grid" role="status" aria-live="polite">Loading task summary…</div>
+    </section>
+
+    <section class="workspace-section" aria-labelledby="gmail-heading">
+      <div class="section-heading"><div><p class="eyebrow">Connected mail</p><h2 id="gmail-heading">Gmail inbox</h2></div><span class="section-hint">Read-only headers and snippets</span></div>
+      <div class="panel"><p id="gmail-status" role="status">Checking Gmail connection…</p>
+        <div class="task-tools"><button id="gmail-connect" type="button">Connect Gmail</button><button id="gmail-disconnect" type="button" hidden>Disconnect Gmail</button><button id="gmail-refresh" type="button" hidden>Refresh inbox</button></div>
+        <div id="gmail-messages" aria-live="polite"></div>
+      </div>
     </section>
 
     <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
@@ -45,6 +53,6 @@
 
     <section id="privacy-note" class="privacy-note" aria-labelledby="privacy-heading">
       <div><p class="eyebrow">Privacy and control</p><h2 id="privacy-heading">Built around review.</h2></div>
-      <p>Messages and attachments on this page are fictional. Task suggestions are rule-based examples, and reply drafts are templates. Agent assignments only record pending approval; no agent receives content. Real mailbox access and application accounts are future work.</p>
+      <p>The sample conversation and task suggestions are fictional. Connected Gmail displays only headers and snippets; it does not save messages, fetch full bodies or attachments, or send mail. Agent assignments remain inert.</p>
     </section>
   </main>

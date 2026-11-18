@@ -1,6 +1,6 @@
 # Inbox Tend local demo quickstart
 
-Python 3.10+ and the standard library are sufficient. No real account, model, or secrets are needed.
+Python 3.10+ and the standard library are sufficient for the fictional demo. The optional Gmail connection requires `cryptography` (`python3 -m pip install -r requirements.txt`) and Google Web OAuth credentials; see [docs/gmail-web.md](docs/gmail-web.md).
 
 ```bash
 make dev                 # 127.0.0.1:8765
@@ -29,4 +29,4 @@ make test
 
 The three page bodies live in `static/pages/`; `static/layout.html` supplies their shared header, navigation and footer. After editing either, run `make build-pages` to refresh the full-page compatibility files used by older running demo processes. The current server composes the layout directly.
 
-This is a fictional demo, not a production email site. The VM's internal subdomain uses HTTPS and application login; account isolation for real mail is not implemented. The separate Gmail OAuth command and read-only connector are experimental; they are not connected to this task flow. Demo agent assignment only records pending approval; no agent runs or receives message content. No Gmail sync, model extraction, reminders or sending exists. Do not feed it real client email.
+The task workflow is fictional; the optional Gmail panel can display real headers and snippets after explicit consent. The VM's internal subdomain uses HTTPS and application login; Gmail connections and task queries are scoped by app user ID. The separate Desktop OAuth command remains experimental. Demo agent assignment only records pending approval; no agent runs or receives message content. Gmail is read on demand; no background sync, model extraction, reminders or sending exists. Do not feed it real client email.

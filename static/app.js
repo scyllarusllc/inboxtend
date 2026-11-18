@@ -356,6 +356,49 @@ function selectMessage(id) {
   detail.append(reply, el('span', ' '), propose);
   draft.replaceChildren();
 }
+
+const gmailStatus = document.getElementById('gmail-status');
+const gmailMessages = document.getElementById('gmail-messages');
+const gmailConnect = document.getElementById('gmail-connect');
+const gmailDisconnect = document.getElementById('gmail-disconnect');
+const gmailRefresh = document.getElementById('gmail-refresh');
+async function refreshGmail() {
+  const state = await request('/api/connectors/gmail/status');
+  gmailConnect.hidden = !state.configured;
+  gmailConnect.textContent = state.connected ? 'Reconnect Gmail' : 'Connect Gmail';
+  gmailDisconnect.hidden = !state.connected;
+  gmailRefresh.hidden = !state.connected;
+  gmailStatus.textContent = state.connected ? 'Gmail connected. Only inbox headers and snippets are shown.' :
+    (state.configured ? 'Gmail disconnected. The fictional sample remains available below.' : 'Gmail connection is not configured. The fictional sample remains available below.');
+  gmailMessages.replaceChildren();
+  if (!state.connected) return;
+  const data = await request('/api/connectors/gmail/messages');
+  if (!data.messages.length) gmailMessages.append(el('p','No inbox messages found.'));
+  for (const message of data.messages) {
+    const item = el('article',undefined,'task-item');
+    item.append(el('h3',message.subject || '(No subject)'),
+      el('p',(message.from || 'Unknown sender')+' · '+(message.date || 'No date'),'meta'),
+      el('p',message.snippet || 'No snippet'));
+    gmailMessages.append(item);
+  }
+}
+gmailConnect.addEventListener('click', async () => {
+  gmailConnect.disabled = true;
+  try {
+    const result = await request('/api/connectors/gmail/connect','POST',{});
+    location.assign(result.authorization_url);
+  } catch (error) { gmailStatus.textContent = error.message; gmailConnect.disabled = false; }
+});
+gmailDisconnect.addEventListener('click', async () => {
+  gmailDisconnect.disabled = true;
+  try { await request('/api/connectors/gmail/disconnect','POST',{}); await refreshGmail(); }
+  catch (error) { gmailStatus.textContent = error.message; }
+  finally { gmailDisconnect.disabled = false; }
+});
+gmailRefresh.addEventListener('click', async () => {
+  try { await refreshGmail(); } catch (error) { gmailStatus.textContent = error.message; }
+});
+
 async function init() {
   try {
     const session = await request('/api/session');
@@ -386,5 +429,6 @@ async function init() {
     catch(error){notify('Sign out failed: '+error.message,true);}
   });
   await refreshTasks();
+  try { await refreshGmail(); } catch (error) { gmailStatus.textContent = error.message; }
 }
 init();
