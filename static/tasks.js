@@ -17,6 +17,7 @@ function makeEditForm(task) {
   priority.value=task.priority;
   field(form,'Due date (YYYY-MM-DD)','due_date',task.due_date || '');
   field(form,'Due time (HH:MM)','due_time',task.due_time || '');
+  field(form,'Timezone (IANA)','due_timezone',task.due_timezone || userSettings.timezone);
   field(form,'Project','project_label',task.project_label || '');
   field(form,'Customer','customer_label',task.customer_label || '');
   const agent=field(form,'AI Agent (assignment only)','assigned_agent',task.assigned_agent || '','select');
@@ -39,6 +40,8 @@ function makeEditForm(task) {
     }
     values.revision=task.revision;
     if(!changed){delete values.due_date;delete values.due_time;}
+    values.due_timezone=(values.due_timezone||'').trim();
+    if(values.due_timezone===task.due_timezone)delete values.due_timezone;
     save.disabled=true;
     try{
       await request('/api/tasks/'+task.id,'PATCH',values);
@@ -165,6 +168,9 @@ async function init() {
   taskRefresh.classList.add('icon-button');
   taskRefresh.addEventListener('click',async()=>{notify('');await refreshTasks();});
   try { await sessionReady; } catch (error) { notify('Could not load session: '+error.message,true); return; }
+  await settingsReady;
+  const hint=document.getElementById('tz-hint');
+  if(hint)hint.textContent='New deadlines default to '+userSettings.timezone+' · due soon = within '+userSettings.due_soon_hours+' h';
   await refreshTasks();
 }
 init();

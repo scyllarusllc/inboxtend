@@ -76,6 +76,17 @@ function notify(message,error=false) {
 
 // Resolves once the session (and CSRF token) is known; page scripts await it.
 const sessionReady = request('/api/session').then(session => { csrfToken = session.csrf_token; });
+let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', ai_enabled: false};
+// Resolves after the user's saved settings are loaded (falls back to the defaults above on failure).
+const settingsReady = sessionReady.then(() => request('/api/settings')).then(result => { userSettings = result.settings; })
+  .catch(() => {});
+// A Gmail timestamp (ms since epoch) shown in the timezone chosen in Settings.
+function formatWhen(ms, fallback = '') {
+  if (!ms) return fallback;
+  try {
+    return new Intl.DateTimeFormat(undefined, {timeZone: userSettings.timezone, dateStyle: 'medium', timeStyle: 'short'}).format(new Date(ms));
+  } catch (_) { return new Date(ms).toLocaleString(); }
+}
 document.addEventListener('DOMContentLoaded', () => {
   const logout = document.getElementById('logout');
   if (logout) logout.addEventListener('click', async () => {

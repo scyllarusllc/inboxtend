@@ -3,17 +3,26 @@ const list = document.getElementById('messages');
 const detail = document.getElementById('detail');
 const draft = document.getElementById('draft');
 let messages = [], selectedId = null, folder = 'inbox';
-async function showProposal(messageId) {
+async function showProposal(messageId, prepared) {
   const m = messages.find(message => message.id === messageId);
   if (!m) return;
-  const proposal = await request('/api/connectors/gmail/messages/' + encodeURIComponent(messageId) + '/proposal');
+  const proposal = prepared || await request('/api/connectors/gmail/messages/' + encodeURIComponent(messageId) + '/proposal');
   if (selectedId !== messageId) return;
+  for (const old of detail.querySelectorAll('.task-proposal')) old.remove();
   const form = el('form', undefined, 'task-proposal');
   form.append(el('h4', 'Review suggested task'), el('p', proposal.note, 'meta'));
+  if (proposal.ai) {
+    const box = el('div', undefined, 'ai-box');
+    box.append(el('p', 'AI suggestion · confidence ' + proposal.ai.confidence + ' · model: ' + proposal.ai.model, 'meta'));
+    for (const quote of proposal.ai.evidence) box.append(el('blockquote', (quote.verified ? '✓ ' : '⚠ Not found word for word in the message: ') + quote.text, quote.verified ? '' : 'unverified'));
+    if (!proposal.ai.evidence.length) box.append(el('p', 'The AI gave no supporting quote.', 'meta'));
+    if (proposal.ai.notes) box.append(el('p', 'Notes: ' + proposal.ai.notes, 'meta'));
+    form.append(box);
+  }
   const f = proposal.inferred;
   field(form, 'Title', 'title', f.title).required = true;
   field(form, 'Description', 'description', f.description, 'textarea');
-  field(form, 'Owner (optional)', 'owner', '');
+  field(form, 'Owner (optional)', 'owner', f.owner || '');
   const priority = field(form, 'Priority', 'priority', f.priority, 'select');
   for (const value of ['low', 'medium', 'high']) {
     const option = el('option', value); option.value = value; priority.append(option);
@@ -32,9 +41,10 @@ async function showProposal(messageId) {
     submit.disabled = true;
     const data = Object.fromEntries(new FormData(form).entries());
     data.message_id = messageId;
+    if (proposal.ai) data.ai_assisted = true;
     data.due_date = data.due_date.trim() || null;
     data.due_time = data.due_time.trim() || null;
-    data.due_timezone = 'Pacific/Saipan';
+    data.due_timezone = f.due_timezone || userSettings.timezone;
     try {
       await request('/api/tasks', 'POST', data);
       feedback.textContent = 'Task saved locally. No email sent. ';
@@ -93,16 +103,16 @@ async function selectMessage(id) {
   }
   draft.replaceChildren();
   detail.replaceChildren(el('h3', m.subject || '(No subject)'),
-    el('div', (m.from || 'Unknown sender') + ' · ' + (m.date || 'No date'), 'meta'), el('p', 'Loading message…'));
+    el('div', (m.from || 'Unknown sender') + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'), el('p', 'Loading message…'));
   let full;
   try { full = (await request('/api/connectors/gmail/messages/' + encodeURIComponent(id))).message; }
   catch (error) { if (selectedId === id) detail.append(el('p', error.message, 'error')); return; }
   if (selectedId !== id) return;
   const head = [el('h3', full.subject || '(No subject)'),
-    el('div', 'From ' + (full.from || 'unknown') + ' · ' + (full.date || 'No date'), 'meta')];
+    el('div', 'From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date'), 'meta')];
   if (full.to) head.push(el('div', 'To ' + full.to, 'meta'));
   if (full.cc) head.push(el('div', 'Cc ' + full.cc, 'meta'));
-  head[1] = el('div', (full.direction === 'sent' ? 'Sent' : 'Received') + ' · From ' + (full.from || 'unknown') + ' · ' + (full.date || 'No date'), 'meta');
+  head[1] = el('div', (full.direction === 'sent' ? 'Sent' : 'Received') + ' · From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date'), 'meta');
   const body = el('pre', full.body_text || full.snippet || '(No text content)', 'message-body');  // Text only, never HTML.
   detail.replaceChildren(...head, body);
   const attachments = renderAttachments(full);
@@ -115,7 +125,7 @@ async function selectMessage(id) {
       item.type = 'button';
       item.setAttribute('aria-pressed', String(t.id === id));
       item.append(el('div', (t.direction === 'sent' ? 'Sent · To ' + (t.to || 'unknown') : 'Received · From ' + (t.from || 'unknown'))),
-        el('div', (t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
+        el('div', formatWhen(t.internal_date, t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
       item.addEventListener('click', () => selectMessage(t.id));
       thread.append(item);
     }
@@ -140,6 +150,42 @@ async function selectMessage(id) {
     finally { propose.disabled = false; }
   });
   detail.append(full.direction === 'sent' ? propose : reply, ...(full.direction === 'sent' ? [] : [el('span', ' '), propose]));
+  if (userSettings.ai_enabled) detail.append(aiControls(id, full.direction === 'sent'));
+}
+function aiControls(id, isSent) {
+  const box = el('div', undefined, 'ai-actions');
+  box.append(el('h4', 'AI assistant (Codex)'),
+    el('p', 'Sends this message’s text to OpenAI through the server’s Codex login only when you press a button.', 'meta'));
+  const status = el('p', '', 'meta');
+  const guidance = document.createElement('input');
+  guidance.type = 'text'; guidance.maxLength = 500; guidance.className = 'ai-guidance';
+  guidance.placeholder = 'Optional: what should the reply say?';
+  const suggest = iconButton('plus', 'Suggest task with AI');
+  const write = iconButton('mail', 'Draft reply with AI');
+  const run = async (button, work) => {
+    suggest.disabled = write.disabled = true;
+    status.textContent = 'Asking Codex… this can take up to ' + userSettings.ai_timeout + ' seconds.';
+    try { await work(); status.textContent = ''; }
+    catch (error) { status.textContent = error.message; }
+    suggest.disabled = write.disabled = false;
+  };
+  suggest.addEventListener('click', () => run(suggest, async () => {
+    const result = await request('/api/ai/task', 'POST', {id});
+    if (selectedId === id) await showProposal(id, result);
+  }));
+  write.addEventListener('click', () => run(write, async () => {
+    const result = await request('/api/ai/reply', 'POST', {id, guidance: guidance.value});
+    if (selectedId !== id) return;
+    const copy = iconButton('check', 'Copy');
+    copy.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(result.draft); copy.lastChild.textContent = 'Copied'; } catch (_) { copy.lastChild.textContent = 'Copy failed'; }
+    });
+    draft.replaceChildren(el('h4', 'AI draft (not sent) — review and edit before using'), el('pre', result.draft), copy);
+  }));
+  box.append(suggest, el('span', ' '));
+  if (!isSent) box.append(guidance, el('span', ' '), write);
+  box.append(status);
+  return box;
 }
 
 const folderInbox = document.getElementById('folder-inbox');
@@ -161,7 +207,7 @@ const gmailDisconnect = document.getElementById('gmail-disconnect');
 const gmailRefresh = document.getElementById('gmail-refresh');
 let refreshRun = 0;
 function syncLabel(state) {
-  return state.last_sync ? ' Last synced ' + new Date(state.last_sync * 1000).toLocaleString() + '.' : '';
+  return state.last_sync ? ' Last synced ' + formatWhen(state.last_sync * 1000) + '.' : '';
 }
 function renderList(data) {
   const previous = selectedId;
@@ -174,7 +220,7 @@ function renderList(data) {
     button.dataset.id = m.id;
     button.setAttribute('aria-pressed', String(m.id === selectedId));
     button.append(el('div', m.subject || '(No subject)'),
-      el('div', (folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender')) + ' · ' + (m.date || 'No date'), 'meta'));
+      el('div', (folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender')) + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'));
     if (m.attachment_count) {
       const label = el('div', undefined, 'meta');
       label.append(icon('paperclip'), document.createTextNode(' ' + m.attachment_count + ' attachment(s)'));
@@ -245,6 +291,7 @@ gmailRefresh.addEventListener('click', async () => {
 
 async function init() {
   try { await sessionReady; } catch (error) { notify('Could not load session: ' + error.message, true); return; }
+  await settingsReady;
   try { await refreshGmail(); } catch (error) { gmailStatus.textContent = error.message; list.textContent = ''; }
 }
 init();

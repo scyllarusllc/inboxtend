@@ -18,9 +18,10 @@ Updated 2026-11-18. Internal validation on a Scyllarus subdomain is the near-ter
 - [x] Web OAuth with session-bound state and PKCE, encrypted refresh token storage, and explicit connect/reconnect/disconnect. The Desktop prototype remains separate.
 - [x] Full mail mirrored into SQLite (`gmail_messages`, `gmail_attachments`): complete headers, text/HTML bodies, labels and size-capped attachments; background sync with progress, resumable, paginated up to a configured limit; reading is local; disconnect deletes the copy. Sent mail is mirrored too (Inbox/Sent tabs, conversation list from stored threads). Open: Gmail history-API incremental sync, at-rest encryption of the mail tables, retention policy.
 - [ ] Gmail pagination, history-API incremental sync, retry/backoff, account-scoped deduplication and deleted/moved-message reconciliation. The existing connector only reads IDs and metadata.
+- [x] Settings page (`/user/settings`): timezone for deadlines and displayed mail times, due-soon window, default priority, sync limits and sent-mail toggle, password change.
 - [x] systemd service (boot start, crash restart) and daily verified SQLite backups with retention: see `docs/operations.md`.
 - [ ] Privacy review, off-machine encrypted backups, retention policy and operational monitoring before ingesting real correspondence.
-- [ ] Optional AI extraction behind configuration, with cited evidence, uncertainty labels and no provider secrets in code.
+- [x] Optional AI assistant via the Codex CLI (Settings, off by default): task suggestions with verified evidence and uncertainty notes, reply drafts, read-only sandbox, validated JSON output (`docs/ai-codex.md`). Open: batch triage of new mail, running it automatically after sync.
 - [ ] Reminder delivery design; no background reminders are currently scheduled.
 - [ ] A separate approval interface and audited authorization before any future send or mail-write operation. No send/delete Gmail API exists today.
 - [x] Verify public routes, private API responses, HTTPS session cookies, logout and revocation through Cloudflare after enabling application login. Keep real mail disabled.

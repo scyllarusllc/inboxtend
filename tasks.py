@@ -199,7 +199,8 @@ def create_task(db, message, fields, user_id=1):
                  provider,thread_id,project,customer,time,zone,source_url,'reviewed',user_id))
             task_id = cursor.lastrowid
             db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES (?,?,?,?)',
-                       (task_id,'created',json.dumps({'source_provider':provider,'message_id':message_id}),now))
+                       (task_id,'created',json.dumps({'source_provider':provider,'message_id':message_id,
+                                                    **({'ai_assisted':True} if fields.get('ai_assisted') is True else {})}),now))
     except sqlite3.IntegrityError as exc:
         raise ValueError('A task already exists for this message') from exc
     return get_task(db, task_id, user_id=user_id)

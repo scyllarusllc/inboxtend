@@ -6,6 +6,7 @@ INBOX_TEND_ATTACHMENT_MAX_BYTES), so existing installs behave exactly as before.
 """
 from __future__ import annotations
 import json
+import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -17,8 +18,16 @@ DEFAULTS = {
     'sync_sent': True,              # Also mirror sent mail.
     'sync_max_messages': 200,       # Per folder.
     'attachment_max_mb': 10,        # Larger attachments are recorded as metadata only.
+    # Optional AI assistant (Codex CLI). Off by default: nothing leaves this server until the user turns it on
+    # AND presses an AI button.
+    'ai_enabled': False,
+    'ai_model': '',                 # Empty = Codex's own default model.
+    'ai_language': '',              # Empty = write in the language of the email.
+    'ai_timeout': 60,               # Seconds; capped below the typical 100 s proxy timeout.
+    'ai_attachments': False,        # Also send small text/CSV attachments with the email.
 }
-_INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100)}
+_INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'ai_timeout': (10, 95)}
+_BOOLS = ('sync_sent', 'ai_enabled', 'ai_attachments')
 
 
 def valid_timezone(name) -> str:
@@ -40,10 +49,18 @@ def _clean(key, value):
         if value not in PRIORITIES:
             raise ValueError('Invalid default priority')
         return value
-    if key == 'sync_sent':
+    if key in _BOOLS:
         if not isinstance(value, bool):
-            raise ValueError('Invalid value for sync_sent')
+            raise ValueError(f'Invalid value for {key}')
         return value
+    if key == 'ai_model':
+        if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}|', value.strip()):
+            raise ValueError('Invalid model name')
+        return value.strip()
+    if key == 'ai_language':
+        if not isinstance(value, str) or len(value.strip()) > 40 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+            raise ValueError('Language must be at most 40 characters')
+        return value.strip()
     low, high = _INT_LIMITS[key]
     if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
         raise ValueError(f'{key} must be a whole number from {low} to {high}')

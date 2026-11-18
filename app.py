@@ -9,6 +9,7 @@ from contextlib import contextmanager, closing
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
+import ai
 import gmail_web
 import settings as prefs
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
@@ -114,6 +115,21 @@ class Handler(BaseHTTPRequestHandler):
             with self._db() as db: return gmail_web.message(db,self.gmail_config,session['id'],message_id)
         except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
         except gmail_web.GmailReadError as exc: raise RequestError(424,str(exc)) from None  # 4xx: Cloudflare replaces origin 502/504 with an HTML page
+
+    def _ai_inputs(self,session,message_id):
+        """Message text (and optionally small text attachments) for one explicit AI request."""
+        with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
+        if not user['ai_enabled']: raise RequestError(403,'The AI assistant is turned off in Settings')
+        message = self._gmail_message(session,message_id)
+        files = []
+        if user['ai_attachments']:
+            with self._db() as db:
+                for item in message['attachments']:
+                    if len(files) >= ai.MAX_ATTACHMENTS: break
+                    if not item['stored'] or not (item['mime_type'] in ('text/plain','text/csv') or item['name'].lower().endswith(('.txt','.csv'))): continue
+                    row = gmail_web.attachment(db,session['id'],message['id'],item['id'])
+                    files.append((item['name'],item['mime_type'],bytes(row['content'])[:ai.MAX_ATTACHMENT_CHARS * 4].decode('utf-8','replace')))
+        return message,files,user
 
     def _db(self):
         @contextmanager
@@ -239,6 +255,29 @@ class Handler(BaseHTTPRequestHandler):
                 if result == 'throttled': raise RequestError(429,'Too many attempts; try again in a few minutes')
                 if result == 'invalid': raise RequestError(403,'Current password is incorrect')
                 return self._json(200,{'changed':True})
+            if path.startswith('/api/ai/') and self.command == 'POST':
+                try:
+                    with ai.guard(session['id']):
+                        if path == '/api/ai/test':
+                            with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
+                            return self._json(200,{'ok':True,'seconds':ai.ping(self.gmail_config,model=user['ai_model'],timeout=user['ai_timeout'])})
+                        if path == '/api/ai/task':
+                            message,files,user = self._ai_inputs(session,data.get('id'))
+                            result = ai.suggest_task(self.gmail_config,message,files,user)
+                            base = proposal(message,user)
+                            inferred = dict(base['inferred'],title=result['title'],description=result['description'],priority=result['priority'],
+                                            due_date=result['due_date'],due_time=result['due_time'],owner=result['owner'] or '')
+                            return self._json(200,{'source':base['source'],'inferred':inferred,
+                                                   'note':'AI suggestion from Codex. Check it against the message before saving.',
+                                                   'ai':{'confidence':result['confidence'],'evidence':result['evidence'],'notes':result['notes'],
+                                                         'model':user['ai_model'] or 'Codex default'}})
+                        if path == '/api/ai/reply':
+                            message,files,user = self._ai_inputs(session,data.get('id'))
+                            guidance = data.get('guidance','')
+                            if not isinstance(guidance,str): raise RequestError(400,'Invalid guidance')
+                            return self._json(200,{'draft':ai.draft_reply(self.gmail_config,message,files,guidance,user),'sent':False,'template':False,'ai':True})
+                except ai.AIBusy as exc: raise RequestError(429,str(exc)) from None
+                except ai.AIError as exc: raise RequestError(424,str(exc)) from None
             if path == '/api/auth/logout' and self.command == 'POST':
                 self.auth_manager.revoke(cookie_token(self.headers.get('Cookie')))
                 return self._json(200,{'signed_out':True},
@@ -283,6 +322,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
                 rows,stamp = gmail_web.cached_inbox(db,session['id'],folder),gmail_web.last_sync(db,session['id'])
             return self._json(200,{'messages':rows,'folder':folder,'last_sync':stamp,'read_only':True})
+        if path == '/api/ai/status':
+            with self._db() as db: enabled = prefs.effective(db,session['id'],self.gmail_config)['ai_enabled']
+            return self._json(200,dict(ai.status(self.gmail_config),enabled=enabled))
         if path == '/api/settings':
             with self._db() as db: values = prefs.effective(db,session['id'],self.gmail_config)
             return self._json(200,{'settings':values,'defaults':prefs.DEFAULTS,'username':session['username']})
