@@ -88,6 +88,13 @@ function makeEditForm(task) {
   field(form,'Due time (HH:MM)','due_time',task.due_time || '');
   field(form,'Project','project_label',task.project_label || '');
   field(form,'Customer','customer_label',task.customer_label || '');
+  const agent=field(form,'AI Agent (assignment only)','assigned_agent',task.assigned_agent || '','select');
+  for(const [value,label] of [['','Unassigned'],['Demo Research Agent','Demo Research Agent'],['Demo Coding Agent','Demo Coding Agent'],['Demo General Agent','Demo General Agent']]){
+    const option=el('option',label); option.value=value; agent.append(option);
+  }
+  agent.value=task.assigned_agent || '';
+  form.append(el('p','Assigning an agent only records a pending approval. No agent is executed and no emails are shared.','meta'));
+
   const save=iconButton('check','Save changes'); save.type='submit'; save.className+=' action';
   form.append(save);
   form.addEventListener('submit',async event=>{
@@ -147,6 +154,7 @@ function renderTasks() {
     meta.append(el('span','Priority: '+task.priority),el('span','·'),el('span',date));
     if(task.owner){meta.append(el('span','·'),el('span','Owner: '+task.owner));}
     if(task.project_label){meta.append(el('span','·'),el('span','Project: '+task.project_label));}
+    if(task.assigned_agent){meta.append(el('span','·'),el('span','Agent: '+task.assigned_agent+' ('+task.agent_status+')'));}
     item.append(head,meta,el('p',task.description));
     const label=el('label','Status: ');
     const select=document.createElement('select');
