@@ -14,14 +14,14 @@ Updated 2026-11-18. Internal validation on a Scyllarus subdomain is the near-ter
 
 ## Before real-mail or internal web deployment
 
-- [ ] Account isolation and a reviewed trusted-origin configuration for the reverse proxy. The first single-admin session slice is implemented; Caddy Basic Auth remains enabled during rollout.
+- [ ] Account isolation for real mail. The first single-admin session slice and public/private route checks are implemented; Caddy supplies HTTPS.
 - [ ] Secure OAuth token storage outside Git, reconnect/disconnect flow and explicit per-account consent. Current one-shot local OAuth prototype retains access tokens only in memory and is not in the dashboard.
 - [ ] Gmail pagination, incremental history sync, retry/backoff, account-scoped deduplication and deleted/moved-message reconciliation. The existing connector only reads IDs and metadata.
 - [ ] Privacy review, encrypted backups, retention policy and operational monitoring before ingesting real correspondence.
 - [ ] Optional AI extraction behind configuration, with cited evidence, uncertainty labels and no provider secrets in code.
 - [ ] Reminder delivery design; no background reminders are currently scheduled.
 - [ ] A separate approval interface and audited authorization before any future send or mail-write operation. No send/delete Gmail API exists today.
-- [ ] Revalidate public-route and private-API boundaries after the operator restarts the app with the new login code; only then consider removing Caddy's Basic Auth gate. Keep real mail disabled.
+- [x] Verify public routes, private API responses, HTTPS session cookies, logout and revocation through Cloudflare after enabling application login. Keep real mail disabled.
 
 Internal validation should measure correct tasks, correction rate, duplicates, missed deadlines, unauthorized actions and repeat weekly use. A domain or brand decision should follow sustained use, not a star threshold.
 

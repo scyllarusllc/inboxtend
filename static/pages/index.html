@@ -1,0 +1,50 @@
+<main id="main" class="page-shell">
+    <section class="page-intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Your workspace</p>
+        <h1 id="page-title">Follow every request through.</h1>
+        <p class="intro-copy">Review a conversation, confirm the next step, and keep its deadline and status visible.</p>
+      </div>
+      <div class="preview-callout" role="note"><strong>Fictional data only</strong><span>No Gmail connection, AI extraction, agent execution, or email sending.</span></div>
+    </section>
+
+    <div id="task-notice" class="notice-banner" role="status" aria-live="polite"></div>
+
+    <section class="overview-section" aria-labelledby="overview-heading">
+      <div class="section-heading"><div><p class="eyebrow">Overview</p><h2 id="overview-heading">At a glance</h2></div><span class="section-hint">Deadlines use Pacific/Saipan (UTC+10)</span></div>
+      <div id="task-summary" class="summary-grid" role="status" aria-live="polite">Loading task summary…</div>
+    </section>
+
+    <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
+      <div class="section-heading"><div><p class="eyebrow">Review</p><h2 id="inbox-heading">Inbox workspace</h2></div><span class="section-hint">Open a message, then review its suggested task</span></div>
+      <div class="workspace-grid">
+        <section class="panel inbox-panel" aria-labelledby="sample-inbox-heading">
+          <div class="panel-heading"><h3 id="sample-inbox-heading">Sample inbox</h3><span class="small-badge">Demo</span></div>
+          <div id="messages">Loading messages…</div>
+        </section>
+        <section class="panel review-panel" aria-labelledby="review-heading">
+          <div class="panel-heading"><h3 id="review-heading">Conversation review</h3><span class="panel-caption">Nothing is sent automatically</span></div>
+          <div id="detail">Choose a message to see its content.</div>
+          <div id="draft"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="task-workspace" class="workspace-section" aria-labelledby="tasks-heading">
+      <div class="section-heading"><div><p class="eyebrow">Track</p><h2 id="tasks-heading">Local tasks</h2></div><span class="section-hint">Saved to this computer’s SQLite database</span></div>
+      <div class="panel task-panel">
+        <div class="task-tools">
+          <label>Search tasks <input id="task-search" type="search" placeholder="Title, owner or project"></label>
+          <label>Filter <select id="task-filter"><option value="all">All tasks</option><option value="active">Active</option><option value="overdue">Overdue</option><option value="due_soon">Due soon</option><option value="done">Completed</option></select></label>
+          <button id="task-refresh" type="button">Refresh</button>
+        </div>
+        <h3 id="task-list-heading" class="list-heading">Saved tasks</h3>
+        <div id="tasks" aria-live="polite">Loading tasks…</div>
+      </div>
+    </section>
+
+    <section id="privacy-note" class="privacy-note" aria-labelledby="privacy-heading">
+      <div><p class="eyebrow">Privacy and control</p><h2 id="privacy-heading">Built around review.</h2></div>
+      <p>Messages and attachments on this page are fictional. Task suggestions are rule-based examples, and reply drafts are templates. Agent assignments only record pending approval; no agent receives content. Real mailbox access and application accounts are future work.</p>
+    </section>
+  </main>

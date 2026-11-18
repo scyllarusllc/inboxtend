@@ -1,14 +1,14 @@
 # Internal subdomain status and deployment plan
 
-Target: `https://inboxtend.scyllar.us`. On 2026-11-18, Cloudflare was set to Full (strict) by the operator and this VM's Caddy was configured on 80/443 with an HTTPS Basic Auth gate and a proxy to `127.0.0.1:8765`. Caddy removes the Authorization header before forwarding. HTTP redirects to HTTPS. The password is in the Git-ignored, root-only `.env` file; only a bcrypt hash is in `/etc/caddy/Caddyfile`. The app is started manually with `make dev` by the operator, so availability depends on that process. It is still a fictional single-user demo, not a real-mail service.
+Target: `https://inboxtend.scyllar.us`. On 2026-11-18, Cloudflare was set to Full (strict) by the operator and this VM's Caddy was configured on 80/443 with a proxy to `127.0.0.1:8765`. HTTP redirects to HTTPS. The app serves public `/` and `/login` pages and requires its own session for `/user/dashboard` and data APIs. The initial admin username and password hash are in the Git-ignored, root-only `.env` file; the `users` table stores a password hash. The app is started manually with `make dev` by the operator, so availability depends on that process. It is still a fictional single-user demo, not a real-mail service.
 
 ## 2026-11-18 routing check
 
-The first route attempt produced a Cloudflare HTTPS redirect loop while origin TLS was not Full (strict), and was rolled back. After the operator changed the Cloudflare setting, the route was re-enabled. External unauthenticated `/api/messages` returned `401`; authenticated `/`, `/api/health` and `/api/tasks` returned `200`; an authenticated draft request returned `sent: false`. Caddy obtained a valid origin certificate. A short-lived systemd service was tried for reliability, then disabled and removed at the operator's request to manage `make dev` manually. No real email was connected or sent.
+The first route attempt produced a Cloudflare HTTPS redirect loop while origin TLS was not Full (strict), and was rolled back. After the operator changed the Cloudflare setting, the route was re-enabled. Caddy obtained a valid origin certificate. A short-lived systemd service was tried for reliability, then disabled and removed at the operator's request to manage `make dev` manually. After application login was validated, Caddy Basic Auth was removed: external `/` and `/login` returned `200` without credentials; private APIs returned `401` without an app session; login, dashboard, logout and session revocation passed over HTTPS. No real email was connected or sent.
 
 ## Release gate
 
-The current app has **no built-in login or account isolation** and deliberately rejects non-loopback Host headers. Caddy Basic Auth provides a single shared gate for this fictional demo only; it is not adequate for real mail or multiple users. Before connecting real mail, implement authenticated sessions and account isolation, verify trusted-origin handling, and confirm the origin cannot be bypassed. Do not use the CSRF token as an auth credential.
+The current app has **single-admin login but no account isolation** and deliberately rejects non-loopback Host headers. The public landing and login pages contain no inbox or task data. Before connecting real mail, add account-scoped message/task queries and credential storage, then verify that one account cannot read another's records. The app's CSRF token is not a substitute for authentication.
 
 ## Required operator inputs
 

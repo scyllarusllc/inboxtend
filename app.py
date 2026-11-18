@@ -27,7 +27,7 @@ def render_page(name):
     """Compose trusted static page content with one shared header and footer."""
     title, description, script, nav = PAGES[name]
     layout = (ROOT/'static'/'layout.html').read_text()
-    content = (ROOT/'static'/f'{name}.html').read_text()
+    content = (ROOT/'static'/'pages'/f'{name}.html').read_text()
     replacements = {
         '{{TITLE}}': escape(title, quote=True),
         '{{DESCRIPTION}}': escape(description, quote=True),

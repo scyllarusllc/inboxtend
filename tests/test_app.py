@@ -7,7 +7,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
-from app import Handler, MESSAGES, draft_reply, summarize
+from app import Handler, MESSAGES, PAGES, ROOT, draft_reply, render_page, summarize
 from auth import AuthManager, hash_password
 from tasks import connection, decorate, create_task, get_task, update_task, events, ConflictError
 
@@ -87,6 +87,9 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(footers[1],footers[2])
         self.assertIn('id="logout"',pages[2])
         self.assertNotIn('id="logout"',pages[0])
+    def test_built_pages_match_shared_layout(self):
+        for name in PAGES:
+            self.assertEqual((ROOT/'static'/f'{name}.html').read_bytes(),render_page(name))
     def test_login_logout_and_csrf(self):
         cross_site=Request(self.url+'/api/auth/login',data=b'{"username":"admin@example.test","password":"fictional-test-password-123"}',
                            headers={'Content-Type':'application/json','Origin':'https://evil.example'},method='POST')
