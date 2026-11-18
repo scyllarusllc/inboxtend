@@ -18,6 +18,23 @@ Start as a useful **Scyllarus internal tool** and public open-source project. Tr
 
 Star counts are *signals*, not required milestones; do not purchase a domain automatically when a threshold is hit. Evaluate genuine use and demand alongside domain availability and cost.
 
+## Updated primary use case — Personal correspondence to AI Agent workflow
+
+Inbox Tend should eventually track **all authorized incoming and outgoing personal email** as conversations, not just individual inbound messages. The owner can select an actionable conversation, review proposed work, and assign an approved AI Agent. The task remains visible until its outcome is checked and the user decides whether to reply.
+
+**Intended workflow:** authorized mailbox sync → group by provider/thread ID → show incoming and outgoing messages → derive suggested task(s) → user review → assign a named agent → approve scoped execution → run approved tools with limited credentials → collect evidence and update state → draft follow-up → explicit approval to send.
+
+Privacy and safety boundaries:
+- Email content is untrusted task input, never a privileged instruction to an agent.
+- Agent assignment alone does **not** authorize execution or disclosure of message content.
+- Require a separate approval step describing recipient agent, data shared, requested permissions, and expected action.
+- Never mark a task done merely because an agent returned success; show evidence and allow user verification.
+- No automatic sending, deleting, changing settings, deployment, remote commands or purchases without explicit permission.
+- Support multiple tasks per conversation eventually, and deduplicate on provider + account + stable message/thread identifier rather than subject text.
+- Self-hosted users control local storage, credentials, model providers, and access policies.
+
+**Current implementation boundary (2026-11-18):** only fictional correspondence is shown. The local task editor can record a proposed demo-agent assignment with status `pending_approval`. No actual agent runtime, permissions engine, Gmail OAuth, full mailbox sync, or real outgoing-email integration has been implemented or verified. Keep UI labels accurate.
+
 ## Phase 1 — Local MVP
 
 - [ ] Ingest *fictional / sanitized* email examples (do not publish actual customer email).
