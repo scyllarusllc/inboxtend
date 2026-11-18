@@ -34,6 +34,46 @@ async function request(path, method = 'GET', body) {
   if (!response.ok) throw Error(data.error || 'Request failed (' + response.status + ')');
   return data;
 }
+const taskSearch = document.getElementById('task-search');
+const taskFilter = document.getElementById('task-filter');
+const taskRefresh = document.getElementById('task-refresh');
+const taskNotice = document.getElementById('task-notice');
+let cachedTasks = [];
+// Lucide icon paths, MIT license: https://lucide.dev/license
+// Local SVGs; no CDN or runtime dependencies.
+const paths = {
+  search:[['circle',{cx:11,cy:11,r:8}],['path',{d:'m21 21-4.35-4.35'}]],
+  refresh:[['path',{d:'M20 11a8 8 0 0 0-14.6-4.5L3 9'}],['path',{d:'M3 4v5h5'}],['path',{d:'M4 13a8 8 0 0 0 14.6 4.5L21 15'}],['path',{d:'M16 15h5v5'}]],
+  pencil:[['path',{d:'M12 20h9'}],['path',{d:'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'}]],
+  history:[['path',{d:'M3 12a9 9 0 1 0 3-6.7L3 8'}],['path',{d:'M3 3v5h5'}],['path',{d:'M12 7v5l4 2'}]],
+  check:[['path',{d:'M20 6 9 17l-5-5'}]],
+  plus:[['path',{d:'M12 5v14'}],['path',{d:'M5 12h14'}]],
+  mail:[['rect',{x:2,y:4,width:20,height:16,rx:2}],['path',{d:'m22 7-10 6L2 7'}]]
+};
+function icon(name) {
+  const ns='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox','0 0 24 24');
+  svg.setAttribute('class','ultra-icon');
+  svg.setAttribute('aria-hidden','true');
+  for (const [tag,attrs] of paths[name] || []) {
+    const node=document.createElementNS(ns,tag);
+    for (const [key,value] of Object.entries(attrs)) node.setAttribute(key,String(value));
+    svg.append(node);
+  }
+  return svg;
+}
+function iconButton(name,label) {
+  const button=el('button',undefined,'icon-button');
+  button.type='button';
+  button.append(icon(name),document.createTextNode(label));
+  return button;
+}
+function notify(message,error=false) {
+  taskNotice.textContent=message;
+  taskNotice.className=error?'error':'meta';
+}
+
 async function refreshTasks() {
   try {
     const [overview, rows] = await Promise.all([
