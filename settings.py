@@ -35,9 +35,12 @@ DEFAULTS = {
     # and model above. Enabling it means every message the user opens is sent to that provider.
     'translate_enabled': False,
     'translate_language': '',
+    # Country flags next to correspondents, guessed once per sender by the AI provider and cached. Enabling it means
+    # new senders' names, addresses, date offsets, subjects and a short snippet are sent to that provider.
+    'flags_enabled': False,
 }
 _INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'ai_timeout': (10, 1800)}
-_BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled')
+_BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled', 'flags_enabled')
 
 
 def valid_timezone(name) -> str:

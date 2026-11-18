@@ -6,11 +6,12 @@
   "scripts": {
     "build:css": "tailwindcss -i static/src/app.css -o static/styles.css --minify",
     "watch:css": "tailwindcss -i static/src/app.css -o static/styles.css --watch",
-    "vendor:fa": "node scripts/vendor-fontawesome.mjs"
+    "vendor": "node scripts/vendor-assets.mjs"
   },
   "devDependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",
     "@tailwindcss/cli": "^4.3.5",
+    "flag-icons": "^7.6.0",
     "tailwindcss": "^4.3.5"
   }
 }

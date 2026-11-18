@@ -14,6 +14,7 @@ from urllib.parse import urlparse, parse_qs, quote
 import ai
 import gmail_web
 import mailsearch
+import flags
 import settings as prefs
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
@@ -29,7 +30,7 @@ PAGES = {
     'settings': ('Settings · Inbox Tend', 'Timezone, display, mail sync and account settings.', ('/static/common.js','/static/settings.js'), 'settings', True),
     'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), 'privacy', False),
 }
-VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2'}
+VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.svg':'image/svg+xml'}
 STATIC_FILES = {'/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript',
                 '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript'}
 
@@ -201,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200,render_page('login'),'text/html; charset=utf-8')
             if path in STATIC_FILES:
                 return self._send(200,(ROOT/path.lstrip('/')).read_bytes(),STATIC_FILES[path]+'; charset=utf-8')
-            if path.startswith('/static/vendor/'):   # Third-party assets (Font Awesome): only .css and .woff2 inside static/vendor.
+            if path.startswith('/static/vendor/'):   # Third-party assets (Font Awesome, flag icons): only .css, .woff2 and .svg inside static/vendor.
                 kind = VENDOR_TYPES.get(Path(path).suffix)
                 target = (ROOT/'static'/path[len('/static/'):]).resolve()
                 if kind is None or not target.is_relative_to(ROOT/'static'/'vendor') or not target.is_file():
@@ -283,6 +284,13 @@ class Handler(BaseHTTPRequestHandler):
                     outcome = gmail_web.set_read(db,self.gmail_config,session['id'],parts_w[4],data['read'],write=user['gmail_write_read'])
                 if outcome is None: raise RequestError(404,'Message not found')
                 return self._json(200,dict(outcome,id=parts_w[4]))
+            if path == '/api/flags/guess' and self.command == 'POST':
+                with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
+                if not user['flags_enabled']: raise RequestError(403,'Country flags are turned off in Settings')
+                return self._json(202,{'flags':flags.start(self.db_path,self.gmail_config,session['id'],user)})
+            if path == '/api/flags/reset' and self.command == 'POST':
+                with self._db() as db: flags.reset(db,session['id'])
+                return self._json(200,{'reset':True})
             if path == '/api/translate' and self.command == 'POST':
                 with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
                 if not user['translate_enabled']: raise RequestError(403,'Translation is turned off in Settings')
@@ -367,9 +375,10 @@ class Handler(BaseHTTPRequestHandler):
                 counts = gmail_web.folder_counts(db,session['id']) if connected else {'inbox':0,'sent':0}
                 writable = gmail_web.write_access(db,session['id']) if connected else False
                 remote = gmail_web.remote_counts(db,self.gmail_config,session['id']) if connected else None
+                guessing = dict(flags.progress(session['id']),pending=flags.pending_count(db,session['id']) if connected else 0)
                 limit = prefs.effective(db,session['id'],self.gmail_config)['sync_max_messages'] if connected else None
             return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,
-                                   'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'remote':remote,'sync_limit':limit,'sync':gmail_web.sync_progress(session['id'])})
+                                   'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'remote':remote,'flags':guessing,'sync_limit':limit,'sync':gmail_web.sync_progress(session['id'])})
         if path == '/api/connectors/gmail/messages':  # Local copy only; POST /sync talks to Gmail.
             query = parse_qs(urlparse(self.path).query)
             folder = query.get('folder',['inbox'])[0]

@@ -22,6 +22,7 @@ from connectors.gmail_readonly import SCOPES, GmailReadError, GmailRateLimitErro
 from tasks import connection, peer_for
 import settings as prefs
 import mailsearch
+import flags
 
 AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 TOKEN = 'https://oauth2.googleapis.com/token'
@@ -135,6 +136,7 @@ def disconnect(db,user_id):
     with db:
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))
+        db.execute('DELETE FROM sender_countries WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM message_translations WHERE user_id=?',(user_id,))  # Disconnecting also removes the local copy
         db.execute('DELETE FROM gmail_attachments WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_messages WHERE user_id=?',(user_id,))
@@ -188,7 +190,8 @@ def _is_unread(r):
 def _row(r):
     return {'id':r['message_id'],'thread_id':r['thread_id'],'from':r['from_addr'],'to':r['to_addr'],
             'subject':r['subject'],'date':r['date_header'],'internal_date':r['internal_date'],'snippet':r['snippet'],
-            'direction':'sent' if '"SENT"' in (r['label_ids'] or '') else 'received','unread':_is_unread(r)}
+            'direction':'sent' if '"SENT"' in (r['label_ids'] or '') else 'received','unread':_is_unread(r),
+            'peer':r['peer_email'] if 'peer_email' in r.keys() else ''}
 
 def set_read(db,config,user_id,message_id,read,*,write=False,opener=urlopen):
     """Mark a message read or unread. Always recorded in Inbox Tend; with `write` (the user's choice) and the
@@ -270,7 +273,7 @@ def cached_inbox(db,user_id,folder='inbox',search=None):
     rows = db.execute('SELECT m.*,(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
                       f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1' + (f' AND ({where})' if where else '') +
                       ' ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,*params))
-    return [dict(_row(r),attachment_count=r['n_att']) for r in rows]
+    return flags.attach(db,user_id,[dict(_row(r),attachment_count=r['n_att']) for r in rows])
 
 VIEWS = ('messages','threads','people')
 
@@ -325,6 +328,9 @@ def grouped_inbox(db,user_id,folder,view,search=None):
                     seen.add(address or label); labels.append(label)
             group['participants'] = labels[:4]
         result.append(group)
+    flags.attach(db,user_id,[m for g in result for m in g['messages']])
+    for g in result:
+        g.update({k:g['last'][k] for k in ('country','country_conf','country_reason')})
     return {'groups':result}
 
 def group_name(address):
@@ -492,6 +498,7 @@ def _detail(db,user_id,row):
             (user_id,row['thread_id']))]
     else:
         detail['thread'] = []
+    flags.attach(db,user_id,[detail]+detail['thread'])
     return detail
 
 def attachment(db,user_id,message_id,attachment_id):

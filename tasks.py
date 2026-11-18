@@ -120,6 +120,10 @@ def connection(path=DEFAULT_DB):
             subject TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', source_language TEXT NOT NULL DEFAULT '',
             same_language INTEGER NOT NULL DEFAULT 0, provider TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL, PRIMARY KEY (user_id, message_id, language_key))''')
+        db.execute('''CREATE TABLE IF NOT EXISTS sender_countries (
+            user_id INTEGER NOT NULL, peer_email TEXT NOT NULL, country TEXT NOT NULL DEFAULT '',
+            confidence TEXT NOT NULL DEFAULT 'low', reason TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL DEFAULT '',
+            guessed_at INTEGER NOT NULL, PRIMARY KEY (user_id, peer_email))''')  # country '' = the AI could not tell
         db.execute('CREATE INDEX IF NOT EXISTS gmail_attachments_message ON gmail_attachments(user_id,message_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_inbox ON gmail_messages(user_id,in_inbox,internal_date DESC)')
     db.execute('PRAGMA foreign_keys=ON')
