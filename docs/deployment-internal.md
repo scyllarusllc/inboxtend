@@ -1,6 +1,10 @@
 # Internal subdomain deployment plan (not executed)
 
-Target: `https://inboxtend.scyllar.us`. This document is a checklist, not a deployment instruction to run now. On 2026-11-18, read-only DNS lookup returned Cloudflare addresses and an HTTPS HEAD request returned `200` from Cloudflare. This does **not** establish the DNS origin target, VM ownership, route content, authentication or end-to-end TLS. This VM has Caddy listening on 80/443 and unrelated localhost services; no Inbox Tend service was found. Do not alter their configuration while preparing this project.
+Target: `https://inboxtend.scyllar.us`. On 2026-11-18, DNS lookup returned Cloudflare addresses. This VM has Caddy listening on 80/443 and a loopback Inbox Tend process on port 8765. The application still has no built-in login or account isolation; any public route must enforce authentication before the proxy. The current Caddy configuration does not route this hostname to Inbox Tend.
+
+## 2026-11-18 routing check
+
+A temporary Caddy site with HTTP-to-HTTPS redirect, Basic Auth and a loopback proxy to port 8765 validated locally. Direct origin HTTPS returned `401` as intended and Caddy obtained a valid certificate. Through Cloudflare, HTTPS redirected to the same HTTPS URL instead of reaching the authenticated route. This is consistent with Cloudflare connecting to the origin over HTTP (for example, Flexible SSL). The temporary site was rolled back and the original Caddy configuration reloaded. Before enabling the route, configure Cloudflare to use **Full (strict)** for this hostname, preferably with a hostname-specific rule; a zone-wide change could affect other sites. Then verify that an external HTTPS request receives `401` without credentials, followed by `200` with credentials. Do not pass Basic Auth credentials over an HTTP origin connection.
 
 ## Release gate
 
