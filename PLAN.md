@@ -23,3 +23,9 @@ Updated 2026-11-18. Internal validation on a Scyllarus subdomain is the near-ter
 - [ ] Verify DNS target, origin ownership, TLS route, authentication boundary and firewall before considering `inboxtend.scyllar.us` live.
 
 Internal validation should measure correct tasks, correction rate, duplicates, missed deadlines, unauthorized actions and repeat weekly use. A domain or brand decision should follow sustained use, not a star threshold.
+
+## Conversation, attachment and agent roadmap (from main)
+
+The demo now shows fictional inbound and outbound messages in a conversation and read-only previews of fictional text/CSV attachments. Attachments are untrusted content and are never executed or shared with an agent. The task editor can record an agent assignment as `pending_approval`; it does not execute an agent or disclose email content. Future work requires explicit, scoped approval before execution or external transfer, evidence before marking work complete, and separate human approval before sending.
+
+Real-mail integration needs account-scoped OAuth, pagination, incremental reconciliation, stable provider IDs, safe attachment parsing with size and decompression limits, and local retention controls. PDF, Office, image and real Gmail attachment previews are not implemented.

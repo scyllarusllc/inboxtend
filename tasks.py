@@ -36,6 +36,8 @@ def connection(path=DEFAULT_DB):
         'source_url': 'TEXT',
         'review_state': "TEXT NOT NULL DEFAULT 'reviewed'",
         'revision': 'INTEGER NOT NULL DEFAULT 1',
+        'assigned_agent': "TEXT NOT NULL DEFAULT ''",
+        'agent_status': "TEXT NOT NULL DEFAULT 'unassigned'",
     }
     with db:
         for name, definition in additions.items():
@@ -159,7 +161,7 @@ def create_task(db, message, fields):
 
 
 def update_task(db, task_id, fields):
-    allowed = {'title','description','owner','priority','due_date','due_time','due_timezone','status','project_label','customer_label','review_state'}
+    allowed = {'title','description','owner','priority','due_date','due_time','due_timezone','status','project_label','customer_label','review_state','assigned_agent'}
     if not fields or set(fields) - allowed - {'revision'}:
         raise ValueError('Invalid update fields')
     with db:
@@ -173,6 +175,8 @@ def update_task(db, task_id, fields):
             value = fields[key]
             if key in ('title','description','owner','project_label','customer_label'):
                 value = _text(value,key,{'title':200,'description':1000,'owner':120,'project_label':120,'customer_label':120}[key],key=='title')
+            if key == 'assigned_agent':
+                value = _text(value, 'assigned agent', 120)
             if key == 'priority' and value not in PRIORITIES:
                 raise ValueError('Invalid priority')
             if key == 'status' and value not in STATES:
@@ -183,6 +187,9 @@ def update_task(db, task_id, fields):
                 raise ValueError('Invalid deadline')
             if value != row[key]:
                 changes[key] = value
+        if 'assigned_agent' in changes:
+            # Assignment records a proposal only; it does not run any agent.
+            changes['agent_status'] = 'pending_approval' if changes['assigned_agent'] else 'unassigned'
         date = changes.get('due_date',row['due_date'])
         time = changes.get('due_time',row['due_time'])
         zone = changes.get('due_timezone',row['due_timezone'])

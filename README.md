@@ -2,7 +2,7 @@
 
 **Local-first email-to-task prototype · Apache-2.0**
 
-Inbox Tend currently provides a working **fictional inbox demo**. Review a sample message, inspect a rule-based task suggestion, edit and save a task, track its owner, priority, deadline and status, and prepare an unsent reply template. SQLite persists tasks and audit events locally. The demo never contacts Gmail or sends email. See [QUICKSTART.md](QUICKSTART.md) to run it.
+Inbox Tend currently provides a working **fictional inbox demo**. Review sample incoming and outgoing correspondence, preview fictional text/CSV attachments, inspect a rule-based task suggestion, edit and save a task, track its owner, priority, deadline and status, and prepare an unsent reply template. SQLite persists tasks and audit events locally. Demo agent assignments only record `pending_approval`; no agent runs or receives content. The demo never contacts Gmail or sends email. See [QUICKSTART.md](QUICKSTART.md) to run it.
 
 The sample website-project follow-up is fictional and dated 2026-11-18, with a proposed response deadline of 2026-11-20 at 17:00 Pacific/Saipan. It deliberately leaves the disputed service start date unverified. Suggestions are deterministic demo rules, not AI conclusions. Message bodies stay in the sample source file, not the task database.
 

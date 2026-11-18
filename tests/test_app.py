@@ -37,11 +37,11 @@ class DemoTests(unittest.TestCase):
             error.close()
             raise
     def test_samples(self):
-        self.assertEqual(len(MESSAGES),4)
+        self.assertEqual(len(MESSAGES),5)
         self.assertTrue(summarize(MESSAGES[0]))
         self.assertNotIn('finished',draft_reply(MESSAGES[-1]))
     def test_list_and_page(self):
-        self.assertEqual(len(self.request('/api/messages')['messages']),4)
+        self.assertEqual(len(self.request('/api/messages')['messages']),5)
         with urlopen(self.url) as response: self.assertIn(b'Inbox Tend',response.read())
     def test_create_dedup_persist_update_reopen_draft(self):
         fields={'message_id':'sample-website-followup','title':'Check start date and reply','description':'Verify agreement first',

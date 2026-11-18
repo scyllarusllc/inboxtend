@@ -1,14 +1,117 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>Inbox Tend — Local task demo</title>
+<meta name="color-scheme" content="light dark"><title>Inbox Tend — Local Demo</title>
 <style>
-:root{font-family:system-ui,-apple-system,sans-serif;line-height:1.5}body{max-width:1120px;margin:0 auto;padding:20px 16px}header{display:flex;justify-content:space-between;align-items:center;gap:12px}h1{margin:0;font-size:1.8rem}.tag{border:1px solid #888;border-radius:20px;padding:4px 12px;font-size:.8rem}.notice{border:1px solid #888;border-radius:10px;padding:12px;margin:18px 0}main{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:16px}.panel{border:1px solid #8886;border-radius:12px;padding:16px;min-width:0}.message,.task{width:100%;text-align:left;border:1px solid #8886;border-radius:8px;background:transparent;color:inherit;padding:12px;margin:6px 0;cursor:pointer}.message[aria-pressed=true],.task[aria-pressed=true]{outline:2px solid #64748b}.meta{opacity:.8;font-size:.85rem}button.action{background:#283444;color:white;padding:10px 14px;border:0;border-radius:8px;cursor:pointer}button{font:inherit}input,select,textarea{box-sizing:border-box;width:100%;font:inherit;padding:8px;margin:3px 0 10px;border-radius:6px;border:1px solid #888}label{display:block}textarea{min-height:72px}pre{white-space:pre-wrap;word-break:break-word;font:inherit;background:#8881;padding:12px;border-radius:8px}p{white-space:pre-wrap}footer{opacity:.7;margin-top:30px;font-size:.85rem}@media(max-width:850px){main{grid-template-columns:1fr}}:focus-visible{outline:3px solid #c27b19;outline-offset:2px}
+:root{font-family:system-ui,-apple-system,sans-serif;line-height:1.5}body{max-width:1050px;margin:0 auto;padding:28px 18px}header{display:flex;justify-content:space-between;align-items:center;gap:16px}h1{margin:0;font-size:1.8rem}.tag{border:1px solid #aaa;border-radius:20px;padding:4px 12px;font-size:.8rem}.notice{border:1px solid #aaa;border-radius:10px;padding:12px;margin:20px 0}main{display:grid;grid-template-columns:1fr 1fr;gap:18px}.panel{border:1px solid #8886;border-radius:12px;padding:16px;min-width:0}.message{width:100%;text-align:left;border:1px solid #8886;border-radius:8px;background:transparent;color:inherit;padding:12px;margin:6px 0;cursor:pointer}.message[aria-pressed=true]{outline:2px solid #64748b}.meta{opacity:.75;font-size:.83rem}button.action{background:#283444;color:white;padding:10px 14px;border:0;border-radius:8px;cursor:pointer}pre{white-space:pre-wrap;word-break:break-word;font:inherit;background:#8881;padding:12px;border-radius:8px}p{white-space:pre-wrap}.task-item{border-top:1px solid #8886;margin-top:12px;padding-top:12px}.task-item h3{margin:0 0 4px}.task-item select{padding:6px;margin:4px 8px 4px 0}.task-item label{display:inline-block}.task-item button{padding:6px 10px}.task-proposal{border:1px solid #8886;border-radius:8px;padding:12px;margin-top:12px}.task-proposal label{display:block;margin-top:8px}.task-proposal input,.task-proposal textarea,.task-proposal select{box-sizing:border-box;width:100%;padding:8px}.task-proposal textarea{min-height:70px}.error{color:#b91c1c}.task-tools{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:15px 0}.task-tools label{display:grid;gap:4px;flex:1;min-width:140px}.task-tools input,.task-tools select,.task-tools button{min-height:40px;padding:8px;border:1px solid #8888;border-radius:7px;background:transparent;color:inherit}.task-tools button{flex:0 0 auto;cursor:pointer}.task-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.task-form label{display:grid;gap:4px}.task-form input,.task-form textarea,.task-form select{min-height:38px;padding:7px;border:1px solid #8888;border-radius:6px;background:transparent;color:inherit;width:100%;box-sizing:border-box}.task-form textarea{min-height:90px}.task-form .wide{grid-column:1/-1}.task-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}.task-item details{margin-top:8px}.task-item summary{cursor:pointer}.task-item button{cursor:pointer}.task-item button:disabled{opacity:.5;cursor:wait}.task-count{display:inline-block;border:1px solid #8886;border-radius:8px;padding:6px 10px;margin:6px 6px 4px 0}.task-item[data-deadline="overdue"]{border-left:3px solid #b45309;padding-left:12px}.task-item[data-deadline="due_soon"]{border-left:3px solid #2563eb;padding-left:12px}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #64748b;outline-offset:2px}@media(max-width:520px){.task-form{grid-template-columns:1fr}}.ultra-icon{height:17px;width:17px;flex:none;vertical-align:middle;stroke:currentColor;fill:none;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round}.icon-button{display:inline-flex;align-items:center;justify-content:center;gap:7px}.task-actions button{border:1px solid #8888;background:transparent;color:inherit;border-radius:7px;padding:7px 11px}footer{opacity:.65;margin-top:30px;font-size:.85rem}@media(max-width:720px){main{grid-template-columns:1fr}}
+
+
+/* Responsive workspace refinements — entirely local, no framework or external assets */
+:root{--accent:#315a85;--line:color-mix(in srgb,currentColor 16%,transparent);--muted:color-mix(in srgb,currentColor 70%,transparent);--surface:color-mix(in srgb,canvas 97%,currentColor 3%)}
+html{scroll-behavior:smooth}body{max-width:1160px;padding:30px clamp(14px,3vw,34px)}
+header{align-items:flex-start;margin-bottom:22px}header h1{font-size:clamp(1.7rem,4vw,2.2rem);letter-spacing:-.04em}
+.tag{font-weight:650;letter-spacing:.08em;white-space:nowrap}
+.notice{background:var(--surface);font-size:.92rem;border-color:var(--line)}
+.panel{background:canvas;border-color:var(--line);box-shadow:0 4px 24px #00000008}
+.panel h2{margin:0 0 10px;font-size:1.2rem;letter-spacing:-.02em}
+.message{transition:border-color .16s,background .16s;min-height:78px}
+.message:hover,.message[aria-pressed=true]{background:var(--surface);border-color:var(--accent)}
+.message[aria-pressed=true]{outline:1px solid var(--accent);outline-offset:0}
+.task-panel{margin-top:20px}.task-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.task-panel-heading h2{margin:0}
+.task-item{position:relative;border:1px solid var(--line);border-left:3px solid var(--line);border-radius:11px;margin-top:13px;padding:16px;background:canvas}
+.task-item h3{font-size:1.04rem;line-height:1.35;margin-bottom:8px;overflow-wrap:anywhere}
+.task-item p{margin:8px 0 12px;overflow-wrap:anywhere}
+.task-item[data-deadline=overdue]{border-left-color:#b45309}
+.task-item[data-deadline=due_soon]{border-left-color:#2563eb}
+.task-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.task-labels{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px}
+.task-pill{font-size:.78rem;line-height:1.45;padding:3px 9px;border:1px solid var(--line);border-radius:999px;color:inherit}
+.task-pill[data-tone=warning]{border-color:#c28136;color:#945215}
+.task-pill[data-tone=info]{border-color:#5a91c6;color:#2866a1}
+.task-pill[data-tone=complete]{border-color:#5a9b72;color:#237044}
+.task-metadata{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:.85rem;margin:8px 0}
+.task-actions{border-top:1px solid var(--line);padding-top:12px}
+.task-actions label{display:flex;align-items:center;gap:8px}
+.task-actions select{min-height:42px}
+.task-actions button{min-height:42px}
+.task-item details{padding:10px 0;border-top:1px solid var(--line)}
+.task-item details summary{list-style:none;display:flex;align-items:center;gap:8px;font-weight:550;padding:5px 0}
+.task-item details summary::-webkit-details-marker{display:none}
+.task-item details summary:after{content:'+';margin-left:auto;opacity:.7}
+.task-item details[open] summary:after{content:'−'}
+.task-item details summary:hover{color:var(--accent)}
+.task-count{background:var(--surface);border-color:var(--line);font-variant-numeric:tabular-nums}
+.task-form{padding:12px 0}
+.task-form label{font-size:.9rem}
+.task-form input,.task-form select,.task-form textarea{font:inherit}
+.task-tools input,.task-tools select,.task-tools button{font:inherit}
+.task-tools button{gap:8px}
+.task-tools input:focus-visible,.task-tools select:focus-visible{outline:2px solid var(--accent)}
+button{font:inherit}
+button.action{min-height:42px}
+.icon-button{gap:8px}
+.ultra-icon{stroke-width:1.35}
+#task-notice:not(:empty){padding:10px 0}
+#task-list-heading{margin:16px 0 0;font-size:.9rem;color:var(--muted);font-weight:500}
+@media(max-width:720px){
+ body{padding:16px 12px 32px}
+ header{align-items:center}
+ main{gap:12px}
+ .panel{padding:14px}
+ .task-panel{margin-top:12px}
+ .task-tools{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+ .task-tools label{min-width:0}
+ #task-refresh{grid-column:1/-1}
+ .task-item{padding:13px}
+ .task-actions{align-items:stretch}
+ .task-actions label{flex:1;min-width:170px;justify-content:space-between}
+ .task-actions select{flex:1;min-width:100px}
+ .task-actions button{flex:1}
+ .task-form{grid-template-columns:1fr}
+ .task-form .wide{grid-column:auto}
+ .task-proposal label{margin-top:10px}
+ .task-proposal button{width:100%}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.message{transition:none}}
+
+
+.conversation-thread{display:grid;gap:10px;margin:14px 0}
+.conversation-thread h4{margin:0}
+.conversation-message{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface)}
+.conversation-message[data-direction=sent]{margin-left:clamp(12px,8%,44px);border-left:3px solid var(--accent)}
+.conversation-message[data-direction=received]{margin-right:clamp(12px,8%,44px)}
+.conversation-message p{margin:7px 0 0;overflow-wrap:anywhere}
+@media(max-width:520px){.conversation-message[data-direction=sent]{margin-left:10px}.conversation-message[data-direction=received]{margin-right:10px}}
+
+/* Safe, local-only attachment previews */
+.attachment-section{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.attachment-heading{display:flex;align-items:center;gap:6px;font-size:.9rem;margin:0 0 8px}
+.attachment-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.attachment-meta{display:grid;gap:2px;min-width:0;overflow-wrap:anywhere;font-size:.9rem}
+.attachment-row button{border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;min-height:38px;padding:7px 10px;cursor:pointer}
+.attachment-row button:disabled{opacity:.6;cursor:not-allowed}
+.attachment-preview{grid-column:1/-1;font-size:.85rem;line-height:1.5;margin:0;padding:12px;border:1px solid var(--line);border-radius:8px;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.attachment-preview[hidden]{display:none}
+.message .ultra-icon{width:14px;height:14px}
+@media(max-width:520px){.attachment-row{grid-template-columns:1fr}.attachment-row button{justify-self:start}}
+
 </style></head><body>
-<header><div><h1>Inbox Tend</h1><div class="meta">Review email, track the next step</div></div><span class="tag">LOCAL DEMO</span></header>
-<div class="notice"><strong>Fictional sample data only.</strong> Rule-based task suggestions and unsent reply templates. No Gmail connection, AI extraction, or email sending. The task database stays on this computer.</div>
-<div id="feedback" role="status" aria-live="polite"></div>
-<main><section class="panel" aria-labelledby="inbox-heading"><h2 id="inbox-heading">Sample inbox</h2><div id="messages">Loading…</div></section>
-<section class="panel" aria-labelledby="review-heading"><h2 id="review-heading">Review message</h2><div id="detail">Choose a message.</div><div id="proposal"></div><div id="draft"></div></section>
-<section class="panel" aria-labelledby="tasks-heading"><h2 id="tasks-heading">Tasks</h2><div class="meta">Deadlines use Pacific/Saipan (UTC+10).</div><div id="tasks"></div><div id="task-detail"></div></section></main>
-<footer>Scyllarus LLC · Apache-2.0 · Local demonstration</footer>
+<header><div><h1>Inbox Tend</h1><div class="meta">Your inbox, thoughtfully handled.</div></div><span class="tag">LOCAL DEMO</span></header>
+<div class="notice"><strong>Demonstration only.</strong> Fictional messages. No Gmail, AI model, remote agent or email sending. Summaries are excerpts; drafts are templates.</div>
+<main><section class="panel"><h2>Sample inbox</h2><div id="messages">Loading…</div></section>
+<section class="panel"><h2>Message review</h2><div id="detail">Choose a message to see its content.</div><div id="draft"></div></section></main>
+<section class="panel" aria-labelledby="tasks-heading" style="margin-top:18px">
+  <h2 id="tasks-heading">Local task tracker</h2>
+  <div class="meta">Tasks are saved only to this demo's local SQLite database. Actions never send email.</div>
+  <div id="task-summary" aria-live="polite">Loading task summary…</div>
+  <div class="task-tools">
+    <label>Search tasks <input id="task-search" type="search" placeholder="Title, owner or project"></label>
+    <label>Filter <select id="task-filter"><option value="all">All tasks</option><option value="active">Active</option><option value="overdue">Overdue</option><option value="due_soon">Due soon</option><option value="done">Completed</option></select></label>
+    <button id="task-refresh" type="button">Refresh</button>
+  </div>
+  <div id="task-notice" class="meta" role="status" aria-live="polite"></div>
+  <h3 id="task-list-heading">Saved tasks</h3>
+  <div id="tasks" aria-live="polite">Loading tasks…</div>
+</section>
+<footer>Scyllarus LLC · Apache-2.0 · Local-only demonstration</footer>
 <script src="/static/app.js" defer></script></body></html>
