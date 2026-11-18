@@ -97,8 +97,82 @@ function agoSpan(ms, fallback = '') {
 function refreshAgo() {
   if (typeof document.querySelectorAll !== 'function') return;
   for (const node of document.querySelectorAll('[data-ago]')) node.textContent = agoLabel(Number(node.dataset.ago));
+  for (const node of document.querySelectorAll('[data-tz]')) paintTimeChip(node);
 }
 if (typeof setInterval === 'function') setInterval(refreshAgo, 30000);
+// The time where a correspondent is, from the UTC offset of their messages. No network, no AI.
+function thereNow(offsetMinutes) {
+  const t = new Date(Date.now() + offsetMinutes * 60000);
+  const hour = t.getUTCHours();
+  return {text: String(hour).padStart(2, '0') + ':' + String(t.getUTCMinutes()).padStart(2, '0'), night: hour >= 19 || hour < 7, asleep: hour >= 23 || hour < 7};
+}
+function paintTimeChip(node) {
+  const there = thereNow(Number(node.dataset.tz));
+  node.replaceChildren(el('i', undefined, 'fa-solid fa-fw ' + (there.night ? 'fa-moon' : 'fa-sun')), document.createTextNode(there.text));
+  node.title = 'Local time there: ' + there.text + (there.asleep ? ' (probably asleep)' : '');
+  node.dataset.asleep = String(there.asleep);
+}
+function timeChip(offsetMinutes) {
+  if (offsetMinutes === null || offsetMinutes === undefined) return null;
+  const chip = el('span', undefined, 'time-chip');
+  chip.dataset.tz = String(offsetMinutes);
+  paintTimeChip(chip);
+  return chip;
+}
+const RELATIONSHIPS = {
+  client: ['Client', 'fa-handshake'], colleague: ['Colleague', 'fa-users'], friend_family: ['Friend or family', 'fa-heart'],
+  recruiter: ['Recruiter', 'fa-user-tie'], vendor: ['Vendor', 'fa-store'], service: ['Service', 'fa-headset'],
+  newsletter: ['Newsletter', 'fa-newspaper'], automated: ['Automated', 'fa-robot'], other: ['Other', 'fa-user']
+};
+function chip(text, iconClass, tone, title) {
+  const node = el('span', undefined, 'chip' + (tone ? ' ' + tone : ''));
+  if (iconClass) node.append(el('i', undefined, 'fa-solid fa-fw ' + iconClass));
+  node.append(document.createTextNode(text));
+  if (title) node.title = title;
+  return node;
+}
+function roughDuration(seconds) {
+  if (seconds < 3600) return 'under an hour';
+  if (seconds < 86400) return 'about ' + Math.round(seconds / 3600) + ' h';
+  const days = Math.round(seconds / 86400);
+  return 'about ' + days + (days === 1 ? ' day' : ' days');
+}
+// The little "contact card" for the sender of the open message. AI guesses are marked; the history is counted from your mail.
+function personCard(person, item) {
+  if (!person) return null;
+  const guessed = userSettings.flags_enabled && person.guessed;
+  const history = person.history;
+  const card = el('section', undefined, 'person-card');
+  const head = el('div', undefined, 'card-row');
+  const flag = guessed ? flagEl(Object.assign({}, item, {country: person.country, country_conf: person.confidence, country_reason: person.reason})) : null;
+  const where = [person.city, person.country ? countryName(person.country) : ''].filter(Boolean).join(', ');
+  if (guessed && (flag || where)) { if (flag) head.append(flag); head.append(el('strong', where || 'Location unknown')); }
+  const work = [person.role, person.company].filter(Boolean).join(' · ');
+  if (guessed && work) head.append(chip(work, 'fa-briefcase', 'ai', 'AI guess from their signature'));
+  if (guessed) {
+    const [label, iconClass] = RELATIONSHIPS[person.relationship] || [];
+    if (label && person.relationship !== 'unknown') head.append(chip(label, iconClass, 'ai', 'AI guess from the content'));
+    if (person.language) head.append(chip('Writes ' + person.language, 'fa-language', 'ai', 'AI guess'));
+    const style = [person.formality !== 'unknown' ? person.formality : '', person.brevity === 'short' ? 'concise' : person.brevity === 'long' ? 'long messages' : person.brevity === 'medium' ? 'medium length' : ''].filter(Boolean).join(', ');
+    if (style) head.append(chip(style, 'fa-pen-nib', 'ai', 'AI guess from how they write'));
+  }
+  // The clock only means something for a known place; an offset of +00:00 alone is usually a server.
+  const timeNow = history && (person.country || history.offset_minutes) ? timeChip(history.offset_minutes) : null;
+  if (timeNow) { const there = el('span', undefined, 'chip'); there.append(el('span', 'There now', 'mr-1.5'), timeNow); if (timeNow.dataset.asleep === 'true') there.append(el('span', 'probably asleep', 'ml-1.5 text-slate-500')); head.append(there); }
+  if (head.children.length) card.append(head);
+  if (history) {
+    const bits = [];
+    bits.push('Known since ' + new Intl.DateTimeFormat(undefined, {timeZone: userSettings.timezone, month: 'short', year: 'numeric'}).format(new Date(history.since)));
+    bits.push(history.count + (history.count === 1 ? ' email' : ' emails') + (history.sent ? ' (' + history.received + ' from them, ' + history.sent + ' from you)' : ''));
+    if (!history.received) bits.push('no message from them yet');
+    if (history.reply_seconds !== null) bits.push('usually replies in ' + roughDuration(history.reply_seconds));
+    if (history.usual_hour !== null) bits.push('usually writes around ' + String(history.usual_hour).padStart(2, '0') + ':00 their time');
+    card.append(el('p', bits.join(' · '), 'meta'));
+  }
+  if (!card.children.length) return null;
+  if (guessed) card.append(el('p', 'Highlighted details are AI guesses and can be wrong; the rest is counted from your mail.', 'meta text-slate-400'));
+  return card;
+}
 // Country name for an ISO code, in English.
 function countryName(code) {
   try { return new Intl.DisplayNames(['en'], {type: 'region'}).of(code) || code; } catch (_) { return code; }

@@ -331,6 +331,7 @@ def grouped_inbox(db,user_id,folder,view,search=None):
     flags.attach(db,user_id,[m for g in result for m in g['messages']])
     for g in result:
         g.update({k:g['last'][k] for k in ('country','country_conf','country_reason')})
+    flags.attach_cards(db,user_id,result)
     return {'groups':result}
 
 def group_name(address):
@@ -499,6 +500,7 @@ def _detail(db,user_id,row):
     else:
         detail['thread'] = []
     flags.attach(db,user_id,[detail]+detail['thread'])
+    detail['person'] = flags.card(db,user_id,row['peer_email'])
     return detail
 
 def attachment(db,user_id,message_id,attachment_id):

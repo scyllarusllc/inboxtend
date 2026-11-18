@@ -81,7 +81,7 @@ claude -p --output-format json --json-schema '<schema>' --tools "" --no-session-
 | Also send small text/CSV attachments | off | Up to 3 files, 8,000 characters each |
 | Translate messages I open | off | Shows a translation in a third Inbox column; sends every opened message |
 | Translate into | empty | Your preferred language, e.g. `English`, `Chinese (Simplified)` |
-| Show country flags | off | Guess the country of each new sender once and show a flag; sends sender details to the provider |
+| Show sender details | off | Guess country, city, company, role, language, relationship and style of each new sender once; sends sender details to the provider |
 
 ## Translation
 
@@ -104,11 +104,24 @@ AI buttons being enabled.
 - Same safety rules as above: the message is untrusted text, the answer is validated, and the translation is
   shown as plain text only.
 
-## Country flags
+## Sender details: flags and person cards
 
-**Settings → Country flags** (off by default) shows a flag next to the people you correspond with, in the mail list and on
-each message. The country is a **guess by the AI provider**, made once per *sender* (the other party of a message: the
-sender of mail you received, the first recipient of mail you sent), never per message.
+**Settings → Sender details** (off by default) shows a country flag next to the people you correspond with, in the mail
+list and on each message, plus a small **card** on the open message and a "role · company · city" line and the local
+time on *People* rows. It describes the other party of a message: the sender of mail you received, the first recipient
+of mail you sent. Everything the AI contributes is marked as an AI guess and can be wrong.
+
+| On the card | Source |
+|---|---|
+| Country (flag) and city | AI guess, from the address, signature, phone code, postal address, place names |
+| Company and job title | AI guess, only if a signature or the text states it, never invented |
+| Language they write in, formal or casual, concise or long | AI guess, from their messages |
+| What they are to you: client, colleague, friend or family, recruiter, vendor, service, newsletter, automated, other | AI guess, from the content |
+| The time where they are now, with "probably asleep" at night | Computed in the browser from the timezone of their messages, no AI; shown only for a known place |
+| Known since, number of emails (from them / from you), how fast they usually reply to you, the hour they usually write | Counted from your own stored mail, no AI; also shown with the switch off |
+
+**Never guessed:** gender, age, ethnicity, religion, health, political views. The request has no field for them and tells
+the AI not to output them.
 
 - **What is sent**, for each *new* sender only: display name, email address, the timezone offset their messages are
   dated with (for example `+09:00`), up to two subject lines, and **excerpts of up to two messages they sent you**: the
@@ -120,11 +133,10 @@ sender of mail you received, the first recipient of mail you sent), never per me
   their message does: a signature with a postal address or a `+81` phone code, place names, currencies, local
   expressions. The AI is told to look for these, and not to infer a country from a language that many countries share
   (English, Spanish, Portuguese, …) without a second clue.
-- **Second look:** a sender that gets no country is looked at once more with the excerpts if the first guess used only the
-  address and name (this matters for guesses made before excerpts were used). After that it is not asked about again; a
-  sender that already has a flag is never re-asked unless you press **Forget all guesses**.
+- **Re-asking:** a guess made before the card existed is asked once more (when the person card was introduced, every
+  existing sender was). After that a sender is never asked about again unless you press **Forget all guesses**.
 - **Cost:** a mailbox with thousands of messages usually has a few hundred distinct senders, so that is a handful of
-  requests once. Every answer is stored in the `sender_countries` table (also when the answer is "no country"), so a
+  requests once (one request per 20 senders; the extra profile fields come in the same request). Every answer is stored in the `sender_countries` table (also when the answer is "no country"), so a
   sender is never asked about twice. The job runs in the background, at most 300 senders per run, and the Inbox page
   shows its progress; **Forget all guesses** clears the table.
 - **Evidence the AI is told to use:** country-code domains (`.jp`, `.com.mx`), the name, the date offset of their

@@ -170,6 +170,13 @@
   .row-meta { @apply flex min-w-0 items-center gap-1.5 text-xs text-slate-500; }
   .row-meta .who { @apply min-w-0 truncate; }
   .row-meta .ago { @apply shrink-0 whitespace-nowrap; }
+  .person-line { @apply overflow-hidden text-ellipsis whitespace-nowrap text-xs font-medium text-indigo-700; }
+  .person-card { @apply my-3 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm; }
+  .person-card .card-row { @apply flex flex-wrap items-center gap-x-2 gap-y-1.5; }
+  .chip { @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-medium text-slate-700; }
+  .chip.ai { @apply border-indigo-200 bg-indigo-50 text-indigo-800; }
+  .time-chip { @apply inline-flex items-center gap-1 whitespace-nowrap font-medium; }
+  .time-chip[data-asleep="true"] { @apply text-indigo-700; }
   .flag { @apply inline-block shrink-0 rounded-[3px] align-middle shadow-sm ring-1 ring-black/10; }
   .flag.low { @apply opacity-60; }
   .group-title { @apply flex items-center justify-between gap-2; }

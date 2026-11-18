@@ -200,7 +200,8 @@ async function selectMessage(id) {
   if (detailFlag) head[1].append(detailFlag, el('span', countryName(full.country)));
   if (full.direction !== 'sent') { detailRead.badge = el('span', '', 'read-badge'); head[1].append(detailRead.badge); }
   const body = el('pre', full.body_text || full.snippet || '(No text content)', 'message-body');  // Text only, never HTML.
-  detail.replaceChildren(...head, body);
+  const person = personCard(full.person, full);
+  detail.replaceChildren(...head, ...(person ? [person] : []), body);
   const attachments = renderAttachments(full);
   if (attachments) detail.append(attachments);
   if (currentGroup && currentGroup.kind === 'person' && currentGroup.messages.length > 1) {
@@ -393,11 +394,14 @@ function paintRead() {
   for (const item of detailRead.items) if (readState.has(item.id)) item.node.className = readState.get(item.id) ? 'message unread' : 'message';
 }
 // "[flag] name · 2 h ago": the line under a row's title.
-function rowMeta(item, who, ms, fallbackDate) {
+function rowMeta(item, who, ms, fallbackDate, offsetMinutes) {
   const line = el('div', undefined, 'row-meta');
   const flag = flagEl(item);
   if (flag) line.append(flag);
   line.append(el('span', who, 'who'), el('span', '·'), agoSpan(ms, fallbackDate || 'No date'));
+  // People rows: their clock, next to how long ago. Only when we know where they are: +00:00 is mostly a server, not a place.
+  const there = userSettings.flags_enabled && item && item.country ? timeChip(offsetMinutes) : null;
+  if (there) line.append(el('span', '·'), there);
   return line;
 }
 function rowButton(key, pressed, unread = false) {
@@ -476,8 +480,11 @@ function renderList(data) {
         top.append(badge);
       }
       const who = g.kind === 'person' ? (g.address || '') : (g.participants || []).join(', ');
-      button.append(top, rowMeta(g, who || 'Unknown', last.internal_date, last.date),
+      button.append(top, rowMeta(g, who || 'Unknown', last.internal_date, last.date, g.kind === 'person' && g.person ? g.person.offset_minutes : null),
         el('div', (last.direction === 'sent' ? 'You: ' : '') + (g.kind === 'person' ? (last.subject || '') + ' — ' : '') + (last.snippet || ''), 'meta group-snippet'));
+      const person = g.kind === 'person' && userSettings.flags_enabled ? g.person : null;
+      const card = person ? [person.role, person.company, person.city].filter(Boolean).join(' · ') : '';
+      if (card) button.append(el('div', card, 'person-line'));
       if (filtersActive() && g.matches && g.count > 1) button.append(el('div', g.matches + ' of ' + g.count + ' messages match', 'meta'));
       if (g.attachment_count) button.append(attachmentLabel(g.attachment_count));
       button.addEventListener('click', () => { currentGroup = g; selectMessage(g.last.id); });

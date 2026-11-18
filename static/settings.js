@@ -132,7 +132,7 @@ async function init() {
   else if (outcome === 'failed') notify('Google did not grant the requested access. Check that the scope is listed in your Google Cloud consent screen, then try again.', true);
   const resetButton = document.getElementById('flags-reset'), resetResult = document.getElementById('flags-reset-result');
   resetButton.addEventListener('click', async () => {
-    if (!confirm('Forget all country guesses?\n\nFlags disappear until the AI guesses again (when country flags are on, that sends each sender to the AI provider once more).')) return;
+    if (!confirm('Forget all sender details guessed by the AI?\n\nFlags and cards lose their AI details until it guesses again (when sender details are on, that sends each sender to the AI provider once more). The history counted from your mail stays.')) return;
     resetButton.disabled = true;
     try { await request('/api/flags/reset', 'POST', {}); resetResult.textContent = ' All guesses were forgotten.'; }
     catch (error) { resetResult.textContent = ' ' + error.message; }

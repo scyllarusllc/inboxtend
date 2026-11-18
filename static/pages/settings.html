@@ -17,7 +17,7 @@
           <li><a class="nav-link" href="#sync"><i class="fa-solid fa-rotate fa-fw" aria-hidden="true"></i><span>Mail sync</span></a></li>
           <li><a class="nav-link" href="#ai"><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i><span>AI assistant</span></a></li>
           <li><a class="nav-link" href="#translation-settings"><i class="fa-solid fa-language fa-fw" aria-hidden="true"></i><span>Translation</span></a></li>
-          <li><a class="nav-link" href="#flags"><i class="fa-regular fa-flag fa-fw" aria-hidden="true"></i><span>Country flags</span></a></li>
+          <li><a class="nav-link" href="#flags"><i class="fa-regular fa-flag fa-fw" aria-hidden="true"></i><span>Sender details</span></a></li>
           <li><a class="nav-link" href="#account"><i class="fa-regular fa-user fa-fw" aria-hidden="true"></i><span>Account</span></a></li>
         </ul>
       </nav>
@@ -132,16 +132,19 @@
           </section>
 
           <section id="flags" class="panel settings-section scroll-mt-24" aria-labelledby="flags-heading">
-            <h2 id="flags-heading"><i class="fa-regular fa-flag" aria-hidden="true"></i>Country flags</h2>
-            <p>Shows a flag next to the people you correspond with, in the mail list and on each message. The country is a <strong>guess by the AI</strong> from the sender&rsquo;s address (country-code domains such as <code>.jp</code>), name, the timezone their messages are dated with and the language of their subjects; hover a flag to see why. <strong>Off by default.</strong> When on, <strong>each new sender is sent once</strong> to the provider chosen under <em>AI assistant</em> (OpenAI for Codex, Anthropic for Claude): display name, email address, the timezone offset their messages are dated with, up to two subject lines and <strong>short excerpts of up to two messages they sent you</strong> (the first and last 500 characters, where the greeting and the signature are; quoted replies and links removed; never attachments, and never mail you sent), 20 senders per request. The AI reads the excerpts for signatures, phone codes, addresses, place names, currencies and language, which is how it can tell a country even for gmail.com. The guesses are saved in this server&rsquo;s database, so every sender is asked about only once; a sender with no clue from the address and name alone is looked at once more with the excerpts. Flags can be wrong; with no clue there is no flag.</p>
+            <h2 id="flags-heading"><i class="fa-regular fa-flag" aria-hidden="true"></i>Sender details</h2>
+            <p>Shows a country flag next to the people you correspond with, and a small card on the open message and in the <em>People</em> list. <strong>Off by default.</strong></p>
+            <p><strong>Guessed by the AI</strong> (marked as such, can be wrong): country and city, company and job title (only if their signature says so), the language they write in, what they are to you (client, colleague, friend, recruiter, vendor, newsletter, automated …) and their writing style (formal or casual, concise or long). It never guesses gender, age, ethnicity, religion, health or political views, and has no field for them.</p>
+            <p><strong>Counted from your own mail, no AI:</strong> the time where they are now (from the timezone of their messages, with a hint when it is night), since when you know them, how many emails, how fast they usually reply to you, and the hour they usually write.</p>
+            <p>When on, <strong>each new sender is sent once</strong> to the provider chosen under <em>AI assistant</em> (OpenAI for Codex, Anthropic for Claude): display name, email address, the timezone offset their messages are dated with, up to two subject lines and <strong>short excerpts of up to two messages they sent you</strong> (the first and last 500 characters, where the greeting and the signature are; quoted replies and links removed; never attachments, and never mail you sent), 20 senders per request. Results are saved in this server&rsquo;s database, so every sender is asked about only once. Details are only filled in when the text supports them; with no clue the field stays empty.</p>
             <div class="task-form">
-              <label class="check"><input name="flags_enabled" type="checkbox"><span class="font-medium text-slate-800">Show country flags (guessed by AI)</span></label>
+              <label class="check"><input name="flags_enabled" type="checkbox"><span class="font-medium text-slate-800">Show sender details (flags and cards, guessed by AI)</span></label>
             </div>
             <div class="settings-actions"><button id="flags-reset" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Forget all guesses</span></button><span id="flags-reset-result" class="meta" role="status"></span></div>
           </section>
 
           <div class="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-            <p class="meta">Gmail connection, mail sync, AI, translation and flag settings above are saved together.</p>
+            <p class="meta">Gmail connection, mail sync, AI, translation and sender-detail settings above are saved together.</p>
             <button id="save-prefs" type="submit" class="action"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>Save settings</button>
           </div>
         </form>
