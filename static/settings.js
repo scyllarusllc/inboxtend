@@ -84,25 +84,51 @@ async function init() {
     saved.ai_model.hidden = saved.ai_model_choice.value !== OTHER_MODEL;
     if (!saved.ai_model.hidden) saved.ai_model.focus();
   });
-  // Gmail access level: read-only by default, write only after an explicit re-authorisation.
-  try {
+  // Gmail connection and access level. Read-only by default; writing needs an explicit re-authorisation.
+  async function showGmail() {
     const gmail = await request('/api/connectors/gmail/status');
-    const line = document.getElementById('access-status'), grant = document.getElementById('grant-modify'), back = document.getElementById('grant-readonly');
+    const line = document.getElementById('access-status');
+    const show = (id, visible, text) => { const b = document.getElementById(id); b.hidden = !visible; if (text) b.textContent = text; return b; };
     line.textContent = !gmail.configured ? 'Gmail is not configured on this server (see docs/gmail-web.md).'
-      : !gmail.connected ? 'Gmail is not connected yet. Connecting from here with change access also works.'
-      : gmail.write_access ? 'Current access: read and change read/unread (gmail.modify).' : 'Current access: read-only (gmail.readonly).';
-    grant.hidden = !gmail.configured || gmail.write_access;
-    back.hidden = !gmail.configured || !gmail.connected || !gmail.write_access;
+      : !gmail.connected ? 'Gmail is not connected.'
+      : gmail.write_access ? 'Connected. Access: read, and change read/unread (gmail.modify).' : 'Connected. Access: read-only (gmail.readonly).';
+    show('connect-gmail', gmail.configured, gmail.connected ? 'Reconnect Gmail' : 'Connect Gmail (read-only)');
+    show('grant-modify', gmail.configured && !gmail.write_access, gmail.connected ? 'Allow changing read/unread in Gmail…' : 'Connect Gmail with read/unread changes…');
+    show('grant-readonly', gmail.configured && gmail.connected && gmail.write_access);
+    show('disconnect-gmail', gmail.connected);
     prefsForm.elements.gmail_write_read.disabled = !gmail.write_access;
-    const authorise = async (access, button) => {
-      button.disabled = true;
-      try { location.assign((await request('/api/connectors/gmail/connect', 'POST', {access})).authorization_url); }
-      catch (error) { notify(error.message, true); button.disabled = false; }
-    };
-    grant.addEventListener('click', () => authorise('modify', grant));
-    back.addEventListener('click', () => authorise('readonly', back));
+    return gmail;
+  }
+  const authorise = async (access, button, next) => {
+    button.disabled = true;
+    try { location.assign((await request('/api/connectors/gmail/connect', 'POST', {access, next})).authorization_url); }
+    catch (error) { notify(error.message, true); button.disabled = false; }
+  };
+  try {
+    await showGmail();
+    const connect = document.getElementById('connect-gmail'), grant = document.getElementById('grant-modify');
+    // First connection continues to the Inbox (to watch the sync); changing an existing connection stays here.
+    connect.addEventListener('click', async () => {
+      const now = await request('/api/connectors/gmail/status');  // Fresh state: it may have changed since the page loaded.
+      authorise(now.write_access ? 'modify' : 'readonly', connect, now.connected ? 'settings' : 'inbox');
+    });
+    grant.addEventListener('click', () => authorise('modify', grant, 'settings'));
+    const back = document.getElementById('grant-readonly');
+    back.addEventListener('click', () => authorise('readonly', back, 'settings'));
+    const disconnect = document.getElementById('disconnect-gmail');
+    disconnect.addEventListener('click', async () => {
+      if (!confirm('Disconnect Gmail?\n\nThis deletes the saved messages, attachments and translations from this server. Your tasks are kept. You can connect again later and sync again.')) return;
+      disconnect.disabled = true;
+      try { await request('/api/connectors/gmail/disconnect', 'POST', {}); notify('Gmail disconnected. The saved mail was deleted from this server.'); await showGmail(); }
+      catch (error) { notify(error.message, true); }
+      disconnect.disabled = false;
+    });
   } catch (error) { document.getElementById('access-status').textContent = 'Could not check Gmail: ' + error.message; }
-  if (new URLSearchParams(location.search).get('gmail') === 'write') notify('Gmail now allows Inbox Tend to change read/unread. Your read/unread changes will be applied to Gmail.');
+  const outcome = new URLSearchParams(location.search).get('gmail');
+  if (outcome === 'write') notify('Gmail now allows Inbox Tend to change read/unread. Your read/unread changes will be applied to Gmail.');
+  else if (outcome === 'readonly') notify('Gmail access is read-only again. Read/unread changes stay in Inbox Tend.');
+  else if (outcome === 'declined') notify('Google sign-in was cancelled. Nothing changed.', true);
+  else if (outcome === 'failed') notify('Google did not grant the requested access. Check that the scope is listed in your Google Cloud consent screen, then try again.', true);
   const aiTest = document.getElementById('ai-test'), aiResult = document.getElementById('ai-test-result');
   aiTest.addEventListener('click', async () => {
     aiTest.disabled = true; aiResult.textContent = ' Asking the AI…';

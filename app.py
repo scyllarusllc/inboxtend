@@ -217,16 +217,17 @@ class Handler(BaseHTTPRequestHandler):
         if not write and path == '/api/connectors/gmail/callback':
             query = parse_qs(urlparse(self.path).query)
             if 'error' in query:
-                return self._redirect('/user/inbox?gmail=declined')
+                return self._redirect('/user/settings?gmail=declined')
             if len(query.get('state',[])) != 1 or len(query.get('code',[])) != 1:
                 raise RequestError(400,'Invalid OAuth callback')
             try:
                 with self._db() as db:
-                    level = gmail_web.finish(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),query['state'][0],query['code'][0])
+                    level,next_page = gmail_web.finish(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),query['state'][0],query['code'][0])
                     prefs.save(db,session['id'],{'gmail_write_read':level == 'modify'})  # Granting write access turns it on; read-only turns it off.
             except gmail_web.GmailConnectionError:
-                return self._redirect('/user/inbox?gmail=failed')
-            return self._redirect('/user/settings?gmail=write' if level == 'modify' else '/user/inbox?gmail=connected')
+                return self._redirect('/user/settings?gmail=failed')
+            if level == 'modify': return self._redirect('/user/settings?gmail=write')
+            return self._redirect('/user/settings?gmail=readonly' if next_page == 'settings' else '/user/inbox?gmail=connected')
         if not write and path == '/user/dashboard':
             return self._redirect('/user/inbox')  # Legacy URL
         if not write and path in ('/user/inbox','/user/tasks','/user/settings'):
@@ -239,7 +240,9 @@ class Handler(BaseHTTPRequestHandler):
                     with self._db() as db:
                         access = data.get('access','readonly')
                         if access not in gmail_web.LEVELS: raise RequestError(400,'Unknown access level')
-                        url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),access)
+                        next_page = data.get('next','inbox')
+                        if next_page not in ('inbox','settings'): raise RequestError(400,'Unknown return page')
+                        url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),access,next_page)
                 except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
                 return self._json(200,{'authorization_url':url})
             if path == '/api/connectors/gmail/sync' and self.command == 'POST':

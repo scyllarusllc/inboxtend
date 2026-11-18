@@ -70,16 +70,17 @@ def _post(url, fields, *, opener=urlopen):
     except (URLError, OSError, TimeoutError, ValueError):
         raise GmailConnectionError('Google authorization request failed') from None
 
-def begin(db, config, user_id, session_token, level='readonly'):
+def begin(db, config, user_id, session_token, level='readonly', next_page='inbox'):
     if not configured(config): raise GmailConnectionError('Gmail is not configured')
     if level not in LEVELS: raise GmailConnectionError('Unknown access level')
+    if next_page not in ('inbox','settings'): raise GmailConnectionError('Unknown return page')
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
     challenge = _b64(hashlib.sha256(verifier.encode()).digest())
     session_hash = hashlib.sha256(session_token.encode()).hexdigest()
     with db:
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=? OR expires_at<?', (user_id,int(time.time())))
-        db.execute('INSERT INTO gmail_oauth_pending(state_hash,user_id,session_hash,verifier,expires_at,level) VALUES (?,?,?,?,?,?)',
-                   (hashlib.sha256(state.encode()).hexdigest(),user_id,session_hash,verifier,int(time.time())+300,level))
+        db.execute('INSERT INTO gmail_oauth_pending(state_hash,user_id,session_hash,verifier,expires_at,level,next) VALUES (?,?,?,?,?,?,?)',
+                   (hashlib.sha256(state.encode()).hexdigest(),user_id,session_hash,verifier,int(time.time())+300,level,next_page))
     return AUTHORIZE + '?' + urlencode({
         'client_id':config['INBOX_TEND_GOOGLE_CLIENT_ID'],
         'redirect_uri':config['INBOX_TEND_GOOGLE_REDIRECT_URI'],
@@ -115,7 +116,7 @@ def finish(db, config, user_id, session_token, state, code, *, opener=urlopen):
         db.execute('INSERT INTO gmail_connections(user_id,refresh_token,connected_at,scopes) VALUES (?,?,?,?) '
                    'ON CONFLICT(user_id) DO UPDATE SET refresh_token=excluded.refresh_token,connected_at=excluded.connected_at,scopes=excluded.scopes',
                    (user_id,encrypted,int(time.time()),' '.join(sorted(granted))))
-    return row['level']
+    return row['level'], row['next']
 
 def _granted(db,user_id):
     row = db.execute('SELECT scopes FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()

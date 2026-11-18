@@ -10,6 +10,23 @@
     <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
 
     <form id="prefs-form" class="settings-form">
+      <section class="panel settings-section" aria-labelledby="access-heading">
+        <h2 id="access-heading">Gmail connection</h2>
+        <p id="access-status" role="status">Checking…</p>
+        <div class="settings-actions">
+          <button id="connect-gmail" type="button" hidden>Connect Gmail</button>
+          <button id="grant-modify" type="button" hidden>Allow changing read/unread in Gmail…</button>
+          <button id="grant-readonly" type="button" hidden>Return to read-only access…</button>
+          <button id="disconnect-gmail" type="button" hidden>Disconnect Gmail</button>
+        </div>
+        <p>By default Inbox Tend can only <strong>read</strong> your mail. You may additionally let it mark messages <strong>read or unread in Gmail</strong>. That needs Google&rsquo;s broader <code>gmail.modify</code> permission, which Google describes as &ldquo;read, compose and send emails &hellip; except permanent deletion&rdquo;. Inbox Tend&rsquo;s code only ever changes the unread flag of one message at a time (it cannot send, delete or trash mail), but the permission itself allows more, so grant it only on a server you trust. You can withdraw it here or at <code>myaccount.google.com/permissions</code>.</p>
+        <div class="task-form">
+          <label class="check"><input name="gmail_write_read" type="checkbox" disabled> Apply read/unread changes to Gmail too
+            <span class="meta">Pause this to keep read state local without withdrawing the permission. A failed Gmail update never loses the local change.</span></label>
+        </div>
+        <p class="meta"><strong>Disconnect Gmail</strong> removes the sign-in from this server and deletes the saved messages, attachments and translations. Your tasks are kept. It does not revoke Google&rsquo;s permission; do that at <code>myaccount.google.com/permissions</code>.</p>
+      </section>
+
       <section class="panel settings-section" aria-labelledby="time-heading">
         <h2 id="time-heading">Time and tasks</h2>
         <div class="task-form">
@@ -48,17 +65,6 @@
           </label>
         </div>
         <p class="meta">Changes apply to the next sync. Already stored mail is kept. The Gmail searches themselves (<code>INBOX_TEND_SYNC_QUERY</code>, <code>INBOX_TEND_SYNC_SENT_QUERY</code>) are set in <code>.env</code>.</p>
-      </section>
-
-      <section class="panel settings-section" aria-labelledby="access-heading">
-        <h2 id="access-heading">Gmail access</h2>
-        <p id="access-status" role="status">Checking…</p>
-        <p>By default Inbox Tend can only <strong>read</strong> your mail. You may additionally let it mark messages <strong>read or unread in Gmail</strong>. That needs Google&rsquo;s broader <code>gmail.modify</code> permission, which Google describes as &ldquo;read, compose and send emails &hellip; except permanent deletion&rdquo;. Inbox Tend&rsquo;s code only ever changes the unread flag of one message at a time (it cannot send, delete or trash mail), but the permission itself allows more, so grant it only on a server you trust. You can withdraw it here or at <code>myaccount.google.com/permissions</code>.</p>
-        <div class="settings-actions"><button id="grant-modify" type="button">Allow changing read/unread in Gmail…</button><button id="grant-readonly" type="button" hidden>Return to read-only access…</button></div>
-        <div class="task-form">
-          <label class="check"><input name="gmail_write_read" type="checkbox" disabled> Apply read/unread changes to Gmail too
-            <span class="meta">Pause this to keep read state local without withdrawing the permission. A failed Gmail update never loses the local change.</span></label>
-        </div>
       </section>
 
       <section class="panel settings-section" aria-labelledby="ai-heading">

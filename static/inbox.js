@@ -142,6 +142,8 @@ function showCounts(counts) {
 async function setRead(id, markRead) {
   const result = await request('/api/connectors/gmail/messages/' + encodeURIComponent(id) + '/read', 'POST', {read: markRead});
   if (result.gmail_error) notify('Saved here, but Gmail was not updated: ' + result.gmail_error, true);
+  readState.set(id, result.unread);
+  paintRead();
   for (const m of messages) if (m.id === id) m.unread = result.unread;
   for (const g of groups) g.unread_count = g.messages.filter(m => m.unread).length;
   request('/api/connectors/gmail/status').then(state => showCounts(state.counts)).catch(() => {});
@@ -150,6 +152,7 @@ async function setRead(id, markRead) {
 }
 async function selectMessage(id) {
   selectedId = id;
+  detailRead = null;
   const m = messages.find(message => message.id === id) || {id, subject: '', from: '', date: ''};
   for (const button of list.querySelectorAll('button.message')) {
     button.setAttribute('aria-pressed', String(button.dataset.id === (currentGroup ? currentGroup.id : id)));
@@ -162,11 +165,15 @@ async function selectMessage(id) {
   catch (error) { if (selectedId === id) detail.append(el('p', error.message, 'error')); return; }
   if (selectedId !== id) return;
   if (userSettings.translate_enabled) showTranslation(id);
+  readState.set(full.id, full.unread);
+  for (const t of full.thread) readState.set(t.id, t.unread);
+  detailRead = {id, badge: null, toggle: null, items: []};
   const head = [el('h3', full.subject || '(No subject)'),
     el('div', 'From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date'), 'meta')];
   if (full.to) head.push(el('div', 'To ' + full.to, 'meta'));
   if (full.cc) head.push(el('div', 'Cc ' + full.cc, 'meta'));
   head[1] = el('div', (full.direction === 'sent' ? 'Sent' : 'Received') + ' · From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date'), 'meta');
+  if (full.direction !== 'sent') { detailRead.badge = el('span', '', 'read-badge'); head[1].append(detailRead.badge); }
   const body = el('pre', full.body_text || full.snippet || '(No text content)', 'message-body');  // Text only, never HTML.
   detail.replaceChildren(...head, body);
   const attachments = renderAttachments(full);
@@ -179,6 +186,7 @@ async function selectMessage(id) {
       item.type = 'button';
       item.setAttribute('aria-pressed', String(t.id === id));
       if (t.unread) item.className += ' unread';
+      detailRead.items.push({id: t.id, node: item});
       item.append(el('div', (t.direction === 'sent' ? 'Sent · ' : 'Received · ') + (t.subject || '(No subject)')),
         el('div', formatWhen(t.internal_date, t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
       item.addEventListener('click', () => selectMessage(t.id));
@@ -194,6 +202,7 @@ async function selectMessage(id) {
       item.type = 'button';
       item.setAttribute('aria-pressed', String(t.id === id));
       if (t.unread) item.className += ' unread';
+      detailRead.items.push({id: t.id, node: item});
       item.append(el('div', (t.direction === 'sent' ? 'Sent · To ' + (t.to || 'unknown') : 'Received · From ' + (t.from || 'unknown'))),
         el('div', formatWhen(t.internal_date, t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
       item.addEventListener('click', () => selectMessage(t.id));
@@ -220,21 +229,23 @@ async function selectMessage(id) {
     finally { propose.disabled = false; }
   });
   detail.append(full.direction === 'sent' ? propose : reply, ...(full.direction === 'sent' ? [] : [el('span', ' '), propose]));
-  let toggle = null;
   if (full.direction !== 'sent') {
-    const autoRead = full.unread && userSettings.mark_read_on_open;  // Opening it marks it read (below).
-    let unread = full.unread && !autoRead;
-    toggle = iconButton('check', unread ? 'Mark as read' : 'Mark as unread');
+    const toggle = iconButton('check', 'Mark as read');
+    detailRead.toggle = toggle;
     toggle.addEventListener('click', async () => {
       toggle.disabled = true;
-      try { unread = await setRead(id, unread); toggle.lastChild.textContent = unread ? 'Mark as read' : 'Mark as unread'; }
+      try { await setRead(id, readState.get(id) !== false); }  // Unread (or unknown) -> mark read; read -> mark unread.
       catch (error) { notify('Could not change the read state: ' + error.message, true); }
       toggle.disabled = false;
     });
     detail.append(el('span', ' '), toggle, el('span', writesToGmail() ? ' (also updated in Gmail)' : ' (kept in Inbox Tend only; Gmail is not changed)', 'meta'));
   }
-  // Opening a message marks it read, in Inbox Tend only.
-  if (full.unread && userSettings.mark_read_on_open && full.direction !== 'sent') setRead(id, true).catch(() => { if (toggle) toggle.lastChild.textContent = 'Mark as read'; });
+  // Opening a message marks it read. Shown as read at once; put back if the request fails.
+  if (full.unread && userSettings.mark_read_on_open && full.direction !== 'sent') {
+    readState.set(id, false);
+    setRead(id, true).catch(() => { readState.set(id, true); paintRead(); });
+  }
+  paintRead();
   if (userSettings.ai_enabled) detail.append(aiControls(id, full.direction === 'sent'));
 }
 function aiControls(id, isSent) {
@@ -303,12 +314,23 @@ function chooseFolder(next) {
 folderInbox.addEventListener('click', () => chooseFolder('inbox'));
 folderSent.addEventListener('click', () => chooseFolder('sent'));
 const gmailStatus = document.getElementById('gmail-status');
-const gmailConnect = document.getElementById('gmail-connect');
-const gmailDisconnect = document.getElementById('gmail-disconnect');
 const gmailRefresh = document.getElementById('gmail-refresh');
 let refreshRun = 0;
 function syncLabel(state) {
   return state.last_sync ? ' Last synced ' + formatWhen(state.last_sync * 1000) + '.' : '';
+}
+// The one place the UI reads "unread" from. Whatever learns something new (the list reloading during a sync,
+// the toggle button, opening a message) updates it and calls paintRead(), so the open message follows live.
+const readState = new Map();
+let detailRead = null;  // What the open message's panel shows: {id, badge, toggle, items: [{id, node}]}
+function paintRead() {
+  if (!detailRead) return;
+  const unread = readState.get(detailRead.id);
+  if (unread !== undefined) {
+    if (detailRead.badge) { detailRead.badge.textContent = unread ? 'Unread' : 'Read'; detailRead.badge.className = 'read-badge ' + (unread ? 'is-unread' : 'is-read'); }
+    if (detailRead.toggle) detailRead.toggle.lastChild.textContent = unread ? 'Mark as read' : 'Mark as unread';
+  }
+  for (const item of detailRead.items) if (readState.has(item.id)) item.node.className = readState.get(item.id) ? 'message unread' : 'message';
 }
 function rowButton(key, pressed, unread = false) {
   const button = el('button', undefined, unread ? 'message unread' : 'message');
@@ -326,6 +348,8 @@ function renderList(data) {
   list.replaceChildren();
   groups = data.groups || [];
   messages = data.groups ? groups.flatMap(g => g.messages) : data.messages;
+  for (const m of messages) readState.set(m.id, m.unread);
+  paintRead();
   if (!messages.some(m => m.id === previous)) {
     selectedId = null; currentGroup = null;
     detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
@@ -374,13 +398,12 @@ async function refreshGmail(startSync = false) {
   for (;;) {
     const state = await request('/api/connectors/gmail/status');
     if (run !== refreshRun) return;
-    gmailConnect.hidden = !state.configured;
-    gmailConnect.textContent = state.connected ? 'Reconnect Gmail' : 'Connect Gmail';
-    gmailDisconnect.hidden = !state.connected;
     gmailRefresh.hidden = !state.connected;
     if (!state.connected) {
-      gmailStatus.textContent = state.configured ? 'Gmail is not connected. Connect it to review your inbox.' : 'Gmail connection is not configured. See docs/gmail-web.md.';
-      list.textContent = 'Connect Gmail to see your inbox.';
+      const link = el('a', 'Settings → Gmail'); link.href = '/user/settings';
+      if (state.configured) gmailStatus.replaceChildren('Gmail is not connected. Connect it in ', link, ' to see your mail.');
+      else gmailStatus.replaceChildren('Gmail is not configured on this server (see docs/gmail-web.md). Details in ', link, '.');
+      list.replaceChildren(el('p', 'No mail yet: connect Gmail in Settings.', 'meta'));
       detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
       messages = []; selectedId = null; gmailRefresh.disabled = false;
       return;
@@ -404,19 +427,6 @@ async function refreshGmail(startSync = false) {
     if (run !== refreshRun) return;
   }
 }
-gmailConnect.addEventListener('click', async () => {
-  gmailConnect.disabled = true;
-  try {
-    const result = await request('/api/connectors/gmail/connect','POST',{access: gmailWriteAccess ? 'modify' : 'readonly'});
-    location.assign(result.authorization_url);
-  } catch (error) { gmailStatus.textContent = error.message; gmailConnect.disabled = false; }
-});
-gmailDisconnect.addEventListener('click', async () => {
-  gmailDisconnect.disabled = true;
-  try { await request('/api/connectors/gmail/disconnect','POST',{}); await refreshGmail(); }
-  catch (error) { gmailStatus.textContent = error.message; }
-  finally { gmailDisconnect.disabled = false; }
-});
 gmailRefresh.addEventListener('click', async () => {
   try { await refreshGmail(true); } catch (error) { gmailStatus.textContent = error.message; }
 });
