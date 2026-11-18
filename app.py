@@ -1,4 +1,4 @@
-"""Local fictional inbox and reviewed task demo. Never connects to or sends email."""
+"""Local single-admin Gmail task workspace. Reads Gmail headers and snippets only; never sends email."""
 from __future__ import annotations
 import json
 import os
@@ -21,7 +21,7 @@ PAGE_NAV = {
 PAGES = {
     'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', '', 'public'),
     'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', '/static/login.js', 'public'),
-    'index': ('Inbox Tend · Workspace preview', 'Review fictional messages and track local follow-up tasks.', '/static/app.js', 'workspace'),
+    'index': ('Inbox Tend · Workspace', 'Review your Gmail inbox and track local follow-up tasks.', '/static/app.js', 'workspace'),
 }
 
 def render_page(name):
@@ -40,76 +40,25 @@ def render_page(name):
         layout = layout.replace(marker, value)
     return layout.encode('utf-8')
 
-MESSAGES = [
- {'id':'sample-1','thread_id':'thread-1','provider':'demo','from':'alex@example.org','subject':'Website login issue','date':'2026-11-15','body':'Hi, the login form sometimes fails after submitting. Could you investigate and let us know what you find?','priority':'high'},
- {'id':'sample-2','thread_id':'thread-2','provider':'demo','from':'team@example.org','subject':'Friday project update','date':'2026-11-14','body':'Please send a short progress update for the dashboard project when you have time.','priority':'medium'},
- {'id':'sample-3','thread_id':'thread-3','provider':'demo','from':'newsletter@example.org','subject':'Weekly design newsletter','date':'2026-11-13','body':"This week's design roundup includes ideas for accessible forms and simpler navigation.",'priority':'low'},
- {'id':'sample-website-followup','thread_id':'thread-website-followup','provider':'demo','from':'casey@example.org','subject':'Website project: response and start date','date':'2026-11-18','body':'Hello, I have not heard back about the website project. Our notes show a different service start date than the one in the last update. Could you check the agreed date and reply by November 20, 2026? Thank you.','priority':'high'},
- {'id':'sample-website-sent','thread_id':'thread-website-followup','provider':'demo','from':'me@example.org','direction':'sent','subject':'Re: Website project: response and start date','date':'2026-11-17','body':'Hello, I will review the recorded service start date and send a confirmed update once the project notes have been checked.','priority':'medium'}
-]
-
-
-# Fictional attachment content only. Preview data is deliberately separate from the
-# public message listing and is never executed, uploaded, or handed to an agent.
-DEMO_ATTACHMENTS = {
-    'sample-website-followup': [
-        {
-            'id': 'start-date-note',
-            'name': 'service-start-date.txt',
-            'mime_type': 'text/plain',
-            'content': 'FICTIONAL DEMO NOTE\\nOriginal proposed start: November 1, 2026.\\nClient believes the start is November 15, 2026.\\nThe agreement must be reviewed before confirming either date.',
-        },
-        {
-            'id': 'sample-budget',
-            'name': 'project-items.csv',
-            'mime_type': 'text/csv',
-            'content': 'Item,Status\\nLogin form,Needs review\\nService start date,Needs confirmation',
-        },
-    ],
-}
-
-def attachment_metadata(message_id):
-    return [{'id':item['id'], 'name':item['name'], 'mime_type':item['mime_type'],
-             'size_bytes':len(item['content'].encode('utf-8')),
-             'preview_available':True, 'mode':'demo'}
-            for item in DEMO_ATTACHMENTS.get(message_id, [])]
-
-def attachment_preview(message_id, attachment_id):
-    for item in DEMO_ATTACHMENTS.get(message_id, []):
-        if item['id'] == attachment_id:
-            content = item['content']
-            if item['mime_type'] not in ('text/plain','text/csv') or len(content.encode('utf-8')) > 64 * 1024:
-                return None
-            return {'id':item['id'], 'name':item['name'],
-                    'mime_type':item['mime_type'], 'content':content,
-                    'truncated':False, 'mode':'demo', 'trusted':False}
-    return None
-
 def summarize(message):
     """A deterministic excerpt, not AI extraction."""
-    s = ' '.join(message['body'].split())
+    s = ' '.join((message.get('snippet') or '').split())
     return s if len(s) <= 150 else s[:147].rstrip() + '...'
 
 def draft_reply(message):
-    return ("Hello,\n\nThank you for following up about '" + message['subject'] + "'. "
-            "I will review the details, including any date discrepancy, and confirm the next steps after checking the record. "
+    return ("Hello,\n\nThank you for your message about '" + (message.get('subject') or '(no subject)') + "'. "
+            "I will review the details and follow up after checking the record. "
             "This is a draft for your review.\n\nBest regards")
 
 def proposal(message):
-    if message['id'] == 'sample-website-followup':
-        inferred = {'title':'Review website project start date and reply',
-                    'description':'Check the agreed service start date and prepare a response to the follow-up.',
-                    'priority':'high','due_date':'2026-11-20','due_time':'17:00',
-                    'due_timezone':'Pacific/Saipan','project_label':'Website project','customer_label':'Fictional client'}
-        note = 'Rule-based demo suggestion from the fictional message; verify the start date before responding.'
-    else:
-        inferred = {'title':message['subject'],'description':'Review this message and decide next steps.',
-                    'priority':message['priority'],'due_date':None,'due_time':None,
-                    'due_timezone':'Pacific/Saipan','project_label':'','customer_label':''}
-        note = 'Rule-based demo suggestion; no deadline was inferred.'
-    return {'source':{'provider':'demo','message_id':message['id'],'thread_id':message['thread_id'],
-                      'subject':message['subject'],'date':message['date']},
-            'inferred':inferred,'note':note}
+    """Rule-based starting point for a task; no deadline is inferred."""
+    subject = (message.get('subject') or '').strip() or '(No subject)'
+    return {'source':{'provider':'gmail','message_id':message['id'],'thread_id':message['thread_id'],
+                      'subject':subject,'date':message['date']},
+            'inferred':{'title':subject[:200],'description':summarize(message),
+                        'priority':'medium','due_date':None,'due_time':None,
+                        'due_timezone':'Pacific/Saipan','project_label':'','customer_label':''},
+            'note':'Rule-based suggestion from the Gmail subject and snippet; no deadline was inferred.'}
 
 class Handler(BaseHTTPRequestHandler):
     db_path = DEFAULT_DB
@@ -143,8 +92,14 @@ class Handler(BaseHTTPRequestHandler):
         name = host.split(':',1)[0].lower()
         return name in ('127.0.0.1','localhost','[::1]') and host.count(':') <= 1
 
-    def _message(self,id):
-        return next((m for m in MESSAGES if m['id']==id),None)
+    def _gmail_message(self,session,message_id):
+        """Fetch a message from the signed-in user's Gmail; the client never supplies message content."""
+        if not isinstance(message_id,str) or not message_id:
+            raise RequestError(400,'Message ID required')
+        try:
+            with self._db() as db: return gmail_web.message(db,self.gmail_config,session['id'],message_id)
+        except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
+        except gmail_web.GmailReadError as exc: raise RequestError(502,str(exc)) from None
 
     def _db(self):
         @contextmanager
@@ -212,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200,(ROOT/'static'/'login.js').read_bytes(),'text/javascript; charset=utf-8')
             if path == '/static/styles.css':
                 return self._send(200,(ROOT/'static'/'styles.css').read_bytes(),'text/css; charset=utf-8')
-            if path == '/api/health': return self._json(200,{'status':'ok','mode':'demo'})
+            if path == '/api/health': return self._json(200,{'status':'ok'})
         if write and path == '/api/auth/login' and self.command == 'POST':
             self._same_origin()
             data = self._read_json()
@@ -261,14 +216,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200,{'signed_out':True},
                                   (('Set-Cookie',self._cookie_header('',0)),))
             if path == '/api/draft' and self.command == 'POST':
-                message = self._message(data.get('id'))
-                if not message: raise RequestError(404,'Message not found')
-                return self._json(200,{'draft':draft_reply(message),'sent':False,'mode':'demo','template':True})
+                message = self._gmail_message(session,data.get('id'))
+                return self._json(200,{'draft':draft_reply(message),'sent':False,'template':True})
             if path == '/api/tasks' and self.command == 'POST':
-                message = self._message(data.get('message_id'))
-                if not message: raise RequestError(404,'Message not found')
+                message = dict(self._gmail_message(session,data.get('message_id')),provider='gmail')
                 with self._db() as db:
-                    existing = task_for_source(db,'demo',message['id'],session['id'])
+                    existing = task_for_source(db,'gmail',message['id'],session['id'])
                     if existing:
                         return self._json(409,{'error':'Task already exists','task':existing})
                     task = create_task(db,message,data,session['id'])
@@ -296,23 +249,13 @@ class Handler(BaseHTTPRequestHandler):
             except gmail_web.GmailReadError as exc: raise RequestError(502,str(exc)) from None
             return self._json(200,{'messages':rows,'mode':'gmail','read_only':True})
         if path == '/api/session':
-            return self._json(200,{'csrf_token':session['csrf_token'],'user':{'username':session['username'],'role':session['role']},'mode':'demo'})
-        if path == '/api/messages':
-            return self._json(200,{'mode':'demo','messages':[dict(m,direction=m.get('direction','received'),summary=summarize(m),attachments=attachment_metadata(m['id'])) for m in MESSAGES]})
+            return self._json(200,{'csrf_token':session['csrf_token'],'user':{'username':session['username'],'role':session['role']}})
         parts = path.strip('/').split('/')
-        if len(parts)==5 and parts[:2]==['api','messages'] and parts[3]=='attachments':
-            message = self._message(parts[2])
-            if not message: raise RequestError(404,'Message not found')
-            result = attachment_preview(parts[2], parts[4])
-            if result is None: raise RequestError(404,'Attachment preview not available')
-            return self._json(200,result)
-        if len(parts)==4 and parts[:2]==['api','messages'] and parts[3]=='proposal':
-            message = self._message(parts[2])
-            if not message: raise RequestError(404,'Message not found')
-            return self._json(200,proposal(message))
+        if len(parts)==6 and parts[:4]==['api','connectors','gmail','messages'] and parts[5]=='proposal':
+            return self._json(200,proposal(self._gmail_message(session,parts[4])))
         if path == '/api/tasks/summary':
             with self._db() as db: summary = task_summary(db,user_id=session['id'])
-            return self._json(200,{'summary':summary,'timezone':'Pacific/Saipan','mode':'demo'})
+            return self._json(200,{'summary':summary,'timezone':'Pacific/Saipan'})
         if path == '/api/tasks':
             with self._db() as db: rows = list_tasks(db,user_id=session['id'])
             return self._json(200,{'tasks':rows,'timezone':'Pacific/Saipan'})

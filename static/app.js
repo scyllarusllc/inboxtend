@@ -91,7 +91,7 @@ function makeEditForm(task) {
   field(form,'Project','project_label',task.project_label || '');
   field(form,'Customer','customer_label',task.customer_label || '');
   const agent=field(form,'AI Agent (assignment only)','assigned_agent',task.assigned_agent || '','select');
-  for(const [value,label] of [['','Unassigned'],['Demo Research Agent','Demo Research Agent'],['Demo Coding Agent','Demo Coding Agent'],['Demo General Agent','Demo General Agent']]){
+  for(const [value,label] of [['','Unassigned'],['Research Agent','Research Agent'],['Coding Agent','Coding Agent'],['General Agent','General Agent']]){
     const option=el('option',label); option.value=value; agent.append(option);
   }
   agent.value=task.assigned_agent || '';
@@ -133,7 +133,7 @@ function renderTasks() {
     return true;
   });
   if(!matching.length){
-    taskList.append(el('p',cachedTasks.length?'No tasks match the current filter.':'No saved tasks yet. Review a fictional message to create one.'));
+    taskList.append(el('p',cachedTasks.length?'No tasks match the current filter.':'No saved tasks yet. Open an inbox message and suggest a task to create one.'));
     return;
   }
   for(const task of matching){
@@ -231,7 +231,7 @@ async function refreshTasks() {
 async function showProposal(messageId) {
   const m = messages.find(message => message.id === messageId);
   if (!m) return;
-  const proposal = await request('/api/messages/' + encodeURIComponent(messageId) + '/proposal');
+  const proposal = await request('/api/connectors/gmail/messages/' + encodeURIComponent(messageId) + '/proposal');
   if (selectedId !== messageId) return;
   const form = el('form', undefined, 'task-proposal');
   form.append(el('h4', 'Review suggested task'), el('p', proposal.note, 'meta'));
@@ -271,44 +271,6 @@ async function showProposal(messageId) {
   });
   detail.append(form);
 }
-function renderAttachments(entry) {
-  const attachments=entry.attachments || [];
-  if(!attachments.length)return null;
-  const block=el('section',undefined,'attachment-section');
-  const heading=el('h5',undefined,'attachment-heading');
-  heading.append(icon('paperclip'),document.createTextNode(' Attachments ('+attachments.length+')'));
-  block.append(heading);
-  for(const file of attachments){
-    const row=el('div',undefined,'attachment-row');
-    const details=el('div',undefined,'attachment-meta');
-    details.append(el('strong',file.name),
-      el('span',file.mime_type+' · '+file.size_bytes+' bytes · Fictional sample','meta'));
-    const open=iconButton('paperclip',file.preview_available?'Preview':'Preview unavailable');
-    open.disabled=!file.preview_available;
-    const preview=el('pre',undefined,'attachment-preview');
-    preview.hidden=true;
-    open.setAttribute('aria-expanded','false');
-    open.addEventListener('click',async()=>{
-      if(!preview.hidden){
-        preview.hidden=true;open.setAttribute('aria-expanded','false');return;
-      }
-      open.disabled=true;
-      try{
-        const result=await request('/api/messages/'+encodeURIComponent(entry.id)+'/attachments/'+encodeURIComponent(file.id));
-        // Attachment text is untrusted: always render as text, never as HTML.
-        preview.textContent=result.content;
-        preview.hidden=false;
-        open.setAttribute('aria-expanded','true');
-      }catch(error){
-        preview.textContent='Preview unavailable: '+error.message;
-        preview.hidden=false;
-      }finally{open.disabled=false;}
-    });
-    row.append(details,open,preview);block.append(row);
-  }
-  block.append(el('p','Preview is local and read-only. Attachment instructions are untrusted and are not sent to an AI Agent.','meta'));
-  return block;
-}
 function selectMessage(id) {
   selectedId = id;
   const m = messages.find(message => message.id === id);
@@ -316,24 +278,10 @@ function selectMessage(id) {
   for (const button of list.querySelectorAll('button')) {
     button.setAttribute('aria-pressed', String(button.dataset.id === id));
   }
-  const related=messages.filter(msg=>msg.thread_id===m.thread_id)
-    .slice().sort((a,b)=>a.date.localeCompare(b.date));
-  const conversation=el('section',undefined,'conversation-thread');
-  conversation.append(el('h4','Conversation · '+related.length+' fictional message(s)'));
-  for(const entry of related){
-    const bubble=el('article',undefined,'conversation-message');
-    bubble.dataset.direction=entry.direction || 'received';
-    bubble.append(el('div',(entry.direction==='sent'?'Sent':'Received')+' · '+entry.from+' · '+entry.date,'meta'),
-      el('p',entry.body));
-    const attachments=renderAttachments(entry);
-    if(attachments)bubble.append(attachments);
-    conversation.append(bubble);
-  }
   detail.replaceChildren(
-    el('h3',m.subject),
-    el('div','Conversation '+m.thread_id+' · '+related.length+' message(s)','meta'),
-    conversation,
-    el('h4','Selected message excerpt (not AI-generated)'),el('p',m.summary)
+    el('h3', m.subject || '(No subject)'),
+    el('div', (m.from || 'Unknown sender') + ' · ' + (m.date || 'No date'), 'meta'),
+    el('h4', 'Snippet from Gmail (not AI-generated)'), el('p', m.snippet || 'No snippet')
   );
   const reply = iconButton('mail','Prepare an unsent reply draft');
   reply.className += ' action';
@@ -358,7 +306,6 @@ function selectMessage(id) {
 }
 
 const gmailStatus = document.getElementById('gmail-status');
-const gmailMessages = document.getElementById('gmail-messages');
 const gmailConnect = document.getElementById('gmail-connect');
 const gmailDisconnect = document.getElementById('gmail-disconnect');
 const gmailRefresh = document.getElementById('gmail-refresh');
@@ -369,17 +316,22 @@ async function refreshGmail() {
   gmailDisconnect.hidden = !state.connected;
   gmailRefresh.hidden = !state.connected;
   gmailStatus.textContent = state.connected ? 'Gmail connected. Only inbox headers and snippets are shown.' :
-    (state.configured ? 'Gmail disconnected. The fictional sample remains available below.' : 'Gmail connection is not configured. The fictional sample remains available below.');
-  gmailMessages.replaceChildren();
-  if (!state.connected) return;
+    (state.configured ? 'Gmail is not connected. Connect it to review your inbox.' : 'Gmail connection is not configured. See docs/gmail-web.md.');
+  list.replaceChildren();
+  detail.replaceChildren('Choose a message to see its details.');
+  draft.replaceChildren();
+  messages = []; selectedId = null;
+  if (!state.connected) { list.textContent = 'Connect Gmail to see your inbox.'; return; }
   const data = await request('/api/connectors/gmail/messages');
-  if (!data.messages.length) gmailMessages.append(el('p','No inbox messages found.'));
-  for (const message of data.messages) {
-    const item = el('article',undefined,'task-item');
-    item.append(el('h3',message.subject || '(No subject)'),
-      el('p',(message.from || 'Unknown sender')+' · '+(message.date || 'No date'),'meta'),
-      el('p',message.snippet || 'No snippet'));
-    gmailMessages.append(item);
+  messages = data.messages;
+  if (!messages.length) { list.textContent = 'No inbox messages found.'; return; }
+  for (const m of messages) {
+    const button = el('button', undefined, 'message');
+    button.dataset.id = m.id;
+    button.setAttribute('aria-pressed', 'false');
+    button.append(el('div', m.subject || '(No subject)'), el('div', (m.from || 'Unknown sender') + ' · ' + (m.date || 'No date'), 'meta'));
+    button.addEventListener('click', () => selectMessage(m.id));
+    list.append(button);
   }
 }
 gmailConnect.addEventListener('click', async () => {
@@ -403,21 +355,8 @@ async function init() {
   try {
     const session = await request('/api/session');
     csrfToken = session.csrf_token;
-    const data = await request('/api/messages');
-    messages = data.messages;
-    list.replaceChildren();
-    for (const m of messages) {
-      const button = el('button', undefined, 'message');
-      button.dataset.id = m.id;
-      button.setAttribute('aria-pressed', 'false');
-      button.append(el('div', m.subject), el('div', (m.direction==='sent'?'Sent':'Received')+' · '+m.priority+' priority · '+m.from,'meta'));
-      if(m.attachments && m.attachments.length){const label=el('div',undefined,'meta');label.append(icon('paperclip'),document.createTextNode(' '+m.attachments.length+' attachment(s)'));button.append(label);}
-      button.addEventListener('click', () => selectMessage(m.id));
-      list.append(button);
-    }
-    if (messages.length) selectMessage(messages[0].id);
   } catch (error) {
-    list.replaceChildren(el('p', 'Could not load demo: ' + error.message, 'error'));
+    notify('Could not load session: ' + error.message, true);
   }
   taskSearch.addEventListener('input',renderTasks);
   taskFilter.addEventListener('change',renderTasks);
@@ -429,6 +368,6 @@ async function init() {
     catch(error){notify('Sign out failed: '+error.message,true);}
   });
   await refreshTasks();
-  try { await refreshGmail(); } catch (error) { gmailStatus.textContent = error.message; }
+  try { await refreshGmail(); } catch (error) { gmailStatus.textContent = error.message; list.textContent = ''; }
 }
 init();

@@ -1,8 +1,9 @@
-"""HTTP smoke tests for the local, fictional-message workflow."""
+"""HTTP smoke tests for the Gmail-backed task workflow (Gmail itself is mocked)."""
 import json
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 from contextlib import closing
 from pathlib import Path
@@ -11,6 +12,11 @@ from urllib.request import Request, urlopen
 
 from app import Handler
 from auth import AuthManager, hash_password
+
+
+GMAIL_MESSAGE = {'id':'msg-1','thread_id':'thread-1','from':'Casey <casey@example.org>',
+                 'subject':'Website project: response needed','date':'Wed, 18 Nov 2026 09:00:00 +1000',
+                 'snippet':'Could you check the agreed date and reply?'}
 
 
 class LocalWorkflowTests(unittest.TestCase):
@@ -58,16 +64,20 @@ class LocalWorkflowTests(unittest.TestCase):
     def test_proposal_create_duplicate_status_and_summary(self):
         _, session = self.call("/api/session")
         token = session["csrf_token"]
-        status, proposal = self.call("/api/messages/sample-website-followup/proposal")
-        self.assertEqual(status, 200)
-        self.assertEqual(proposal["inferred"]["due_date"], "2026-11-20")
-        body = dict(proposal["inferred"], message_id="sample-website-followup", owner="")
-        status, result = self.call("/api/tasks", "POST", body, token)
-        self.assertEqual(status, 201)
-        task = result["task"]
-        self.assertEqual(task["status"], "new")
-        duplicate_status, _ = self.call("/api/tasks", "POST", body, token)
-        self.assertEqual(duplicate_status, 409)
+        with patch('app.gmail_web.message', return_value=GMAIL_MESSAGE) as fetched:
+            status, proposal = self.call("/api/connectors/gmail/messages/msg-1/proposal")
+            self.assertEqual(status, 200)
+            self.assertEqual(proposal["inferred"]["title"], GMAIL_MESSAGE["subject"])
+            self.assertIsNone(proposal["inferred"]["due_date"])
+            body = dict(proposal["inferred"], message_id="msg-1", owner="")
+            status, result = self.call("/api/tasks", "POST", body, token)
+            self.assertEqual(status, 201)
+            task = result["task"]
+            self.assertEqual(task["status"], "new")
+            self.assertEqual(task["source_provider"], "gmail")
+            duplicate_status, _ = self.call("/api/tasks", "POST", body, token)
+            self.assertEqual(duplicate_status, 409)
+            self.assertEqual(fetched.call_args.args[3], "msg-1")
         status, updated = self.call("/api/tasks/" + str(task["id"]), "PATCH",
                                     {"revision": task["revision"], "status": "waiting"}, token)
         self.assertEqual(status, 200)
@@ -79,14 +89,25 @@ class LocalWorkflowTests(unittest.TestCase):
         self.assertEqual(len(history["events"]), 2)
 
     def test_csrf_required_and_draft_never_sends(self):
-        status, _ = self.call("/api/draft", "POST", {"id": "sample-1"})
+        status, _ = self.call("/api/draft", "POST", {"id": "msg-1"})
         self.assertEqual(status, 403)
         _, session = self.call("/api/session")
-        status, response = self.call("/api/draft", "POST",
-                                     {"id": "sample-1"}, session["csrf_token"])
+        with patch('app.gmail_web.message', return_value=GMAIL_MESSAGE):
+            status, response = self.call("/api/draft", "POST",
+                                         {"id": "msg-1"}, session["csrf_token"])
         self.assertEqual(status, 200)
         self.assertIs(response["sent"], False)
         self.assertIs(response["template"], True)
+
+    def test_demo_message_api_is_gone_and_gmail_disconnected_is_reported(self):
+        self.assertEqual(self.call("/api/messages")[0], 404)
+        status, _ = self.call("/api/connectors/gmail/messages/msg-1/proposal")
+        self.assertEqual(status, 503)  # Gmail not connected for this user
+        _, session = self.call("/api/session")
+        status, _ = self.call("/api/tasks", "POST",
+                              {"message_id": "sample-1", "title": "x", "description": "", "priority": "low"},
+                              session["csrf_token"])
+        self.assertEqual(status, 503)
 
 
 if __name__ == "__main__":

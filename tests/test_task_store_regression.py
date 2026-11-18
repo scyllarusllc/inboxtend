@@ -15,13 +15,13 @@ class TaskStoreRegressionTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.db = connection(Path(self.temp.name) / "tasks.sqlite3")
         self.message = {
-            "id": "fictional-001",
-            "thread_id": "fictional-thread",
-            "provider": "demo",
+            "id": "gmail-001",
+            "thread_id": "gmail-thread",
+            "provider": "gmail",
         }
         self.fields = {
-            "title": "Review fictional request",
-            "description": "Use sample content only",
+            "title": "Review request",
+            "description": "Reply after checking the record",
             "owner": "",
             "priority": "high",
             "due_date": "2026-11-20",
@@ -36,8 +36,8 @@ class TaskStoreRegressionTests(unittest.TestCase):
     def test_create_and_lookup_without_duplicate(self):
         task = create_task(self.db, self.message, self.fields)
         self.assertEqual(task["status"], "new")
-        self.assertEqual(task["source_provider"], "demo")
-        self.assertEqual(task_for_source(self.db, "demo", "fictional-001")["id"], task["id"])
+        self.assertEqual(task["source_provider"], "gmail")
+        self.assertEqual(task_for_source(self.db, "gmail", "gmail-001")["id"], task["id"])
         with self.assertRaisesRegex(ValueError, "already exists"):
             create_task(self.db, self.message, self.fields)
         self.assertEqual(len(list_tasks(self.db)), 1)

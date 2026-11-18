@@ -4,7 +4,7 @@ Updated 2026-11-18. Internal validation on a Scyllarus subdomain is the near-ter
 
 ## Implemented local MVP
 
-- [x] Five fictional messages, including a website-project follow-up with a contested start date and a 2026-11-20 reply deadline.
+- [x] Bundled fictional demo messages and attachments removed (2026-11-18); the workspace lists the user's own Gmail inbox and creates tasks from server-fetched Gmail headers and snippets.
 - [x] Source metadata separated from rule-based proposal and user-edited task values.
 - [x] SQLite task persistence, legacy schema migration, provider/message deduplication, audit events, revision conflict handling and explicit deletion.
 - [x] Review, create, list, edit, transition and reopen tasks in the browser.
@@ -27,6 +27,6 @@ Internal validation should measure correct tasks, correction rate, duplicates, m
 
 ## Conversation, attachment and agent roadmap (from main)
 
-The demo now shows fictional inbound and outbound messages in a conversation and read-only previews of fictional text/CSV attachments. Attachments are untrusted content and are never executed or shared with an agent. The task editor can record an agent assignment as `pending_approval`; it does not execute an agent or disclose email content. Future work requires explicit, scoped approval before execution or external transfer, evidence before marking work complete, and separate human approval before sending.
+Attachment and conversation (sent mail) views were part of the removed demo and are not implemented for Gmail. Attachments are untrusted content and are never executed or shared with an agent. The task editor can record an agent assignment as `pending_approval`; it does not execute an agent or disclose email content. Future work requires explicit, scoped approval before execution or external transfer, evidence before marking work complete, and separate human approval before sending.
 
 Real-mail integration needs account-scoped OAuth, pagination, incremental reconciliation, stable provider IDs, safe attachment parsing with size and decompression limits, and local retention controls. PDF, Office, image and real Gmail attachment previews are not implemented.

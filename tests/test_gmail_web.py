@@ -70,6 +70,20 @@ class GmailWebTests(unittest.TestCase):
         self.assertEqual(rows[0]['snippet'],'preview')
         listed.assert_called_once_with('short-lived',max_results=20,query='in:inbox')
         got.assert_called_once_with('short-lived','abc')
+    def test_single_message_fetch_is_user_scoped_and_validates_id(self):
+        url=gmail_web.begin(self.db,CONFIG,1,'session-a')
+        state=parse_qs(urlparse(url).query)['state'][0]
+        gmail_web.finish(self.db,CONFIG,1,'session-a',state,'code',opener=lambda *a,**k:Response({
+            'scope':gmail_web.SCOPE,'token_type':'Bearer','access_token':'a','refresh_token':'r'}))
+        token_reply=lambda *a,**k:Response({'token_type':'Bearer','access_token':'short-lived'})
+        with self.assertRaises(gmail_web.GmailConnectionError):
+            gmail_web.message(self.db,CONFIG,2,'abc')
+        with patch.object(gmail_web,'get_message_metadata',return_value={'id':'abc','thread_id':'t','snippet':'s','headers':{'subject':'S'}}) as got:
+            row=gmail_web.message(self.db,CONFIG,1,'abc',opener=token_reply)
+        self.assertEqual((row['id'],row['subject'],row['from']),('abc','S',''))
+        got.assert_called_once_with('short-lived','abc')
+        with self.assertRaises(gmail_web.GmailReadError):
+            gmail_web.message(self.db,CONFIG,1,'../bad',opener=token_reply)
     def test_rejects_broader_scope_and_invalid_config(self):
         self.assertFalse(gmail_web.configured(dict(CONFIG,INBOX_TEND_TOKEN_KEY='wrong')))
         url=gmail_web.begin(self.db,CONFIG,1,'session-a')
@@ -99,6 +113,7 @@ class GmailWebTests(unittest.TestCase):
         handler.headers['Host'] = '127.0.0.1:8765'
         for path, method in [('/api/connectors/gmail/status','GET'),
                              ('/api/connectors/gmail/messages','GET'),
+                             ('/api/connectors/gmail/messages/abc/proposal','GET'),
                              ('/api/connectors/gmail/connect','POST'),
                              ('/api/connectors/gmail/disconnect','POST')]:
             handler.path, handler.command = path, method
@@ -119,7 +134,7 @@ class GmailWebTests(unittest.TestCase):
         self.assertEqual(error.exception.status,403)
 
     def test_task_queries_are_user_scoped(self):
-        message={'id':'demo-one','thread_id':'thread-one','provider':'demo'}
+        message={'id':'gmail-one','thread_id':'thread-one','provider':'gmail'}
         fields={'title':'Private task','description':'Private note','priority':'low'}
         task=create_task(self.db,message,fields,user_id=1)
         self.assertEqual(len(list_tasks(self.db,user_id=1)),1)

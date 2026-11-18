@@ -32,4 +32,4 @@ The current app has **single-admin login but no account isolation** and delibera
 4. Verify an unauthenticated request cannot see the inbox or task API; verify authorized access, CSRF, task isolation, persistence after restart, TLS certificate, logs, backup and restore. Only then enable real-mail consent and separately review OAuth scopes and retention.
 5. Roll back by routing to the previous release and restoring the pre-upgrade database copy only if data written since upgrade can safely be discarded. Otherwise stop writes and perform a planned data-preserving rollback. Do not blindly restore an old database over newer tasks.
 
-The running demo route is not approval to connect a real mailbox, publish private correspondence, or send email.
+Connecting a real mailbox is a per-user, explicit action; the app never publishes private correspondence or sends email.

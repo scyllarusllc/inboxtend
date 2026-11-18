@@ -4,7 +4,7 @@ The `statistics.diy` project provided a useful UI reference: clear navigation, a
 
 ## Current boundary
 
-The workspace contains fictional messages and attachments. Tasks are local SQLite records. The app has one admin user, server-side sessions, login/logout and protected APIs. Caddy supplies HTTPS; public pages are open while the dashboard and data APIs require the app session. Task records are not yet partitioned by account. A real Gmail account, private message body or credential must not be introduced yet. The existing one-shot Gmail OAuth prototype is separate from the web app and does not store a connected account.
+The workspace shows the signed-in user's Gmail inbox (headers and snippets) with no bundled sample data. Tasks are local SQLite records. The app has one admin user, server-side sessions, login/logout and protected APIs. Caddy supplies HTTPS; public pages are open while the dashboard and data APIs require the app session. Task records are not yet partitioned by account. A real Gmail account, private message body or credential must not be introduced yet. The existing one-shot Gmail OAuth prototype is separate from the web app and does not store a connected account.
 
 ## Next implementation gates
 

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="Review fictional messages and track local follow-up tasks.">
-  <title>Inbox Tend · Workspace preview</title>
+  <meta name="description" content="Review your Gmail inbox and track local follow-up tasks.">
+  <title>Inbox Tend · Workspace</title>
   <link rel="stylesheet" href="/static/styles.css">
 <script src="/static/app.js" defer></script>
 </head>
@@ -25,7 +25,7 @@
         <h1 id="page-title">Follow every request through.</h1>
         <p class="intro-copy">Review a conversation, confirm the next step, and keep its deadline and status visible.</p>
       </div>
-      <div class="preview-callout" role="note"><strong>Review before action</strong><span>Gmail access is read-only. Demo tasks and reply templates remain fictional.</span></div>
+      <div class="preview-callout" role="note"><strong>Review before action</strong><span>Gmail access is read-only. Tasks stay on this computer and replies are never sent.</span></div>
     </section>
 
     <div id="task-notice" class="notice-banner" role="status" aria-live="polite"></div>
@@ -35,24 +35,19 @@
       <div id="task-summary" class="summary-grid" role="status" aria-live="polite">Loading task summary…</div>
     </section>
 
-    <section class="workspace-section" aria-labelledby="gmail-heading">
-      <div class="section-heading"><div><p class="eyebrow">Connected mail</p><h2 id="gmail-heading">Gmail inbox</h2></div><span class="section-hint">Read-only headers and snippets</span></div>
+    <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
+      <div class="section-heading"><div><p class="eyebrow">Review</p><h2 id="inbox-heading">Gmail inbox</h2></div><span class="section-hint">Read-only headers and snippets</span></div>
       <div class="panel"><p id="gmail-status" role="status">Checking Gmail connection…</p>
         <div class="task-tools"><button id="gmail-connect" type="button">Connect Gmail</button><button id="gmail-disconnect" type="button" hidden>Disconnect Gmail</button><button id="gmail-refresh" type="button" hidden>Refresh inbox</button></div>
-        <div id="gmail-messages" aria-live="polite"></div>
       </div>
-    </section>
-
-    <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
-      <div class="section-heading"><div><p class="eyebrow">Review</p><h2 id="inbox-heading">Inbox workspace</h2></div><span class="section-hint">Open a message, then review its suggested task</span></div>
       <div class="workspace-grid">
-        <section class="panel inbox-panel" aria-labelledby="sample-inbox-heading">
-          <div class="panel-heading"><h3 id="sample-inbox-heading">Sample inbox</h3><span class="small-badge">Demo</span></div>
-          <div id="messages">Loading messages…</div>
+        <section class="panel inbox-panel" aria-labelledby="messages-heading">
+          <div class="panel-heading"><h3 id="messages-heading">Inbox</h3></div>
+          <div id="messages">Connect Gmail to see your inbox.</div>
         </section>
         <section class="panel review-panel" aria-labelledby="review-heading">
-          <div class="panel-heading"><h3 id="review-heading">Conversation review</h3><span class="panel-caption">Nothing is sent automatically</span></div>
-          <div id="detail">Choose a message to see its content.</div>
+          <div class="panel-heading"><h3 id="review-heading">Message review</h3><span class="panel-caption">Nothing is sent automatically</span></div>
+          <div id="detail">Choose a message to see its details.</div>
           <div id="draft"></div>
         </section>
       </div>
@@ -73,7 +68,7 @@
 
     <section id="privacy-note" class="privacy-note" aria-labelledby="privacy-heading">
       <div><p class="eyebrow">Privacy and control</p><h2 id="privacy-heading">Built around review.</h2></div>
-      <p>The sample conversation and task suggestions are fictional. Connected Gmail displays only headers and snippets; it does not save messages, fetch full bodies or attachments, or send mail. Agent assignments remain inert.</p>
+      <p>Connected Gmail displays only headers and snippets; it does not save messages, fetch full bodies or attachments, or send mail. Task suggestions are simple rules, not AI. Agent assignments remain inert.</p>
     </section>
   </main>
 

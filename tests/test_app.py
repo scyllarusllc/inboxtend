@@ -7,11 +7,14 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
-from app import Handler, MESSAGES, PAGES, ROOT, draft_reply, render_page, summarize
+from unittest.mock import patch
+from app import Handler, PAGES, ROOT, draft_reply, proposal, render_page, summarize
 from auth import AuthManager, hash_password
 from tasks import connection, decorate, create_task, get_task, update_task, events, ConflictError
 
-class DemoTests(unittest.TestCase):
+MESSAGE={'id':'msg-1','thread_id':'thread-1','from':'a@example.org','subject':'Subject','date':'Today','snippet':'Snippet'}
+
+class AppTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
@@ -44,12 +47,19 @@ class DemoTests(unittest.TestCase):
         except HTTPError as error:
             error.close()
             raise
-    def test_samples(self):
-        self.assertEqual(len(MESSAGES),5)
-        self.assertTrue(summarize(MESSAGES[0]))
-        self.assertNotIn('finished',draft_reply(MESSAGES[-1]))
+    def test_gmail_derived_helpers(self):
+        message={'id':'m1','thread_id':'t1','subject':'Hello','from':'a@example.org','date':'Today','snippet':'word '*60}
+        self.assertTrue(summarize(message).endswith('...'))
+        self.assertIn('Hello',draft_reply(message))
+        self.assertNotIn('finished',draft_reply(message))
+        self.assertEqual(proposal(message)['source']['provider'],'gmail')
+        self.assertIsNone(proposal(message)['inferred']['due_date'])
+        self.assertEqual(proposal(dict(message,subject=''))['inferred']['title'],'(No subject)')
     def test_list_and_page(self):
-        self.assertEqual(len(self.request('/api/messages')['messages']),5)
+        with urlopen(Request(self.url+'/user/dashboard',headers={'Cookie':self.cookie})) as response:
+            page=response.read().decode().lower()
+            for word in ('demo','fictional','sample'):
+                self.assertNotIn(word,page)
         with urlopen(self.url) as response:
             page=response.read()
             self.assertIn(b'Inbox Tend',page)
@@ -63,7 +73,7 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(response.headers.get_content_type(),'text/css')
             self.assertIn(b'.workspace-grid',response.read())
     def test_private_routes_require_login(self):
-        for path in ('/api/messages','/api/tasks','/api/session'):
+        for path in ('/api/connectors/gmail/messages','/api/tasks','/api/session'):
             with self.assertRaises(HTTPError) as error:
                 urlopen(self.url+path)
             self.assertEqual(error.exception.code,401)
@@ -121,9 +131,12 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(error.exception.code,401)
         error.exception.close()
     def test_create_dedup_persist_update_reopen_draft(self):
-        fields={'message_id':'sample-website-followup','title':'Check start date and reply','description':'Verify agreement first',
-                'priority':'high','owner':'Demo owner','due_date':'2026-11-20','due_time':'17:00',
-                'due_timezone':'Pacific/Saipan','project_label':'Website project','customer_label':'Fictional client'}
+        fields={'message_id':'msg-1','title':'Check start date and reply','description':'Verify agreement first',
+                'priority':'high','owner':'Test owner','due_date':'2026-11-20','due_time':'17:00',
+                'due_timezone':'Pacific/Saipan','project_label':'Website project','customer_label':'Test client'}
+        with patch('app.gmail_web.message',return_value=MESSAGE):
+            return self._create_flow(fields)
+    def _create_flow(self,fields):
         task=self.request('/api/tasks','POST',fields)['task']
         self.assertEqual(task['review_state'],'reviewed')
         self.assertEqual(task['due_date'],'2026-11-20')
@@ -136,7 +149,7 @@ class DemoTests(unittest.TestCase):
             task=self.request(f'/api/tasks/{task_id}','PATCH',{'revision':task['revision'],'status':status})['task']
             self.assertEqual(task['status'],status)
         self.assertEqual(len(self.request(f'/api/tasks/{task_id}/events')['events']),5)
-        draft=self.request('/api/draft','POST',{'id':'sample-website-followup'})
+        draft=self.request('/api/draft','POST',{'id':'msg-1'})
         self.assertFalse(draft['sent']);self.assertTrue(draft['template'])
         self.assertIn('review',draft['draft'])
         with connection(self.server.RequestHandlerClass.db_path) as db:
@@ -144,7 +157,10 @@ class DemoTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:self.request(f'/api/tasks/{task_id}','PATCH',{'revision':1,'status':'done'})
         self.assertEqual(error.exception.code,409)
     def test_security_validation(self):
-        fields={'message_id':'sample-1','title':'x','description':'','priority':'high'}
+        fields={'message_id':'msg-sec','title':'x','description':'','priority':'high'}
+        with patch('app.gmail_web.message',return_value=dict(MESSAGE,id='msg-sec')):
+            self._validation_cases(fields)
+    def _validation_cases(self,fields):
         with self.assertRaises(HTTPError) as error:self.request('/api/tasks','POST',fields,{'Origin':'https://evil.example'})
         self.assertEqual(error.exception.code,403)
         with self.assertRaises(HTTPError) as error:self.request('/api/tasks','POST',fields,{'X-CSRF-Token':'wrong'})
@@ -158,8 +174,9 @@ class DemoTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:self.request('/api/tasks','POST',dict(fields,priority='urgent'))
         self.assertEqual(error.exception.code,400)
     def test_explicit_retention_delete(self):
-        fields={'message_id':'sample-2','title':'Temporary','description':'','priority':'medium'}
-        task=self.request('/api/tasks','POST',fields)['task']
+        fields={'message_id':'msg-2','title':'Temporary','description':'','priority':'medium'}
+        with patch('app.gmail_web.message',return_value=dict(MESSAGE,id='msg-2')):
+            task=self.request('/api/tasks','POST',fields)['task']
         path=f"/api/tasks/{task['id']}"
         with self.assertRaises(HTTPError) as error:self.request(path,'DELETE',{'confirm':'no'})
         self.assertEqual(error.exception.code,400)

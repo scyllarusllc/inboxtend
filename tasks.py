@@ -76,7 +76,7 @@ def _deadline(date, time, zone):
     if not isinstance(date, str) or not isinstance(time, str) or not isinstance(zone, str):
         raise ValueError('Date and time are required together')
     if zone != 'Pacific/Saipan':
-        raise ValueError('Only Pacific/Saipan is supported in this demo')
+        raise ValueError('Only Pacific/Saipan is supported')
     try:
         if len(date) != 10 or len(time) != 5:
             raise ValueError()
@@ -146,9 +146,9 @@ def create_task(db, message, fields, user_id=1):
     date, time = fields.get('due_date'), fields.get('due_time')
     zone = fields.get('due_timezone', 'Pacific/Saipan')
     _deadline(date, time, zone)
-    provider = _text(message.get('provider', 'demo'), 'provider', 40, True)
+    provider = _text(message.get('provider'), 'provider', 40, True)
     message_id = _text(message.get('id'), 'message ID', 200, True)
-    thread_id = _text(message.get('thread_id', ''), 'thread ID', 200)
+    thread_id = _text(message.get('thread_id') or '', 'thread ID', 200)
     project = _text(fields.get('project_label', ''), 'project label', 120)
     customer = _text(fields.get('customer_label', ''), 'customer label', 120)
     source_url = fields.get('source_url')

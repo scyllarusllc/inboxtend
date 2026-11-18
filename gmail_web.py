@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-except ImportError:  # The fictional demo works without the optional Gmail dependency.
+except ImportError:  # Everything except Gmail works without the optional dependency.
     AESGCM = None
 from connectors.gmail_readonly import SCOPES, GmailReadError, list_message_ids, get_message_metadata
 
@@ -113,7 +113,7 @@ def disconnect(db,user_id):
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))
 
-def inbox(db,config,user_id,*,opener=urlopen):
+def _access_token(db,config,user_id,*,opener=urlopen):
     row = db.execute('SELECT refresh_token FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
     if not row: raise GmailConnectionError('Gmail is disconnected')
     try:
@@ -128,13 +128,23 @@ def inbox(db,config,user_id,*,opener=urlopen):
         or result.get('token_type','').lower() != 'bearer'
         or ('scope' in result and set(result['scope'].split()) != {SCOPE})):
         raise GmailConnectionError('Google did not return read-only access')
-    token = result['access_token']
+    return result['access_token']
+
+def _summary(item):
+    headers = item['headers']
+    return {'id':item['id'],'thread_id':item['thread_id'],
+            'from':headers.get('from',''),'subject':headers.get('subject',''),
+            'date':headers.get('date',''),'snippet':item['snippet']}
+
+def inbox(db,config,user_id,*,opener=urlopen):
+    token = _access_token(db,config,user_id,opener=opener)
     ids = list_message_ids(token,max_results=20,query='in:inbox')
-    messages = []
-    for message_id in ids['message_ids']:
-        item = get_message_metadata(token,message_id)
-        headers = item['headers']
-        messages.append({'id':item['id'],'thread_id':item['thread_id'],
-                         'from':headers.get('from',''),'subject':headers.get('subject',''),
-                         'date':headers.get('date',''),'snippet':item['snippet']})
-    return messages
+    return [_summary(get_message_metadata(token,message_id)) for message_id in ids['message_ids']]
+
+def message(db,config,user_id,message_id,*,opener=urlopen):
+    """Fetch one message's headers and snippet for the signed-in user (never trusts client-supplied content)."""
+    token = _access_token(db,config,user_id,opener=opener)
+    try:
+        return _summary(get_message_metadata(token,message_id))
+    except ValueError:
+        raise GmailReadError('Invalid message ID') from None
