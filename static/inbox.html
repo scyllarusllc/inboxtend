@@ -31,13 +31,13 @@
     <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
 
     <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
-      <div class="section-heading"><div><p class="eyebrow">Review</p><h2 id="inbox-heading">Gmail inbox</h2></div><span class="section-hint">Read-only from Gmail, saved to SQLite</span></div>
+      <div class="section-heading"><div><p class="eyebrow">Review</p><h2 id="inbox-heading">Gmail</h2></div><span class="section-hint">Read-only from Gmail, saved to SQLite</span></div>
       <div class="panel"><p id="gmail-status" role="status">Checking Gmail connection…</p>
         <div class="task-tools"><button id="gmail-connect" type="button">Connect Gmail</button><button id="gmail-disconnect" type="button" hidden>Disconnect Gmail</button><button id="gmail-refresh" type="button" hidden>Refresh inbox</button></div>
       </div>
       <div class="workspace-grid">
         <section class="panel inbox-panel" aria-labelledby="messages-heading">
-          <div class="panel-heading"><h3 id="messages-heading">Inbox</h3></div>
+          <div class="panel-heading"><h3 id="messages-heading">Mail</h3><div class="folder-tabs" role="group" aria-label="Folder"><button id="folder-inbox" type="button" aria-pressed="true">Inbox</button><button id="folder-sent" type="button" aria-pressed="false">Sent</button></div></div>
           <div id="messages">Connect Gmail to see your inbox.</div>
         </section>
         <section class="panel review-panel" aria-labelledby="review-heading">
