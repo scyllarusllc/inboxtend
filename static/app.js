@@ -39,7 +39,7 @@ const taskFilter = document.getElementById('task-filter');
 const taskRefresh = document.getElementById('task-refresh');
 const taskNotice = document.getElementById('task-notice');
 let cachedTasks = [];
-// Lucide icon paths, MIT license: https://lucide.dev/license
+// Lucide icon paths (ISC; Feather-derived icons also MIT). See THIRD_PARTY_LICENSES.md.
 // Local SVGs; no CDN or runtime dependencies.
 const paths = {
   search:[['circle',{cx:11,cy:11,r:8}],['path',{d:'m21 21-4.35-4.35'}]],
