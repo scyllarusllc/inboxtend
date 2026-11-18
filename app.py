@@ -14,7 +14,8 @@ MESSAGES = [
  {'id':'sample-1','thread_id':'thread-1','provider':'demo','from':'alex@example.org','subject':'Website login issue','date':'2026-11-15','body':'Hi, the login form sometimes fails after submitting. Could you investigate and let us know what you find?','priority':'high'},
  {'id':'sample-2','thread_id':'thread-2','provider':'demo','from':'team@example.org','subject':'Friday project update','date':'2026-11-14','body':'Please send a short progress update for the dashboard project when you have time.','priority':'medium'},
  {'id':'sample-3','thread_id':'thread-3','provider':'demo','from':'newsletter@example.org','subject':'Weekly design newsletter','date':'2026-11-13','body':"This week's design roundup includes ideas for accessible forms and simpler navigation.",'priority':'low'},
- {'id':'sample-website-followup','thread_id':'thread-website-followup','provider':'demo','from':'casey@example.org','subject':'Website project: response and start date','date':'2026-11-18','body':'Hello, I have not heard back about the website project. Our notes show a different service start date than the one in the last update. Could you check the agreed date and reply by November 20, 2026? Thank you.','priority':'high'}
+ {'id':'sample-website-followup','thread_id':'thread-website-followup','provider':'demo','from':'casey@example.org','subject':'Website project: response and start date','date':'2026-11-18','body':'Hello, I have not heard back about the website project. Our notes show a different service start date than the one in the last update. Could you check the agreed date and reply by November 20, 2026? Thank you.','priority':'high'},
+ {'id':'sample-website-sent','thread_id':'thread-website-followup','provider':'demo','from':'me@example.org','direction':'sent','subject':'Re: Website project: response and start date','date':'2026-11-17','body':'Hello, I will review the recorded service start date and send a confirmed update once the project notes have been checked.','priority':'medium'}
 ]
 
 def summarize(message):
@@ -138,7 +139,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/session':
             return self._json(200,{'csrf_token':self.csrf_token,'mode':'demo'})
         if path == '/api/messages':
-            return self._json(200,{'mode':'demo','messages':[dict(m,summary=summarize(m)) for m in MESSAGES]})
+            return self._json(200,{'mode':'demo','messages':[dict(m,direction=m.get('direction','received'),summary=summarize(m)) for m in MESSAGES]})
         if path == '/api/health': return self._json(200,{'status':'ok','mode':'demo'})
         parts = path.strip('/').split('/')
         if len(parts)==4 and parts[:2]==['api','messages'] and parts[3]=='proposal':
