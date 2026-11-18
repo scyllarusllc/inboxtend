@@ -9,126 +9,144 @@
 
     <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
 
-    <form id="prefs-form" class="settings-form">
-      <section class="panel settings-section" aria-labelledby="access-heading">
-        <h2 id="access-heading">Gmail connection</h2>
-        <p id="access-status" role="status">Checking…</p>
-        <div class="settings-actions">
-          <button id="connect-gmail" type="button" hidden>Connect Gmail</button>
-          <button id="grant-modify" type="button" hidden>Allow changing read/unread in Gmail…</button>
-          <button id="grant-readonly" type="button" hidden>Return to read-only access…</button>
-          <button id="disconnect-gmail" type="button" hidden>Disconnect Gmail</button>
-        </div>
-        <p>By default Inbox Tend can only <strong>read</strong> your mail. You may additionally let it mark messages <strong>read or unread in Gmail</strong>. That needs Google&rsquo;s broader <code>gmail.modify</code> permission, which Google describes as &ldquo;read, compose and send emails &hellip; except permanent deletion&rdquo;. Inbox Tend&rsquo;s code only ever changes the unread flag of one message at a time (it cannot send, delete or trash mail), but the permission itself allows more, so grant it only on a server you trust. You can withdraw it here or at <code>myaccount.google.com/permissions</code>.</p>
-        <div class="task-form">
-          <label class="check"><input name="gmail_write_read" type="checkbox" disabled> Apply read/unread changes to Gmail too
-            <span class="meta">Pause this to keep read state local without withdrawing the permission. A failed Gmail update never loses the local change.</span></label>
-        </div>
-        <p class="meta"><strong>Disconnect Gmail</strong> removes the sign-in from this server and deletes the saved messages, attachments and translations. Your tasks are kept. It does not revoke Google&rsquo;s permission; do that at <code>myaccount.google.com/permissions</code>.</p>
-      </section>
+    <div class="grid items-start gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
+      <nav class="lg:sticky lg:top-24" aria-label="Settings sections">
+        <ul class="flex gap-1 overflow-x-auto lg:flex-col">
+          <li><a class="nav-link" href="#gmail"><i class="fa-solid fa-plug fa-fw" aria-hidden="true"></i><span>Gmail connection</span></a></li>
+          <li><a class="nav-link" href="#time"><i class="fa-regular fa-clock fa-fw" aria-hidden="true"></i><span>Time and tasks</span></a></li>
+          <li><a class="nav-link" href="#sync"><i class="fa-solid fa-rotate fa-fw" aria-hidden="true"></i><span>Mail sync</span></a></li>
+          <li><a class="nav-link" href="#ai"><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i><span>AI assistant</span></a></li>
+          <li><a class="nav-link" href="#translation-settings"><i class="fa-solid fa-language fa-fw" aria-hidden="true"></i><span>Translation</span></a></li>
+          <li><a class="nav-link" href="#account"><i class="fa-regular fa-user fa-fw" aria-hidden="true"></i><span>Account</span></a></li>
+        </ul>
+      </nav>
 
-      <section class="panel settings-section" aria-labelledby="time-heading">
-        <h2 id="time-heading">Time and tasks</h2>
-        <div class="task-form">
-          <label class="wide">Timezone
-            <input name="timezone" type="text" list="timezone-list" autocomplete="off" spellcheck="false" required maxlength="64">
-            <datalist id="timezone-list"></datalist>
-            <span class="meta">IANA name, e.g. Asia/Tokyo or America/New_York. Used for new task deadlines and for the times shown on mail. <button id="use-browser-timezone" type="button" class="link-button">Use this browser’s timezone</button></span>
-          </label>
-          <label>Due-soon window (hours)
-            <input name="due_soon_hours" type="number" min="1" max="720" step="1" required>
-            <span class="meta">Tasks due within this time are flagged “Due soon”.</span>
-          </label>
-          <label>Group Inbox mail by
-            <select name="inbox_view"><option value="threads">Conversations</option><option value="messages">Messages</option><option value="people">People</option></select>
-            <span class="meta">Also switchable on the Inbox page. People groups by the other party: the sender of mail you received, the first recipient of mail you sent.</span>
-          </label>
-          <label>Default priority for suggested tasks
-            <select name="default_priority"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
-          </label>
-        </div>
-      </section>
+      <div class="min-w-0 max-w-4xl">
+        <form id="prefs-form" class="settings-form">
+          <section id="gmail" class="panel settings-section scroll-mt-24" aria-labelledby="access-heading">
+            <h2 id="access-heading"><i class="fa-solid fa-plug" aria-hidden="true"></i>Gmail connection</h2>
+            <p id="access-status" role="status" class="font-medium text-slate-800">Checking…</p>
+            <div class="settings-actions">
+              <button id="connect-gmail" type="button" hidden><i class="fa-solid fa-plug" aria-hidden="true"></i><span>Connect Gmail</span></button>
+              <button id="grant-modify" type="button" hidden><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Allow changing read/unread in Gmail…</span></button>
+              <button id="grant-readonly" type="button" hidden><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Return to read-only access…</span></button>
+              <button id="disconnect-gmail" type="button" class="danger" hidden><i class="fa-solid fa-link-slash" aria-hidden="true"></i><span>Disconnect Gmail</span></button>
+            </div>
+            <p>By default Inbox Tend can only <strong>read</strong> your mail. You may additionally let it mark messages <strong>read or unread in Gmail</strong>. That needs Google&rsquo;s broader <code>gmail.modify</code> permission, which Google describes as &ldquo;read, compose and send emails &hellip; except permanent deletion&rdquo;. Inbox Tend&rsquo;s code only ever changes the unread flag of one message at a time (it cannot send, delete or trash mail), but the permission itself allows more, so grant it only on a server you trust. You can withdraw it here or at <code>myaccount.google.com/permissions</code>.</p>
+            <div class="task-form">
+              <label class="check"><input name="gmail_write_read" type="checkbox" disabled><span class="font-medium text-slate-800">Apply read/unread changes to Gmail too</span>
+                <span class="meta">Pause this to keep read state local without withdrawing the permission. A failed Gmail update never loses the local change.</span></label>
+            </div>
+            <p class="meta"><strong>Disconnect Gmail</strong> removes the sign-in from this server and deletes the saved messages, attachments and translations. Your tasks are kept. It does not revoke Google&rsquo;s permission; do that at <code>myaccount.google.com/permissions</code>.</p>
+          </section>
 
-      <section class="panel settings-section" aria-labelledby="sync-heading">
-        <h2 id="sync-heading">Mail sync</h2>
-        <div class="task-form">
-          <label class="check"><input name="sync_sent" type="checkbox"> Also sync sent mail</label>
-          <label class="check"><input name="mark_read_on_open" type="checkbox"> Mark a message as read when I open it
-            <span class="meta">By default read state is kept in Inbox Tend only. It reaches Gmail only if you allow that under <em>Gmail access</em> below.</span></label>
-          <label>Messages per folder
-            <input name="sync_max_messages" type="number" min="1" max="5000" step="1" required>
-            <span class="meta">Most recent messages to mirror from the inbox and from sent mail (1–5000).</span>
-          </label>
-          <label>Largest attachment to store (MB)
-            <input name="attachment_max_mb" type="number" min="0" max="100" step="1" required>
-            <span class="meta">Larger files are recorded by name and size only. 0 stores no attachments.</span>
-          </label>
-        </div>
-        <p class="meta">Changes apply to the next sync. Already stored mail is kept. The Gmail searches themselves (<code>INBOX_TEND_SYNC_QUERY</code>, <code>INBOX_TEND_SYNC_SENT_QUERY</code>) are set in <code>.env</code>.</p>
-      </section>
+          <section id="time" class="panel settings-section scroll-mt-24" aria-labelledby="time-heading">
+            <h2 id="time-heading"><i class="fa-regular fa-clock" aria-hidden="true"></i>Time and tasks</h2>
+            <div class="task-form">
+              <label class="wide">Timezone
+                <input name="timezone" type="text" list="timezone-list" autocomplete="off" spellcheck="false" required maxlength="64">
+                <datalist id="timezone-list"></datalist>
+                <span class="meta">IANA name, e.g. Asia/Tokyo or America/New_York. Used for new task deadlines and for the times shown on mail. <button id="use-browser-timezone" type="button" class="link-button">Use this browser’s timezone</button></span>
+              </label>
+              <label>Due-soon window (hours)
+                <input name="due_soon_hours" type="number" min="1" max="720" step="1" required>
+                <span class="meta">Tasks due within this time are flagged “Due soon”.</span>
+              </label>
+              <label>Default priority for suggested tasks
+                <select name="default_priority"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
+              </label>
+              <label class="wide">Group Inbox mail by
+                <select name="inbox_view"><option value="threads">Conversations</option><option value="messages">Messages</option><option value="people">People</option></select>
+                <span class="meta">Also switchable on the Inbox page. People groups by the other party: the sender of mail you received, the first recipient of mail you sent.</span>
+              </label>
+            </div>
+          </section>
 
-      <section class="panel settings-section" aria-labelledby="ai-heading">
-        <h2 id="ai-heading">AI assistant</h2>
-        <p>Uses an AI command-line tool installed on this server to suggest tasks (with quoted evidence from the message) and to draft replies. <strong>Off by default.</strong> When on, pressing an AI button sends that one message&rsquo;s sender, date, subject and text, and optionally small text attachments, to the provider&rsquo;s service (OpenAI for Codex, Anthropic for Claude) through this server&rsquo;s login for that tool. Nothing is sent automatically, no reply is ever sent, and every result is only a suggestion you review.</p>
-        <div class="task-form">
-          <label class="check"><input name="ai_enabled" type="checkbox"> Enable the AI assistant</label>
-          <label>Provider
-            <select name="ai_provider">
-              <option value="codex">Codex CLI (OpenAI)</option>
-              <option value="claude">Claude Code CLI (Anthropic)</option>
-            </select>
-            <span id="ai-status" class="meta" role="status">Checking…</span>
-          </label>
-          <label>Model
-            <select name="ai_model_choice"><option value="">Provider default</option></select>
-            <input name="ai_model" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Model name" hidden>
-            <span class="meta">The list comes from the provider&rsquo;s tool. Choose <em>Other…</em> to type a name that is not listed.</span>
-          </label>
-          <label>Output language
-            <input name="ai_language" type="text" maxlength="40" autocomplete="off" placeholder="Same as the email">
-            <span class="meta">For example English or Chinese. Applies to titles, descriptions, notes and drafts.</span>
-          </label>
-          <label>Timeout (seconds)
-            <input name="ai_timeout" type="number" min="10" max="1800" step="1" required>
-            <span class="meta">10–1800 seconds. A proxy in front of this server (Cloudflare cuts requests at about 100 s) may end slower requests early; translations are still saved on the server, so reloading the message then shows them.</span>
-          </label>
-          <label class="check"><input name="ai_attachments" type="checkbox"> Also send small text/CSV attachments (up to 3 files, 8,000 characters each)</label>
-        </div>
-        <div class="settings-actions"><button id="ai-test" type="button">Test the AI</button><span id="ai-test-result" class="meta" role="status"></span></div>
-        <p class="meta">The test sends a fixed message with no mail data, using the saved provider and model (save first). The program paths are set by the server operator with <code>INBOX_TEND_CODEX_BIN</code> and <code>INBOX_TEND_CLAUDE_BIN</code> in <code>.env</code>, not here.</p>
-      </section>
+          <section id="sync" class="panel settings-section scroll-mt-24" aria-labelledby="sync-heading">
+            <h2 id="sync-heading"><i class="fa-solid fa-rotate" aria-hidden="true"></i>Mail sync</h2>
+            <div class="task-form">
+              <label class="check"><input name="sync_sent" type="checkbox"><span class="font-medium text-slate-800">Also sync sent mail</span></label>
+              <label class="check"><input name="mark_read_on_open" type="checkbox"><span class="font-medium text-slate-800">Mark a message as read when I open it</span>
+                <span class="meta">By default read state is kept in Inbox Tend only. It reaches Gmail only if you allow that under <em>Gmail connection</em> above.</span></label>
+              <label>Messages per folder
+                <input name="sync_max_messages" type="number" min="1" max="5000" step="1" required>
+                <span class="meta">Most recent messages to mirror from the inbox and from sent mail (1–5000).</span>
+              </label>
+              <label>Largest attachment to store (MB)
+                <input name="attachment_max_mb" type="number" min="0" max="100" step="1" required>
+                <span class="meta">Larger files are recorded by name and size only. 0 stores no attachments.</span>
+              </label>
+            </div>
+            <p class="meta">Changes apply to the next sync. Already stored mail is kept. The Gmail searches themselves (<code>INBOX_TEND_SYNC_QUERY</code>, <code>INBOX_TEND_SYNC_SENT_QUERY</code>) are set in <code>.env</code>.</p>
+          </section>
 
-      <section class="panel settings-section" aria-labelledby="translate-heading">
-        <h2 id="translate-heading">Translation</h2>
-        <p>Shows a translation of the open message in a third column on the Inbox page. It uses the provider and model chosen under <em>AI assistant</em> above. <strong>Off by default.</strong> When on, <strong>every message you open</strong> is sent to that provider (OpenAI for Codex, Anthropic for Claude) to be translated, without a button press. Each translation is saved in this server&rsquo;s database, so a message is translated only once per language and reopening it costs nothing. Attachments are not translated.</p>
-        <div class="task-form">
-          <label class="check"><input name="translate_enabled" type="checkbox"> Translate messages I open</label>
-          <label>Translate into
-            <input name="translate_language" type="text" list="language-list" maxlength="40" autocomplete="off" placeholder="e.g. English or Chinese (Simplified)">
-            <datalist id="language-list">
-              <option value="English"></option><option value="Chinese (Simplified)"></option><option value="Chinese (Traditional)"></option>
-              <option value="Spanish"></option><option value="French"></option><option value="German"></option><option value="Portuguese"></option>
-              <option value="Italian"></option><option value="Japanese"></option><option value="Korean"></option><option value="Russian"></option>
-              <option value="Arabic"></option><option value="Hindi"></option><option value="Indonesian"></option><option value="Vietnamese"></option>
-              <option value="Turkish"></option><option value="Dutch"></option><option value="Polish"></option><option value="Thai"></option>
-            </datalist>
-            <span class="meta">Your preferred language. <button id="use-browser-language" type="button" class="link-button">Use this browser&rsquo;s language</button></span>
-          </label>
-        </div>
-      </section>
+          <section id="ai" class="panel settings-section scroll-mt-24" aria-labelledby="ai-heading">
+            <h2 id="ai-heading"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>AI assistant</h2>
+            <p>Uses an AI command-line tool installed on this server to suggest tasks (with quoted evidence from the message) and to draft replies. <strong>Off by default.</strong> When on, pressing an AI button sends that one message&rsquo;s sender, date, subject and text, and optionally small text attachments, to the provider&rsquo;s service (OpenAI for Codex, Anthropic for Claude) through this server&rsquo;s login for that tool. Nothing is sent automatically, no reply is ever sent, and every result is only a suggestion you review.</p>
+            <div class="task-form">
+              <label class="check"><input name="ai_enabled" type="checkbox"><span class="font-medium text-slate-800">Enable the AI assistant</span></label>
+              <label>Provider
+                <select name="ai_provider">
+                  <option value="codex">Codex CLI (OpenAI)</option>
+                  <option value="claude">Claude Code CLI (Anthropic)</option>
+                </select>
+                <span id="ai-status" class="meta" role="status">Checking…</span>
+              </label>
+              <label>Model
+                <select name="ai_model_choice"><option value="">Provider default</option></select>
+                <input name="ai_model" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Model name" hidden>
+                <span class="meta">The list comes from the provider&rsquo;s tool. Choose <em>Other…</em> to type a name that is not listed.</span>
+              </label>
+              <label>Output language
+                <input name="ai_language" type="text" maxlength="40" autocomplete="off" placeholder="Same as the email">
+                <span class="meta">For example English or Chinese. Applies to titles, descriptions, notes and drafts.</span>
+              </label>
+              <label>Timeout (seconds)
+                <input name="ai_timeout" type="number" min="10" max="1800" step="1" required>
+                <span class="meta">10–1800 seconds. A proxy in front of this server (Cloudflare cuts requests at about 100 s) may end slower requests early; translations are still saved on the server, so reloading the message then shows them.</span>
+              </label>
+              <label class="check"><input name="ai_attachments" type="checkbox"><span class="font-medium text-slate-800">Also send small text/CSV attachments</span><span class="meta">Up to 3 files, 8,000 characters each.</span></label>
+            </div>
+            <div class="settings-actions"><button id="ai-test" type="button"><i class="fa-solid fa-vial" aria-hidden="true"></i><span>Test the AI</span></button><span id="ai-test-result" class="meta" role="status"></span></div>
+            <p class="meta">The test sends a fixed message with no mail data, using the saved provider and model (save first). The program paths are set by the server operator with <code>INBOX_TEND_CODEX_BIN</code> and <code>INBOX_TEND_CLAUDE_BIN</code> in <code>.env</code>, not here.</p>
+          </section>
 
-      <div class="settings-actions"><button id="save-prefs" type="submit" class="action">Save settings</button></div>
-    </form>
+          <section id="translation-settings" class="panel settings-section scroll-mt-24" aria-labelledby="translate-heading">
+            <h2 id="translate-heading"><i class="fa-solid fa-language" aria-hidden="true"></i>Translation</h2>
+            <p>Shows a translation of the open message in a third column on the Inbox page. It uses the provider and model chosen under <em>AI assistant</em> above. <strong>Off by default.</strong> When on, <strong>every message you open</strong> is sent to that provider (OpenAI for Codex, Anthropic for Claude) to be translated, without a button press. Each translation is saved in this server&rsquo;s database, so a message is translated only once per language and reopening it costs nothing. Attachments are not translated.</p>
+            <div class="task-form">
+              <label class="check"><input name="translate_enabled" type="checkbox"><span class="font-medium text-slate-800">Translate messages I open</span></label>
+              <label>Translate into
+                <input name="translate_language" type="text" list="language-list" maxlength="40" autocomplete="off" placeholder="e.g. English or Chinese (Simplified)">
+                <datalist id="language-list">
+                  <option value="English"></option><option value="Chinese (Simplified)"></option><option value="Chinese (Traditional)"></option>
+                  <option value="Spanish"></option><option value="French"></option><option value="German"></option><option value="Portuguese"></option>
+                  <option value="Italian"></option><option value="Japanese"></option><option value="Korean"></option><option value="Russian"></option>
+                  <option value="Arabic"></option><option value="Hindi"></option><option value="Indonesian"></option><option value="Vietnamese"></option>
+                  <option value="Turkish"></option><option value="Dutch"></option><option value="Polish"></option><option value="Thai"></option>
+                </datalist>
+                <span class="meta">Your preferred language. <button id="use-browser-language" type="button" class="link-button">Use this browser&rsquo;s language</button></span>
+              </label>
+            </div>
+          </section>
 
-    <section class="panel settings-section" aria-labelledby="account-heading">
-      <h2 id="account-heading">Account</h2>
-      <p>Signed in as <strong id="account-name">…</strong>.</p>
-      <form id="password-form" class="task-form" autocomplete="off">
-        <label>Current password <input name="current" type="password" autocomplete="current-password" required maxlength="1024"></label>
-        <label>New password <input name="new" type="password" autocomplete="new-password" required minlength="12" maxlength="1024"></label>
-        <label>Repeat new password <input name="repeat" type="password" autocomplete="new-password" required minlength="12" maxlength="1024"></label>
-        <p class="meta wide">At least 12 characters. Changing it signs out your other sessions.</p>
-        <button id="save-password" type="submit" class="action">Change password</button>
-      </form>
-    </section>
+          <div class="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+            <p class="meta">Gmail connection, mail sync, AI and translation settings above are saved together.</p>
+            <button id="save-prefs" type="submit" class="action"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>Save settings</button>
+          </div>
+        </form>
+
+        <section id="account" class="panel settings-section scroll-mt-24" aria-labelledby="account-heading">
+          <h2 id="account-heading"><i class="fa-regular fa-user" aria-hidden="true"></i>Account</h2>
+          <p>Signed in as <strong id="account-name">…</strong>.</p>
+          <form id="password-form" class="task-form" autocomplete="off">
+            <label class="wide">Current password <input name="current" type="password" autocomplete="current-password" required maxlength="1024"></label>
+            <label>New password <input name="new" type="password" autocomplete="new-password" required minlength="12" maxlength="1024"></label>
+            <label>Repeat new password <input name="repeat" type="password" autocomplete="new-password" required minlength="12" maxlength="1024"></label>
+            <p class="meta wide">At least 12 characters. Changing it signs out your other sessions.</p>
+            <button id="save-password" type="submit" class="action"><i class="fa-solid fa-key" aria-hidden="true"></i>Change password</button>
+          </form>
+        </section>
+      </div>
+    </div>
   </main>

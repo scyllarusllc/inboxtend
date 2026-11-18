@@ -5,7 +5,7 @@
         <h1 id="page-title">Tasks</h1>
         <p class="intro-copy">Keep each request’s owner, deadline and status visible until it is done.</p>
       </div>
-      <div class="preview-callout" role="note"><strong>Stored locally</strong><span>Tasks are saved to this computer’s SQLite database, not to Gmail.</span></div>
+      <div class="callout" role="note"><i class="fa-solid fa-database" aria-hidden="true"></i><div><strong>Stored locally</strong><span>Tasks are saved to this computer’s SQLite database, not to Gmail.</span></div></div>
     </section>
 
     <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
@@ -19,8 +19,10 @@
       <div class="section-heading"><div><p class="eyebrow">Track</p><h2 id="tasks-heading">Local tasks</h2></div><span class="section-hint">Create tasks from the <a href="/user/inbox">Inbox</a></span></div>
       <div class="panel task-panel">
         <div class="task-tools">
-          <label>Search tasks <input id="task-search" type="search" placeholder="Title, owner or project"></label>
-          <label>Filter <select id="task-filter"><option value="all">All tasks</option><option value="active">Active</option><option value="overdue">Overdue</option><option value="due_soon">Due soon</option><option value="done">Completed</option></select></label>
+          <label class="min-w-64">Search tasks
+            <span class="relative block"><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true"></i><input id="task-search" class="pl-9" type="search" placeholder="Title, owner or project"></span>
+          </label>
+          <label class="max-w-56">Filter <select id="task-filter"><option value="all">All tasks</option><option value="active">Active</option><option value="overdue">Overdue</option><option value="due_soon">Due soon</option><option value="done">Completed</option></select></label>
           <button id="task-refresh" type="button">Refresh</button>
         </div>
         <h3 id="task-list-heading" class="list-heading">Saved tasks</h3>

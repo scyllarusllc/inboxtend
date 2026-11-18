@@ -6,6 +6,9 @@
   <meta name="color-scheme" content="light">
   <meta name="description" content="Sign in to the Inbox Tend workspace.">
   <title>Sign in · Inbox Tend</title>
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/fontawesome.min.css">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/solid.min.css">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/regular.min.css">
   <link rel="stylesheet" href="/static/styles.css">
 <script src="/static/login.js" defer></script>
 </head>
@@ -13,13 +16,13 @@
   <a class="skip-link" href="#main">Skip to main content</a>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="Inbox Tend home"><span class="brand-mark" aria-hidden="true">IT</span><span>Inbox <strong>Tend</strong></span></a>
-      <nav class="primary-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/user/inbox">Inbox</a><a href="/user/tasks">Tasks</a><a href="/privacy">Privacy</a><a href="/login">Sign in</a></nav>
-      <span class="environment-badge"><span class="status-dot" aria-hidden="true"></span>Preview workspace</span>
+      <a class="brand" href="/" aria-label="Inbox Tend home"><span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-inbox"></i></span><span class="text-lg tracking-tight">Inbox <strong>Tend</strong></span></a>
+      <nav class="primary-nav" aria-label="Main navigation"><a href="/" class="nav-link"><i class="fa-solid fa-house fa-fw" aria-hidden="true"></i><span>Home</span></a><a href="/user/inbox" class="nav-link"><i class="fa-solid fa-inbox fa-fw" aria-hidden="true"></i><span>Inbox</span></a><a href="/user/tasks" class="nav-link"><i class="fa-solid fa-list-check fa-fw" aria-hidden="true"></i><span>Tasks</span></a><a href="/privacy" class="nav-link"><i class="fa-solid fa-shield-halved fa-fw" aria-hidden="true"></i><span>Privacy</span></a><a href="/login" class="nav-link"><i class="fa-solid fa-right-to-bracket fa-fw" aria-hidden="true"></i><span>Sign in</span></a></nav>
+      <span class="environment-badge hidden xl:inline-flex"><span class="status-dot" aria-hidden="true"></span>Preview workspace</span>
     </div>
   </header>
-  <main id="main" class="login-shell"><div class="login-card panel"><p class="eyebrow">Welcome back</p><h1>Sign in to Inbox Tend</h1><p class="login-intro">Use your workspace account to review messages and tasks.</p><form id="login-form"><label for="username">Email</label><input id="username" name="username" type="email" autocomplete="username" required><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required><p id="login-status" role="alert" aria-live="polite"></p><button type="submit" class="action">Sign in</button></form><p class="login-footnote">Your Gmail inbox is shown read-only after you connect it. No message is sent from this app.</p></div></main>
+  <main id="main" class="login-shell"><div class="login-card panel"><p class="eyebrow">Welcome back</p><h1>Sign in to Inbox Tend</h1><p class="login-intro">Use your workspace account to review messages and tasks.</p><form id="login-form"><label for="username">Email</label><input id="username" name="username" type="email" autocomplete="username" required><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required><p id="login-status" role="alert" aria-live="polite"></p><button type="submit" class="action"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Sign in</button></form><p class="login-footnote"><i class="fa-solid fa-lock mr-1" aria-hidden="true"></i>Your Gmail inbox is shown read-only after you connect it. No message is sent from this app.</p></div></main>
 
-  <footer class="site-footer"><span>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · Apache-2.0</span></footer>
+  <footer class="site-footer"><span><i class="fa-solid fa-shield-halved mr-1.5 text-slate-400" aria-hidden="true"></i>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · Apache-2.0</span></footer>
 </body>
 </html>

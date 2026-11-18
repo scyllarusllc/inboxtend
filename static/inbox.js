@@ -3,6 +3,17 @@ const list = document.getElementById('messages');
 const detail = document.getElementById('detail');
 const draft = document.getElementById('draft');
 let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null, gmailWriteAccess = false;
+// What the list shows: search words (Gmail-style operators work), two quick filters, and how many rows are drawn.
+let searchText = '', onlyUnread = false, onlyAttachments = false, listLimit = 100, lastData = null, listRun = 0;
+const PAGE = 100;
+const filtersActive = () => searchText.trim() !== '' || onlyUnread || onlyAttachments;
+function listUrl() {
+  const q = new URLSearchParams({folder, view});
+  if (searchText.trim()) q.set('q', searchText.trim());
+  if (onlyUnread) q.set('unread', '1');
+  if (onlyAttachments) q.set('attachments', '1');
+  return '/api/connectors/gmail/messages?' + q;
+}
 const writesToGmail = () => gmailWriteAccess && userSettings.gmail_write_read;
 const translationPanel = document.getElementById('translation-panel');
 const translationBox = document.getElementById('translation');
@@ -112,7 +123,7 @@ function renderAttachments(message) {
     row.append(meta);
     if (file.stored) {
       const base = '/api/connectors/gmail/messages/' + encodeURIComponent(message.id) + '/attachments/' + file.id;
-      const download = el('a', 'Download'); download.href = base; download.setAttribute('download', file.name);
+      const download = el('a', 'Download', 'icon-button'); download.href = base; download.setAttribute('download', file.name); download.prepend(icon('download'));
       row.append(download);
       if (file.mime_type === 'text/plain' || file.mime_type === 'text/csv' || /\.(txt|csv)$/i.test(file.name)) {
         const preview = el('pre', undefined, 'attachment-preview'); preview.hidden = true;
@@ -220,7 +231,7 @@ async function selectMessage(id) {
     }
     detail.append(thread);
   }
-  const reply = iconButton('mail', 'Prepare an unsent reply draft');
+  const reply = iconButton('reply', 'Prepare an unsent reply draft');
   reply.className += ' action';
   reply.addEventListener('click', async () => {
     reply.disabled = true;
@@ -238,7 +249,10 @@ async function selectMessage(id) {
     catch (error) { if (selectedId === id) detail.append(el('p', error.message, 'error')); }
     finally { propose.disabled = false; }
   });
-  detail.append(full.direction === 'sent' ? propose : reply, ...(full.direction === 'sent' ? [] : [el('span', ' '), propose]));
+  const bar = el('div', undefined, 'action-bar');
+  if (full.direction !== 'sent') bar.append(reply);
+  bar.append(propose);
+  let note = null;
   if (full.direction !== 'sent') {
     const toggle = iconButton('check', 'Mark as read');
     detailRead.toggle = toggle;
@@ -248,8 +262,11 @@ async function selectMessage(id) {
       catch (error) { notify('Could not change the read state: ' + error.message, true); }
       toggle.disabled = false;
     });
-    detail.append(el('span', ' '), toggle, el('span', writesToGmail() ? ' (also updated in Gmail)' : ' (kept in Inbox Tend only; Gmail is not changed)', 'meta'));
+    bar.append(toggle);
+    note = el('p', writesToGmail() ? 'Read and unread changes are also applied in Gmail.' : 'Read and unread changes are kept in Inbox Tend only; Gmail is not changed.', 'meta mt-2');
   }
+  detail.append(bar);
+  if (note) detail.append(note);
   // Opening a message marks it read. Shown as read at once; put back if the request fails.
   if (full.unread && userSettings.mark_read_on_open && full.direction !== 'sent') {
     readState.set(id, false);
@@ -266,8 +283,8 @@ function aiControls(id, isSent) {
   const guidance = document.createElement('input');
   guidance.type = 'text'; guidance.maxLength = 500; guidance.className = 'ai-guidance';
   guidance.placeholder = 'Optional: what should the reply say?';
-  const suggest = iconButton('plus', 'Suggest task with AI');
-  const write = iconButton('mail', 'Draft reply with AI');
+  const suggest = iconButton('sparkles', 'Suggest task with AI');
+  const write = iconButton('sparkles', 'Draft reply with AI');
   const run = async (button, work) => {
     suggest.disabled = write.disabled = true;
     status.textContent = 'Asking ' + aiProvider().name + '… this can take up to ' + userSettings.ai_timeout + ' seconds.';
@@ -282,7 +299,7 @@ function aiControls(id, isSent) {
   write.addEventListener('click', () => run(write, async () => {
     const result = await request('/api/ai/reply', 'POST', {id, guidance: guidance.value});
     if (selectedId !== id) return;
-    const copy = iconButton('check', 'Copy');
+    const copy = iconButton('copy', 'Copy');
     copy.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(result.draft); copy.lastChild.textContent = 'Copied'; } catch (_) { copy.lastChild.textContent = 'Copy failed'; }
     });
@@ -294,6 +311,35 @@ function aiControls(id, isSent) {
   return box;
 }
 
+// ---- search and filters
+const searchBox = document.getElementById('mail-search');
+let searchTimer = null;
+async function reloadList() {
+  const mine = ++listRun;
+  listLimit = PAGE;
+  try {
+    const data = await request(listUrl());
+    if (mine === listRun) renderList(data);
+  } catch (error) { document.getElementById('search-info').textContent = error.message; }
+}
+searchBox.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { searchText = searchBox.value; reloadList(); }, 250);
+});
+searchBox.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { searchBox.value = ''; searchText = ''; clearTimeout(searchTimer); reloadList(); searchBox.blur(); }
+});
+document.addEventListener('keydown', event => {   // "/" jumps to the search box, like Gmail.
+  const typing = /^(input|textarea|select)$/i.test((event.target && event.target.tagName) || '');
+  if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); searchBox.focus(); }
+});
+for (const [id, set] of [['filter-unread', v => { onlyUnread = v; }], ['filter-attachments', v => { onlyAttachments = v; }]]) {
+  const button = document.getElementById(id);
+  button.addEventListener('click', () => {
+    const on = button.getAttribute('aria-pressed') !== 'true';
+    button.setAttribute('aria-pressed', String(on)); set(on); reloadList();
+  });
+}
 const viewButtons = {threads: document.getElementById('view-threads'), messages: document.getElementById('view-messages'), people: document.getElementById('view-people')};
 function showViewState() {
   for (const [name, button] of Object.entries(viewButtons)) button.setAttribute('aria-pressed', String(name === view));
@@ -301,7 +347,7 @@ function showViewState() {
 }
 function chooseView(next) {
   if (view === next) return;
-  view = next; currentGroup = null; selectedId = null;
+  view = next; currentGroup = null; selectedId = null; listLimit = PAGE;
   showViewState();
   detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
   userSettings.inbox_view = next;
@@ -316,7 +362,7 @@ function chooseFolder(next) {
   folder = next;
   folderInbox.setAttribute('aria-pressed', String(next === 'inbox'));
   folderSent.setAttribute('aria-pressed', String(next === 'sent'));
-  selectedId = null; currentGroup = null;
+  selectedId = null; currentGroup = null; listLimit = PAGE;
   showViewState();
   detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
@@ -366,9 +412,21 @@ function renderList(data) {
   } else if (currentGroup) {
     currentGroup = groups.find(g => g.id === currentGroup.id) || null;  // Fresh data for the open group.
   }
-  if (!messages.length) { list.textContent = folder === 'sent' ? 'No sent messages found.' : 'No inbox messages found.'; return; }
+  lastData = data;
+  const items = data.groups ? groups : messages;
+  const noun = view === 'threads' ? 'conversation' : view === 'people' ? 'person' : 'message';
+  const info = document.getElementById('search-info');
+  info.textContent = filtersActive() ? (items.length ? items.length.toLocaleString() + ' ' + (noun === 'person' ? (items.length === 1 ? 'person' : 'people') : noun + (items.length === 1 ? '' : 's')) + ' match.' : 'No matches.') : '';
+  if (!items.length) {
+    list.textContent = filtersActive() ? 'Nothing matches your search.' : (folder === 'sent' ? 'No sent messages found.' : 'No inbox messages found.');
+    return;
+  }
+  const openKey = data.groups ? (currentGroup && currentGroup.id) : selectedId;
+  const openAt = items.findIndex(x => x.id === openKey);
+  if (openAt >= listLimit) listLimit = Math.ceil((openAt + 1) / PAGE) * PAGE;   // Never hide the row that is open.
+  const shown = items.slice(0, listLimit);
   if (!data.groups) {
-    for (const m of messages) {
+    for (const m of shown) {
       const button = rowButton(m.id, m.id === selectedId, m.unread);
       button.append(el('div', m.subject || '(No subject)'),
         el('div', (folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender')) + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'));
@@ -376,24 +434,31 @@ function renderList(data) {
       button.addEventListener('click', () => { currentGroup = null; selectMessage(m.id); });
       list.append(button);
     }
-    return;
-  }
-  for (const g of groups) {
-    const button = rowButton(g.id, currentGroup && g.id === currentGroup.id, g.unread_count > 0);
-    const last = g.last;
-    const top = el('div', undefined, 'group-title');
-    top.append(el('span', g.title || '(No subject)', 'group-name'));
-    if (g.count > 1) {
-      const badge = el('span', g.unread_count ? g.unread_count + '/' + g.count : String(g.count), g.unread_count ? 'count-badge unread-badge' : 'count-badge');
-      badge.title = g.unread_count ? g.unread_count + ' unread of ' + g.count + ' messages' : g.count + ' messages';
-      top.append(badge);
+  } else {
+    for (const g of shown) {
+      const button = rowButton(g.id, currentGroup && g.id === currentGroup.id, g.unread_count > 0);
+      const last = g.last;
+      const top = el('div', undefined, 'group-title');
+      top.append(el('span', g.title || '(No subject)', 'group-name'));
+      if (g.count > 1) {
+        const badge = el('span', g.unread_count ? g.unread_count + '/' + g.count : String(g.count), g.unread_count ? 'count-badge unread-badge' : 'count-badge');
+        badge.title = g.unread_count ? g.unread_count + ' unread of ' + g.count + ' messages' : g.count + ' messages';
+        top.append(badge);
+      }
+      const who = g.kind === 'person' ? (g.address || '') : (g.participants || []).join(', ');
+      button.append(top, el('div', (who ? who + ' · ' : '') + formatWhen(last.internal_date, last.date || 'No date'), 'meta'),
+        el('div', (last.direction === 'sent' ? 'You: ' : '') + (g.kind === 'person' ? (last.subject || '') + ' — ' : '') + (last.snippet || ''), 'meta group-snippet'));
+      if (filtersActive() && g.matches && g.count > 1) button.append(el('div', g.matches + ' of ' + g.count + ' messages match', 'meta'));
+      if (g.attachment_count) button.append(attachmentLabel(g.attachment_count));
+      button.addEventListener('click', () => { currentGroup = g; selectMessage(g.last.id); });
+      list.append(button);
     }
-    const who = g.kind === 'person' ? (g.address || '') : (g.participants || []).join(', ');
-    button.append(top, el('div', (who ? who + ' · ' : '') + formatWhen(last.internal_date, last.date || 'No date'), 'meta'),
-      el('div', (last.direction === 'sent' ? 'You: ' : '') + (g.kind === 'person' ? (last.subject || '') + ' — ' : '') + (last.snippet || ''), 'meta group-snippet'));
-    if (g.attachment_count) button.append(attachmentLabel(g.attachment_count));
-    button.addEventListener('click', () => { currentGroup = g; selectMessage(g.last.id); });
-    list.append(button);
+  }
+  if (items.length > shown.length) {
+    const more = el('button', 'Show ' + Math.min(PAGE, items.length - shown.length) + ' more (' + (items.length - shown.length).toLocaleString() + ' left)', 'more-button');
+    more.type = 'button';
+    more.addEventListener('click', () => { listLimit += PAGE; renderList(lastData); });
+    list.append(more);
   }
 }
 // The page normally shows the local SQLite copy. A sync runs on the server in the background
@@ -405,6 +470,7 @@ async function refreshGmail(startSync = false) {
     try { await request('/api/connectors/gmail/sync', 'POST', {}); }
     catch (error) { gmailRefresh.disabled = false; throw error; }
   }
+  let lastSignature = null;
   for (;;) {
     const state = await request('/api/connectors/gmail/status');
     if (run !== refreshRun) return;
@@ -424,9 +490,15 @@ async function refreshGmail(startSync = false) {
       startSync = true; continue;
     }
     gmailRefresh.disabled = sync.running;
-    const data = await request('/api/connectors/gmail/messages?folder=' + folder + '&view=' + view);
-    if (run !== refreshRun) return;
-    renderList(data);
+    // While a sync runs, fetch the list again only when its progress moved: a big mailbox is a big response.
+    const signature = sync.running ? sync.done + ':' + sync.failed + ':' + sync.total : null;
+    if (!sync.running || signature !== lastSignature || !lastData) {
+      const mine = ++listRun;
+      const data = await request(listUrl());
+      if (run !== refreshRun) return;
+      if (mine === listRun) renderList(data);   // A newer search may already have drawn its own result.
+      lastSignature = signature;
+    }
     showCounts(state.counts);
     showTotals(state);
     gmailWriteAccess = state.write_access;

@@ -6,6 +6,9 @@
   <meta name="color-scheme" content="light">
   <meta name="description" content="What Inbox Tend reads, keeps and never does.">
   <title>Privacy · Inbox Tend</title>
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/fontawesome.min.css">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/solid.min.css">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/regular.min.css">
   <link rel="stylesheet" href="/static/styles.css">
 
 </head>
@@ -13,9 +16,9 @@
   <a class="skip-link" href="#main">Skip to main content</a>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="Inbox Tend home"><span class="brand-mark" aria-hidden="true">IT</span><span>Inbox <strong>Tend</strong></span></a>
-      <nav class="primary-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/user/inbox">Inbox</a><a href="/user/tasks">Tasks</a><a href="/privacy" aria-current="page">Privacy</a><a href="/login">Sign in</a></nav>
-      <span class="environment-badge"><span class="status-dot" aria-hidden="true"></span>Preview workspace</span>
+      <a class="brand" href="/" aria-label="Inbox Tend home"><span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-inbox"></i></span><span class="text-lg tracking-tight">Inbox <strong>Tend</strong></span></a>
+      <nav class="primary-nav" aria-label="Main navigation"><a href="/" class="nav-link"><i class="fa-solid fa-house fa-fw" aria-hidden="true"></i><span>Home</span></a><a href="/user/inbox" class="nav-link"><i class="fa-solid fa-inbox fa-fw" aria-hidden="true"></i><span>Inbox</span></a><a href="/user/tasks" class="nav-link"><i class="fa-solid fa-list-check fa-fw" aria-hidden="true"></i><span>Tasks</span></a><a href="/privacy" aria-current="page" class="nav-link"><i class="fa-solid fa-shield-halved fa-fw" aria-hidden="true"></i><span>Privacy</span></a><a href="/login" class="nav-link"><i class="fa-solid fa-right-to-bracket fa-fw" aria-hidden="true"></i><span>Sign in</span></a></nav>
+      <span class="environment-badge hidden xl:inline-flex"><span class="status-dot" aria-hidden="true"></span>Preview workspace</span>
     </div>
   </header>
   <main id="main" class="page-shell">
@@ -27,13 +30,13 @@
       </div>
     </section>
     <section class="public-grid" aria-label="Privacy summary">
-      <article class="panel"><h2>Reads</h2><p>After you connect Gmail with read-only consent, the app downloads your recent inbox and sent messages: headers, text and HTML bodies, labels and attachments up to a size limit. Gmail is contacted only to connect and when you press Refresh inbox.</p></article>
-      <article class="panel"><h2>Keeps</h2><p>Everything it downloads is saved in a SQLite database on the server that runs Inbox Tend, together with the tasks you confirm. Only your Gmail refresh token is encrypted, so protect that server. Disconnecting Gmail deletes the saved messages and attachments.</p></article>
-      <article class="panel"><h2>Never does</h2><p>No sending, deleting or trashing mail in Gmail, ever. Gmail access is read-only unless you choose to allow read/unread changes in Settings; then only the unread flag of one message at a time is changed. No AI model sees your messages unless you turn on the optional AI assistant in Settings; then only the one message you press an AI button on (or, if you also switch on Translation, each message you open, once, with the result saved here) is sent to the provider you chose (OpenAI for Codex, Anthropic for Claude) through the command-line tool on the server, and results are only suggestions you review. Message bodies show as plain text only and attachments are never opened or run, only downloaded. Agent assignments only record a pending approval and run nothing.</p></article>
+      <article class="panel"><span class="step-number"><i class="fa-solid fa-eye" aria-hidden="true"></i></span><h2>Reads</h2><p>After you connect Gmail with read-only consent, the app downloads your recent inbox and sent messages: headers, text and HTML bodies, labels and attachments up to a size limit. Gmail is contacted only to connect and when you press Refresh inbox.</p></article>
+      <article class="panel"><span class="step-number"><i class="fa-solid fa-database" aria-hidden="true"></i></span><h2>Keeps</h2><p>Everything it downloads is saved in a SQLite database on the server that runs Inbox Tend, together with the tasks you confirm. Only your Gmail refresh token is encrypted, so protect that server. Disconnecting Gmail deletes the saved messages and attachments.</p></article>
+      <article class="panel"><span class="step-number"><i class="fa-solid fa-ban" aria-hidden="true"></i></span><h2>Never does</h2><p>No sending, deleting or trashing mail in Gmail, ever. Gmail access is read-only unless you choose to allow read/unread changes in Settings; then only the unread flag of one message at a time is changed. No AI model sees your messages unless you turn on the optional AI assistant in Settings; then only the one message you press an AI button on (or, if you also switch on Translation, each message you open, once, with the result saved here) is sent to the provider you chose (OpenAI for Codex, Anthropic for Claude) through the command-line tool on the server, and results are only suggestions you review. Message bodies show as plain text only and attachments are never opened or run, only downloaded. Agent assignments only record a pending approval and run nothing.</p></article>
     </section>
-    <section class="privacy-note"><div><p class="eyebrow">Your controls</p><h2>Disconnect or delete any time.</h2></div><p>Disconnect Gmail from the Inbox page to remove the stored token. Deleting a task permanently removes it and its activity history. Public pages contain no inbox or task data.</p></section>
+    <section class="privacy-note"><div><p class="eyebrow">Your controls</p><h2>Disconnect or delete any time.</h2></div><p>Disconnect Gmail in Settings → Gmail connection to remove the stored token and the saved mail. Deleting a task permanently removes it and its activity history. Public pages contain no inbox or task data.</p></section>
   </main>
 
-  <footer class="site-footer"><span>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · Apache-2.0</span></footer>
+  <footer class="site-footer"><span><i class="fa-solid fa-shield-halved mr-1.5 text-slate-400" aria-hidden="true"></i>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · Apache-2.0</span></footer>
 </body>
 </html>

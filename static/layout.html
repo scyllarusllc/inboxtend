@@ -6,6 +6,9 @@
   <meta name="color-scheme" content="light">
   <meta name="description" content="{{DESCRIPTION}}">
   <title>{{TITLE}}</title>
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/fontawesome.min.css">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/solid.min.css">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/regular.min.css">
   <link rel="stylesheet" href="/static/styles.css">
 {{SCRIPT}}
 </head>
@@ -13,12 +16,12 @@
   <a class="skip-link" href="#main">Skip to main content</a>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="Inbox Tend home"><span class="brand-mark" aria-hidden="true">IT</span><span>Inbox <strong>Tend</strong></span></a>
+      <a class="brand" href="/" aria-label="Inbox Tend home"><span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-inbox"></i></span><span class="text-lg tracking-tight">Inbox <strong>Tend</strong></span></a>
       <nav class="primary-nav" aria-label="Main navigation">{{NAV}}</nav>
-      <span class="environment-badge"><span class="status-dot" aria-hidden="true"></span>Preview workspace</span>
+      <span class="environment-badge hidden xl:inline-flex"><span class="status-dot" aria-hidden="true"></span>Preview workspace</span>
     </div>
   </header>
   {{CONTENT}}
-  <footer class="site-footer"><span>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · Apache-2.0</span></footer>
+  <footer class="site-footer"><span><i class="fa-solid fa-shield-halved mr-1.5 text-slate-400" aria-hidden="true"></i>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · Apache-2.0</span></footer>
 </body>
 </html>

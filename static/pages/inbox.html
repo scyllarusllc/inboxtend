@@ -5,31 +5,39 @@
         <h1 id="page-title">Inbox</h1>
         <p class="intro-copy">Open a message from your Gmail inbox, review the suggested task, and save it to your task list.</p>
       </div>
-      <div class="preview-callout" role="note"><strong>Review before action</strong><span>Gmail access is read-only unless you allow read/unread changes in Settings. Tasks stay on this computer and replies are never sent.</span></div>
+      <div class="callout" role="note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><div><strong>Review before action</strong><span>Gmail access is read-only unless you allow read/unread changes in Settings. Tasks stay on this computer and replies are never sent.</span></div></div>
     </section>
 
     <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
 
     <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
       <div class="section-heading"><div><p class="eyebrow">Review</p><h2 id="inbox-heading">Gmail</h2></div><span class="section-hint">Saved to SQLite · connection and access are managed in <a href="/user/settings">Settings</a></span></div>
-      <div class="panel"><p id="gmail-status" role="status">Checking Gmail connection…</p>
-        <p id="gmail-counts" class="meta" role="status"></p>
-        <div class="task-tools"><button id="gmail-refresh" type="button" hidden>Refresh inbox</button></div>
+      <div class="panel mb-5 flex flex-wrap items-start justify-between gap-4">
+        <div class="min-w-0 flex-1">
+          <p id="gmail-status" role="status" class="text-sm text-slate-800">Checking Gmail connection…</p>
+          <p id="gmail-counts" class="meta mt-1" role="status"></p>
+        </div>
+        <button id="gmail-refresh" type="button" hidden><i class="fa-solid fa-rotate" aria-hidden="true"></i>Refresh inbox</button>
       </div>
       <div id="inbox-grid" class="workspace-grid">
         <section class="panel inbox-panel" aria-labelledby="messages-heading">
-          <div class="panel-heading"><h3 id="messages-heading">Mail</h3><div class="folder-tabs" role="group" aria-label="Folder"><button id="folder-inbox" type="button" aria-pressed="true">Inbox</button><button id="folder-sent" type="button" aria-pressed="false">Sent</button></div></div>
-          <div class="folder-tabs view-tabs" role="group" aria-label="Group mail by"><button id="view-threads" type="button" aria-pressed="true" title="One row per conversation">Conversations</button><button id="view-messages" type="button" aria-pressed="false" title="One row per message">Messages</button><button id="view-people" type="button" aria-pressed="false" title="One row per person you correspond with: the sender of mail you received, the recipient of mail you sent">People</button></div>
+          <div class="panel-heading"><h3 id="messages-heading"><i class="fa-regular fa-envelope text-indigo-500" aria-hidden="true"></i>Mail</h3><div class="folder-tabs" role="group" aria-label="Folder"><button id="folder-inbox" type="button" aria-pressed="true">Inbox</button><button id="folder-sent" type="button" aria-pressed="false">Sent</button></div></div>
+          <div class="folder-tabs view-tabs mb-4" role="group" aria-label="Group mail by"><button id="view-threads" type="button" aria-pressed="true" title="One row per conversation">Conversations</button><button id="view-messages" type="button" aria-pressed="false" title="One row per message">Messages</button><button id="view-people" type="button" aria-pressed="false" title="One row per person you correspond with: the sender of mail you received, the recipient of mail you sent">People</button></div>
+          <div class="search-box">
+            <div class="relative"><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true"></i><input id="mail-search" class="pl-9" type="search" placeholder="Search mail…" aria-label="Search mail" maxlength="200" autocomplete="off" spellcheck="false" title="Words match subject, people and text. Operators: from:  to:  subject:&quot;a phrase&quot;  is:unread  has:attachment. Press / to search."></div>
+            <div class="folder-tabs filter-tabs" role="group" aria-label="Filters"><button id="filter-unread" type="button" aria-pressed="false">Unread</button><button id="filter-attachments" type="button" aria-pressed="false">With attachments</button></div>
+            <p id="search-info" class="meta" role="status"></p>
+          </div>
           <div id="messages">Loading…</div>
         </section>
         <section class="panel review-panel" aria-labelledby="review-heading">
-          <div class="panel-heading"><h3 id="review-heading">Message review</h3><span class="panel-caption">Nothing is sent automatically</span></div>
-          <div id="detail">Choose a message to see its details.</div>
+          <div class="panel-heading"><h3 id="review-heading"><i class="fa-regular fa-envelope-open text-indigo-500" aria-hidden="true"></i>Message review</h3><span class="panel-caption">Nothing is sent automatically</span></div>
+          <div id="detail" class="text-sm text-slate-500">Choose a message to see its details.</div>
           <div id="draft"></div>
         </section>
         <section id="translation-panel" class="panel translation-panel" aria-labelledby="translation-heading" hidden>
-          <div class="panel-heading"><h3 id="translation-heading">Translation</h3><span id="translation-caption" class="panel-caption"></span></div>
-          <div id="translation">Choose a message to see its translation.</div>
+          <div class="panel-heading"><h3 id="translation-heading"><i class="fa-solid fa-language text-indigo-500" aria-hidden="true"></i>Translation</h3><span id="translation-caption" class="panel-caption"></span></div>
+          <div id="translation" class="text-sm text-slate-500">Choose a message to see its translation.</div>
         </section>
       </div>
     </section>

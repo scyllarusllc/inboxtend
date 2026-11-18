@@ -80,3 +80,14 @@ They are cached in `gmail_connections.remote_counts` for ten minutes, refreshed 
 returned as `remote` by `GET /api/connectors/gmail/status` together with `sync_limit`. Each folder keeps only its most
 recent `sync_limit` messages (Settings → Messages per folder, up to 5000), so a large mailbox shows as partly synced
 until that number is raised.
+
+## Searching the local copy
+
+`GET /api/connectors/gmail/messages?folder=…&view=…&q=…&unread=1&attachments=1` filters any of the three views.
+`mailsearch.py` parses the query Gmail-style: free words (all must match the subject, sender, recipients, snippet or
+body, case-insensitive), `from:` `to:` `subject:` (quotes for phrases), `is:unread`, `is:read`, `has:attachment`;
+unknown operators are searched literally and a query is limited to 200 characters / 12 terms. Everything becomes one
+parameterised SQL condition (`LIKE … ESCAPE`, `%` and `_` are literal), so user text never reaches the SQL itself.
+In *Conversations* and *People* a group is listed when any of its messages in that folder matches, and shows
+`matches` out of `count`. It is a scan of the local table: about 50 to 125 ms for 5000 messages with full text, no
+Gmail request, no AI.

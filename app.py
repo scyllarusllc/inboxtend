@@ -13,12 +13,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 import ai
 import gmail_web
+import mailsearch
 import settings as prefs
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
 ROOT = Path(__file__).resolve().parent
-NAV_ITEMS = (('home','/','Home'),('inbox','/user/inbox','Inbox'),('tasks','/user/tasks','Tasks'),('privacy','/privacy','Privacy'))
+NAV_ITEMS = (('home','/','Home','house'),('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'),('privacy','/privacy','Privacy','shield-halved'))
 # name -> (title, description, scripts, active nav item, signed in)
 PAGES = {
     'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', (), 'home', False),
@@ -28,17 +29,21 @@ PAGES = {
     'settings': ('Settings · Inbox Tend', 'Timezone, display, mail sync and account settings.', ('/static/common.js','/static/settings.js'), 'settings', True),
     'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), 'privacy', False),
 }
+VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2'}
 STATIC_FILES = {'/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript',
                 '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript'}
 
+def _nav_link(href, label, icon, current):
+    return ('<a href="%s"%s class="nav-link"><i class="fa-solid fa-%s fa-fw" aria-hidden="true"></i><span>%s</span></a>'
+            % (href, ' aria-current="page"' if current else '', icon, label))
+
 def nav_html(active, signed_in):
     """Identical four links on every page; only the current-page marker and the auth control vary."""
-    links = ''.join('<a href="%s"%s>%s</a>' % (href, ' aria-current="page"' if key == active else '', label)
-                    for key, href, label in NAV_ITEMS)
+    links = ''.join(_nav_link(href, label, icon, key == active) for key, href, label, icon in NAV_ITEMS)
     if not signed_in:
-        return links + '<a href="/login">Sign in</a>'
-    current = ' aria-current="page"' if active == 'settings' else ''
-    return links + f'<a href="/user/settings"{current}>Settings</a><button id="logout" type="button">Sign out</button>'
+        return links + _nav_link('/login', 'Sign in', 'right-to-bracket', False)
+    return (links + _nav_link('/user/settings', 'Settings', 'gear', active == 'settings') +
+            '<button id="logout" type="button"><i class="fa-solid fa-right-from-bracket fa-fw" aria-hidden="true"></i><span>Sign out</span></button>')
 
 def render_page(name):
     """Compose trusted static page content with one shared header and footer."""
@@ -83,12 +88,13 @@ class Handler(BaseHTTPRequestHandler):
     gmail_config = {}
 
     def _send(self,status,payload,mime,extra_headers=()):
+        headers = {'Content-Type':mime,'Content-Length':str(len(payload)),'Cache-Control':'no-store',
+                   'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
+                   'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"}
+        for key,value in extra_headers:   # A caller's header replaces the default of the same name instead of repeating it.
+            headers[next((k for k in headers if k.lower() == key.lower()),key)] = value
         self.send_response(status)
-        for key,value in (('Content-Type',mime),('Content-Length',str(len(payload))),('Cache-Control','no-store'),
-                          ('X-Content-Type-Options','nosniff'),('Referrer-Policy','no-referrer'),
-                          ('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")):
-            self.send_header(key,value)
-        for key,value in extra_headers:
+        for key,value in headers.items():
             self.send_header(key,value)
         self.end_headers()
         self.wfile.write(payload)
@@ -195,6 +201,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200,render_page('login'),'text/html; charset=utf-8')
             if path in STATIC_FILES:
                 return self._send(200,(ROOT/path.lstrip('/')).read_bytes(),STATIC_FILES[path]+'; charset=utf-8')
+            if path.startswith('/static/vendor/'):   # Third-party assets (Font Awesome): only .css and .woff2 inside static/vendor.
+                kind = VENDOR_TYPES.get(Path(path).suffix)
+                target = (ROOT/'static'/path[len('/static/'):]).resolve()
+                if kind is None or not target.is_relative_to(ROOT/'static'/'vendor') or not target.is_file():
+                    raise RequestError(404,'Not found')
+                return self._send(200,target.read_bytes(),kind,(('Cache-Control','public, max-age=86400'),))
             if path == '/privacy':
                 return self._send(200,render_page('privacy'),'text/html; charset=utf-8')
             if path == '/api/health': return self._json(200,{'status':'ok'})
@@ -366,9 +378,11 @@ class Handler(BaseHTTPRequestHandler):
             if view not in gmail_web.VIEWS: raise RequestError(400,'Unknown view')
             with self._db() as db:
                 if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
-                listing = gmail_web.grouped_inbox(db,session['id'],folder,view)
+                search = mailsearch.parse(query.get('q',[''])[0],unread=query.get('unread',[''])[0] == '1',attachments=query.get('attachments',[''])[0] == '1')
+                searching = bool(mailsearch.condition(search)[0])
+                listing = gmail_web.grouped_inbox(db,session['id'],folder,view,search if searching else None)
                 stamp = gmail_web.last_sync(db,session['id'])
-            return self._json(200,dict(listing,folder=folder,view=view,last_sync=stamp,read_only=True))
+            return self._json(200,dict(listing,folder=folder,view=view,last_sync=stamp,read_only=True,searching=searching))
         if path == '/api/ai/status':
             with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
             return self._json(200,dict(ai.status(self.gmail_config),enabled=user['ai_enabled'],provider=ai.provider_of(user)))

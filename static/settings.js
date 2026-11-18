@@ -88,11 +88,11 @@ async function init() {
   async function showGmail() {
     const gmail = await request('/api/connectors/gmail/status');
     const line = document.getElementById('access-status');
-    const show = (id, visible, text) => { const b = document.getElementById(id); b.hidden = !visible; if (text) b.textContent = text; return b; };
+    const show = (id, visible, text) => { const b = document.getElementById(id); b.hidden = !visible; if (text) (b.querySelector('span') || b).textContent = text; return b; };
     line.textContent = !gmail.configured ? 'Gmail is not configured on this server (see docs/gmail-web.md).'
       : !gmail.connected ? 'Gmail is not connected.'
       : gmail.write_access ? 'Connected. Access: read, and change read/unread (gmail.modify).' : 'Connected. Access: read-only (gmail.readonly).';
-    show('connect-gmail', gmail.configured, gmail.connected ? 'Reconnect Gmail' : 'Connect Gmail (read-only)');
+    show('connect-gmail', gmail.configured, gmail.connected ? 'Reconnect Gmail' : 'Connect Gmail (read-only)').classList.toggle('action', !gmail.connected);
     show('grant-modify', gmail.configured && !gmail.write_access, gmail.connected ? 'Allow changing read/unread in Gmail…' : 'Connect Gmail with read/unread changes…');
     show('grant-readonly', gmail.configured && gmail.connected && gmail.write_access);
     show('disconnect-gmail', gmail.connected);

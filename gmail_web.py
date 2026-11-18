@@ -21,6 +21,7 @@ from connectors.gmail_modify import MODIFY_SCOPE, GmailWriteError, set_unread as
 from connectors.gmail_readonly import SCOPES, GmailReadError, GmailRateLimitError, cooldown_remaining, get_totals, list_message_ids, get_message_full, get_attachment
 from tasks import connection, peer_for
 import settings as prefs
+import mailsearch
 
 AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 TOKEN = 'https://oauth2.googleapis.com/token'
@@ -262,27 +263,30 @@ def last_sync(db,user_id):
 
 FOLDERS = {'inbox':'in_inbox','sent':'in_sent'}
 
-def cached_inbox(db,user_id,folder='inbox'):
-    """Folder rows from the local SQLite copy; makes no Gmail request."""
+def cached_inbox(db,user_id,folder='inbox',search=None):
+    """Folder rows from the local SQLite copy; makes no Gmail request. `search` is a mailsearch.parse() result."""
     column = FOLDERS[folder]
+    where, params = mailsearch.condition(search) if search else ('',[])
     rows = db.execute('SELECT m.*,(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
-                      f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1 ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,))
+                      f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1' + (f' AND ({where})' if where else '') +
+                      ' ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,*params))
     return [dict(_row(r),attachment_count=r['n_att']) for r in rows]
 
 VIEWS = ('messages','threads','people')
 
-def grouped_inbox(db,user_id,folder,view):
+def grouped_inbox(db,user_id,folder,view,search=None):
     """The folder as the user wants to see it. `messages`: one entry per message. `threads`: one per Gmail
     conversation. `people`: one per other party (sender of received mail, first recipient of sent mail).
     A group is listed in a folder when any of its messages is in it, and holds all stored messages of the
     conversation or person, from both folders. Purely local: no Gmail request."""
     if view == 'messages':
-        return {'messages':cached_inbox(db,user_id,folder)}
+        return {'messages':cached_inbox(db,user_id,folder,search)}
     column = FOLDERS[folder]
-    rows = db.execute('SELECT message_id,thread_id,from_addr,to_addr,subject,date_header,snippet,internal_date,label_ids,read_override,'
-                      f'peer_email,peer_name,{column} AS in_folder,'
+    where, params = mailsearch.condition(search) if search else ('',[])
+    rows = db.execute('SELECT m.message_id,m.thread_id,m.from_addr,m.to_addr,m.subject,m.date_header,m.snippet,m.internal_date,m.label_ids,m.read_override,'
+                      f'm.peer_email,m.peer_name,m.{column} AS in_folder,' + (f'CASE WHEN {where} THEN 1 ELSE 0 END' if where else '1') + ' AS hit,'
                       '(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
-                      'FROM gmail_messages m WHERE user_id=? ORDER BY internal_date DESC, message_id DESC',(user_id,))  # Metadata-only rows (older syncs) group fine too.
+                      'FROM gmail_messages m WHERE m.user_id=? ORDER BY m.internal_date DESC, m.message_id DESC',(*params,user_id))  # Metadata-only rows (older syncs) group fine too.
     groups, names, names_to = {}, {}, {}
     for r in rows:
         if r['peer_email'] and r['peer_name']:  # Newest display name per address; names people chose for themselves win.
@@ -297,7 +301,8 @@ def grouped_inbox(db,user_id,folder,view):
         group = groups.setdefault(key,{'id':key,'kind':'thread' if view == 'threads' else 'person','messages':[],'in_folder':False,
                                        'address':r['peer_email'] if view == 'people' else ''})
         group['messages'].append(dict(_row(r),attachment_count=r['n_att']))
-        group['in_folder'] = group['in_folder'] or bool(r['in_folder'])
+        group['in_folder'] = group['in_folder'] or bool(r['in_folder'] and r['hit'])   # With a search, a hit inside this folder lists the group.
+        group['matches'] = group.get('matches',0) + (1 if r['in_folder'] and r['hit'] else 0)
     def who(address, fallback=''):
         return names.get(address) or names_to.get(address) or (address.split('@')[0] if address else '') or fallback
     result = []

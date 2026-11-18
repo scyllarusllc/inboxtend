@@ -106,7 +106,7 @@ class AppTests(unittest.TestCase):
         import re
         for page in pages:
             nav=page.split('aria-label="Main navigation">',1)[1].split('</nav>',1)[0]
-            links=re.findall(r'<a href="([^"]+)"[^>]*>([^<]+)</a>',nav)
+            links=[(href,re.sub(r'<[^>]+>','',text)) for href,text in re.findall(r'<a href="([^"]+)"[^>]*>(.*?)</a>',nav)]  # Links carry an icon element now.
             self.assertEqual(links[:4],[('/','Home'),('/user/inbox','Inbox'),('/user/tasks','Tasks'),('/privacy','Privacy')])
         self.assertIn('href="/user/inbox" aria-current="page"',pages[3])
         self.assertIn('href="/user/tasks" aria-current="page"',pages[4])
