@@ -18,6 +18,7 @@
           <li><a class="nav-link" href="#ai"><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i><span>AI assistant</span></a></li>
           <li><a class="nav-link" href="#translation-settings"><i class="fa-solid fa-language fa-fw" aria-hidden="true"></i><span>Translation</span></a></li>
           <li><a class="nav-link" href="#flags"><i class="fa-regular fa-flag fa-fw" aria-hidden="true"></i><span>Sender details</span></a></li>
+          <li><a class="nav-link" href="#topics"><i class="fa-solid fa-tags fa-fw" aria-hidden="true"></i><span>Topic icons</span></a></li>
           <li><a class="nav-link" href="#account"><i class="fa-regular fa-user fa-fw" aria-hidden="true"></i><span>Account</span></a></li>
         </ul>
       </nav>
@@ -143,8 +144,18 @@
             <div class="settings-actions"><button id="flags-reset" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Forget all guesses</span></button><span id="flags-reset-result" class="meta" role="status"></span></div>
           </section>
 
+          <section id="topics" class="panel settings-section scroll-mt-24" aria-labelledby="topics-heading">
+            <h2 id="topics-heading"><i class="fa-solid fa-tags" aria-hidden="true"></i>Topic icons</h2>
+            <p>Puts a small icon on every message for what it is about, so you can see at a glance which mail is about <strong>money</strong>, <strong>work</strong>, <strong>love</strong>, friends and family, travel, shopping, meetings, account security, health, legal matters, education, tech, social networks, news, events, food or promotions. A message can have up to two. On the open message the topics are buttons: press one to see all mail about it (you can also search <code>topic:money</code>). <strong>Off by default.</strong></p>
+            <p>When on, <strong>each new message is sent once</strong> to the provider chosen under <em>AI assistant</em> (OpenAI for Codex, Anthropic for Claude): the other party&rsquo;s name and address, the subject and the first 400 characters of the text (quoted replies and links removed; never attachments), 20 messages per request. This includes mail you sent. The answers are saved in this server&rsquo;s database, so every message is asked about only once, and only the most recent 400 not yet labelled messages are handled per run. The topics are a guess by the AI and can be wrong; a message that fits none of the topics gets no icon.</p>
+            <div class="task-form">
+              <label class="check"><input name="topics_enabled" type="checkbox"><span class="font-medium text-slate-800">Show topic icons (guessed by AI)</span></label>
+            </div>
+            <div class="settings-actions"><button id="topics-reset" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Forget all topics</span></button><span id="topics-reset-result" class="meta" role="status"></span></div>
+          </section>
+
           <div class="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-            <p class="meta">Gmail connection, mail sync, AI, translation and sender-detail settings above are saved together.</p>
+            <p class="meta">Gmail connection, mail sync, AI, translation, sender-detail and topic settings above are saved together.</p>
             <button id="save-prefs" type="submit" class="action"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>Save settings</button>
           </div>
         </form>

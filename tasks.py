@@ -4,13 +4,15 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import json
+import os
 import sqlite3
 import settings
 from email.utils import getaddresses, parseaddr
 
 STATES = ('new', 'in_progress', 'waiting', 'done')
 PRIORITIES = ('low', 'medium', 'high')
-DEFAULT_DB = Path(__file__).resolve().parent / 'data' / 'tasks.sqlite3'
+# INBOX_TEND_DB points the app at another database file (used by `make demo`); normally unset.
+DEFAULT_DB = Path(os.environ.get('INBOX_TEND_DB') or Path(__file__).resolve().parent / 'data' / 'tasks.sqlite3')
 
 
 def peer_for(label_ids, from_addr, to_addr):
@@ -130,6 +132,9 @@ def connection(path=DEFAULT_DB):
                 db.execute(f"ALTER TABLE sender_countries ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
         if 'basis' not in {r['name'] for r in db.execute('PRAGMA table_info(sender_countries)')}:
             db.execute("ALTER TABLE sender_countries ADD COLUMN basis TEXT NOT NULL DEFAULT 'meta'")  # meta = address/name/timezone only; content = also message excerpts
+        db.execute('''CREATE TABLE IF NOT EXISTS message_topics (
+            user_id INTEGER NOT NULL, message_id TEXT NOT NULL, topics TEXT NOT NULL DEFAULT '',
+            provider TEXT NOT NULL DEFAULT '', guessed_at INTEGER NOT NULL, PRIMARY KEY (user_id, message_id))''')  # topics: 'money,job'; '' = none fits
         db.execute('CREATE INDEX IF NOT EXISTS gmail_attachments_message ON gmail_attachments(user_id,message_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_inbox ON gmail_messages(user_id,in_inbox,internal_date DESC)')
     db.execute('PRAGMA foreign_keys=ON')

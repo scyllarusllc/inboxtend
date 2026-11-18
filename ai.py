@@ -310,12 +310,12 @@ def _clip(text: str, limit: int) -> str:
 
 def _defang(text: str) -> str:
     """Stop message text from closing the delimiters that fence it."""
-    return re.sub(r'</?(email|guidance|subject|body|correspondents)\b', lambda m: m.group(0).replace('<', '‹'), text, flags=re.I)
+    return re.sub(r'</?(email|guidance|subject|body|correspondents|messages)\b', lambda m: m.group(0).replace('<', '‹'), text, flags=re.I)
 
 
 def _refang(text: str) -> str:
     """Undo _defang on text that is shown back to the user (translations)."""
-    return re.sub(r'‹(/?(?:email|guidance|subject|body|correspondents)\b)', r'<\1', text, flags=re.I)
+    return re.sub(r'‹(/?(?:email|guidance|subject|body|correspondents|messages)\b)', r'<\1', text, flags=re.I)
 
 
 def email_text(message: dict, attachments=()) -> str:

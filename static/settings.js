@@ -58,7 +58,8 @@ function readForm() {
     ai_attachments: form.ai_attachments.checked,
     translate_enabled: form.translate_enabled.checked,
     translate_language: form.translate_language.value.trim(),
-    flags_enabled: form.flags_enabled.checked
+    flags_enabled: form.flags_enabled.checked,
+    topics_enabled: form.topics_enabled.checked
   };
 }
 let savedModel = '';
@@ -137,6 +138,14 @@ async function init() {
     try { await request('/api/flags/reset', 'POST', {}); resetResult.textContent = ' All guesses were forgotten.'; }
     catch (error) { resetResult.textContent = ' ' + error.message; }
     resetButton.disabled = false;
+  });
+  const topicsReset = document.getElementById('topics-reset'), topicsResult = document.getElementById('topics-reset-result');
+  topicsReset.addEventListener('click', async () => {
+    if (!confirm('Forget all topic icons?\n\nThe icons disappear until the AI labels the messages again (when topic icons are on, that sends each message to the AI provider once more).')) return;
+    topicsReset.disabled = true;
+    try { await request('/api/topics/reset', 'POST', {}); topicsResult.textContent = ' All topics were forgotten.'; }
+    catch (error) { topicsResult.textContent = ' ' + error.message; }
+    topicsReset.disabled = false;
   });
   const aiTest = document.getElementById('ai-test'), aiResult = document.getElementById('ai-test-result');
   aiTest.addEventListener('click', async () => {

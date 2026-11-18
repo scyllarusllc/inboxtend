@@ -85,7 +85,7 @@ until that number is raised.
 
 `GET /api/connectors/gmail/messages?folder=…&view=…&q=…&unread=1&attachments=1` filters any of the three views.
 `mailsearch.py` parses the query Gmail-style: free words (all must match the subject, sender, recipients, snippet or
-body, case-insensitive), `from:` `to:` `subject:` (quotes for phrases), `is:unread`, `is:read`, `has:attachment`;
+body, case-insensitive), `from:` `to:` `subject:` (quotes for phrases), `topic:` (one of the topic names, see docs/ai-assistant.md), `is:unread`, `is:read`, `has:attachment`;
 unknown operators are searched literally and a query is limited to 200 characters / 12 terms. Everything becomes one
 parameterised SQL condition (`LIKE … ESCAPE`, `%` and `_` are literal), so user text never reaches the SQL itself.
 In *Conversations* and *People* a group is listed when any of its messages in that folder matches, and shows

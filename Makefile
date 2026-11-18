@@ -2,7 +2,7 @@ PORT ?= 8765
 PYTHON ?= python3
 CADDY ?= caddy
 
-.PHONY: dev caddy-dev test build-pages css css-watch css-check vendor
+.PHONY: dev caddy-dev test build-pages css css-watch css-check vendor demo
 
 dev:
 	INBOX_TEND_PORT=$(PORT) $(PYTHON) app.py
@@ -30,3 +30,8 @@ css-check: css
 
 vendor:
 	npm run vendor
+
+# Try the app with fictional data and no Gmail: http://127.0.0.1:8781, sign in as demo@example.org / demo-password-123
+demo:
+	$(PYTHON) scripts/demo_data.py /tmp/inboxtend-demo/tasks.sqlite3
+	INBOX_TEND_DB=/tmp/inboxtend-demo/tasks.sqlite3 INBOX_TEND_PORT=8781 $(PYTHON) app.py

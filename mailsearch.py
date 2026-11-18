@@ -1,12 +1,14 @@
 """Gmail-style search over the local SQLite copy of the mail.
 
 Words match the subject, sender, recipients, snippet and body; all words must match. Operators narrow it down:
-`from:casey` `to:dana` `subject:invoice` `is:unread` `is:read` `has:attachment`; use quotes for phrases
+`from:casey` `to:dana` `subject:invoice` `topic:money` `is:unread` `is:read` `has:attachment`; use quotes for phrases
 (`subject:"website project"`). Everything is turned into one parameterised SQL condition on the table alias `m`;
 user text is never spliced into the SQL.
 """
 from __future__ import annotations
 import re
+
+import topics as topic_list
 
 MAX_QUERY = 200
 MAX_TOKENS = 12
@@ -21,7 +23,7 @@ def _like(value: str) -> str:
 
 
 def parse(query: str, *, unread: bool = False, attachments: bool = False) -> dict:
-    parsed = {'words': [], 'from': [], 'to': [], 'subject': [], 'unread': unread, 'read': False, 'attachment': attachments}
+    parsed = {'words': [], 'from': [], 'to': [], 'subject': [], 'topic': [], 'unread': unread, 'read': False, 'attachment': attachments}
     for key, quoted, bare in _TOKEN.findall((query or '')[:MAX_QUERY])[:MAX_TOKENS]:
         value = (quoted if quoted else bare).strip()
         key = key.lower()
@@ -29,6 +31,8 @@ def parse(query: str, *, unread: bool = False, attachments: bool = False) -> dic
             continue
         if key in ('from', 'to', 'subject'):
             parsed[key].append(value)
+        elif key == 'topic' and value.lower() in topic_list.TOPICS:
+            parsed['topic'].append(value.lower())
         elif key == 'is' and value.lower() in ('unread', 'read'):
             parsed['unread' if value.lower() == 'unread' else 'read'] = True
         elif key == 'has' and value.lower() in ('attachment', 'attachments'):
@@ -48,6 +52,9 @@ def condition(parsed: dict):
         for value in parsed[key]:
             parts.append(f"{column} LIKE ? ESCAPE '\\'")
             params.append(_like(value))
+    for name in parsed['topic']:    # Only names from the fixed list get here, but the value is bound like everything else.
+        parts.append("EXISTS (SELECT 1 FROM message_topics t WHERE t.user_id=m.user_id AND t.message_id=m.message_id AND (',' || t.topics || ',') LIKE ?)")
+        params.append('%,' + name + ',%')
     if parsed['unread']:
         parts.append(_UNREAD)
     if parsed['read']:

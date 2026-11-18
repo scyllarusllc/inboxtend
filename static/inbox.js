@@ -4,7 +4,7 @@ const detail = document.getElementById('detail');
 const draft = document.getElementById('draft');
 let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null, gmailWriteAccess = false;
 // What the list shows: search words (Gmail-style operators work), two quick filters, and how many rows are drawn.
-let flagsAttempted = false;
+let flagsAttempted = false, topicsAttempted = false;
 let searchText = '', onlyUnread = false, onlyAttachments = false, listLimit = 100, lastData = null, listRun = 0;
 const PAGE = 100;
 const filtersActive = () => searchText.trim() !== '' || onlyUnread || onlyAttachments;
@@ -201,7 +201,8 @@ async function selectMessage(id) {
   if (full.direction !== 'sent') { detailRead.badge = el('span', '', 'read-badge'); head[1].append(detailRead.badge); }
   const body = el('pre', full.body_text || full.snippet || '(No text content)', 'message-body');  // Text only, never HTML.
   const person = personCard(full.person, full);
-  detail.replaceChildren(...head, ...(person ? [person] : []), body);
+  const about = topicButtons(full.topics, code => { searchBox.value = 'topic:' + code; searchText = searchBox.value; reloadList(); window.scrollTo({top: 0, behavior: 'smooth'}); });
+  detail.replaceChildren(...head, ...(about ? [about] : []), ...(person ? [person] : []), body);
   const attachments = renderAttachments(full);
   if (attachments) detail.append(attachments);
   if (currentGroup && currentGroup.kind === 'person' && currentGroup.messages.length > 1) {
@@ -393,6 +394,14 @@ function paintRead() {
   }
   for (const item of detailRead.items) if (readState.has(item.id)) item.node.className = readState.get(item.id) ? 'message unread' : 'message';
 }
+// A row's title: the subject, then the small topic icons.
+function subjectLine(text, codes) {
+  const line = el('div', undefined, 'subject-line');
+  line.append(el('span', text || '(No subject)', 'subject-text'));
+  const icons = topicIcons(codes);
+  if (icons) line.append(icons);
+  return line;
+}
 // "[flag] name · 2 h ago": the line under a row's title.
 function rowMeta(item, who, ms, fallbackDate, offsetMinutes) {
   const line = el('div', undefined, 'row-meta');
@@ -461,7 +470,7 @@ function renderList(data) {
     for (const m of shown) {
       const button = rowButton(m.id, m.id === selectedId, m.unread);
       openBlock(ageOfItem(m), button);
-      button.append(el('div', m.subject || '(No subject)'),
+      button.append(subjectLine(m.subject, m.topics),
         rowMeta(m, folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender'), m.internal_date, m.date));
       if (m.attachment_count) button.append(attachmentLabel(m.attachment_count));
       button.addEventListener('click', () => { currentGroup = null; selectMessage(m.id); });
@@ -474,6 +483,8 @@ function renderList(data) {
       const last = g.last;
       const top = el('div', undefined, 'group-title');
       top.append(el('span', g.title || '(No subject)', 'group-name'));
+      const icons = topicIcons(g.topics);
+      if (icons) top.append(icons);
       if (g.count > 1) {
         const badge = el('span', g.unread_count ? g.unread_count + '/' + g.count : String(g.count), g.unread_count ? 'count-badge unread-badge' : 'count-badge');
         badge.title = g.unread_count ? g.unread_count + ' unread of ' + g.count + ' messages' : g.count + ' messages';
@@ -511,7 +522,7 @@ async function refreshGmail(startSync = false) {
   for (;;) {
     const state = await request('/api/connectors/gmail/status');
     if (run !== refreshRun) return;
-    gmailRefresh.hidden = !state.connected;
+    gmailRefresh.hidden = !state.connected || !state.configured;
     if (!state.connected) {
       const link = el('a', 'Settings → Gmail'); link.href = '/user/settings';
       if (state.configured) gmailStatus.replaceChildren('Gmail is not connected. Connect it in ', link, ' to see your mail.');
@@ -532,10 +543,16 @@ async function refreshGmail(startSync = false) {
       try { await request('/api/flags/guess', 'POST', {}); } catch (error) { notify(error.message, true); }
       continue;
     }
-    const busy = sync.running || guess.running;
+    const labels = state.topics || {};
+    if (userSettings.topics_enabled && labels.pending > 0 && !labels.running && !topicsAttempted) {   // Once per page load, like the flags.
+      topicsAttempted = true;
+      try { await request('/api/topics/guess', 'POST', {}); } catch (error) { notify(error.message, true); }
+      continue;
+    }
+    const busy = sync.running || guess.running || labels.running;
     gmailRefresh.disabled = sync.running;
     // While a sync runs, fetch the list again only when its progress moved: a big mailbox is a big response.
-    const signature = busy ? [sync.done, sync.failed, sync.total, guess.done].join(':') : null;
+    const signature = busy ? [sync.done, sync.failed, sync.total, guess.done, labels.done].join(':') : null;
     if (!busy || signature !== lastSignature || !lastData) {
       const mine = ++listRun;
       const data = await request(listUrl());
@@ -550,7 +567,9 @@ async function refreshGmail(startSync = false) {
       (sync.running ? ' Syncing… ' + sync.done + ' of ' + sync.total + ' new message(s).' + (sync.rate_limited_s > 0 ? ' Gmail is limiting requests, so the download is paused for about ' + sync.rate_limited_s + ' s and then continues.' : '') : '') +
       (!sync.running && sync.error ? ' ' + sync.error : '') +
       (guess.running ? ' Guessing countries… ' + guess.done + ' of ' + guess.total + ' senders.' : '') +
-      (!guess.running && guess.error ? ' Country flags: ' + guess.error : '');
+      (!guess.running && guess.error ? ' Sender details: ' + guess.error : '') +
+      (labels.running ? ' Labelling topics… ' + labels.done + ' of ' + labels.total + ' messages.' : '') +
+      (!labels.running && labels.error ? ' Topic icons: ' + labels.error : '');
     if (!busy) return;
     await new Promise(resolve => setTimeout(resolve, 2000));
     if (run !== refreshRun) return;

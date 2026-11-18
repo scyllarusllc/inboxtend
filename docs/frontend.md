@@ -49,6 +49,7 @@ one-day cache).
    fa-…">` in the HTML. Text that the scripts rewrite (tab labels with counts) carries no icon.
 6. **Grid children get `min-w-0`** (`.workspace-grid > *`). Without it, a single long line forces its column wider than
    the screen.
+6a. **Topic icons** are small round badges (`.topic`, one colour per topic via `data-topic`) in list rows and labelled `.topic-chip` buttons on the open message. The topic list lives in `topics.py` and in the `TOPICS` map of `static/common.js`; add a topic in both and give it a colour in `static/src/app.css`.
 6b. **Flags are SVG images** (`fi fi-jp`, from flag-icons), not emoji: flag emoji do not render on Windows. A flag is only shown when the AI guessed a country; low confidence is dimmed, and the tooltip says why. "x ago" labels (`agoSpan()`) are refreshed every 30 s and carry the exact time in the tooltip.
 7. **The mail list is split by age** (`.date-heading`, `data-age` on each row: today green, yesterday amber, earlier plain). The day is the calendar day in the timezone chosen in Settings (`ageOf()` in `static/common.js`), a conversation or person counts by its newest message, and the selected row (`aria-pressed`) always overrides the tint.
 8. Full width pages; forms (Settings) are limited to a readable width next to a section navigation.

@@ -23,6 +23,7 @@ from tasks import connection, peer_for
 import settings as prefs
 import mailsearch
 import flags
+import topics
 
 AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 TOKEN = 'https://oauth2.googleapis.com/token'
@@ -137,6 +138,7 @@ def disconnect(db,user_id):
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM sender_countries WHERE user_id=?',(user_id,))
+        db.execute('DELETE FROM message_topics WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM message_translations WHERE user_id=?',(user_id,))  # Disconnecting also removes the local copy
         db.execute('DELETE FROM gmail_attachments WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_messages WHERE user_id=?',(user_id,))
@@ -273,7 +275,7 @@ def cached_inbox(db,user_id,folder='inbox',search=None):
     rows = db.execute('SELECT m.*,(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
                       f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1' + (f' AND ({where})' if where else '') +
                       ' ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,*params))
-    return flags.attach(db,user_id,[dict(_row(r),attachment_count=r['n_att']) for r in rows])
+    return topics.attach(db,user_id,flags.attach(db,user_id,[dict(_row(r),attachment_count=r['n_att']) for r in rows]))
 
 VIEWS = ('messages','threads','people')
 
@@ -329,6 +331,9 @@ def grouped_inbox(db,user_id,folder,view,search=None):
             group['participants'] = labels[:4]
         result.append(group)
     flags.attach(db,user_id,[m for g in result for m in g['messages']])
+    topics.attach(db,user_id,[m for g in result for m in g['messages']])
+    for g in result:
+        g['topics'] = topics.top(g['messages'])
     for g in result:
         g.update({k:g['last'][k] for k in ('country','country_conf','country_reason')})
     flags.attach_cards(db,user_id,result)
@@ -500,6 +505,7 @@ def _detail(db,user_id,row):
     else:
         detail['thread'] = []
     flags.attach(db,user_id,[detail]+detail['thread'])
+    topics.attach(db,user_id,[detail]+detail['thread'])
     detail['person'] = flags.card(db,user_id,row['peer_email'])
     return detail
 

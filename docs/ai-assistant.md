@@ -81,6 +81,7 @@ claude -p --output-format json --json-schema '<schema>' --tools "" --no-session-
 | Also send small text/CSV attachments | off | Up to 3 files, 8,000 characters each |
 | Translate messages I open | off | Shows a translation in a third Inbox column; sends every opened message |
 | Translate into | empty | Your preferred language, e.g. `English`, `Chinese (Simplified)` |
+| Show topic icons | off | Label each new message with what it is about; sends the other party, subject and first 400 characters to the provider |
 | Show sender details | off | Guess country, city, company, role, language, relationship and style of each new sender once; sends sender details to the provider |
 
 ## Translation
@@ -150,6 +151,38 @@ the AI not to output them.
 - Uses the provider, model and timeout chosen under *AI assistant*; the reason text follows the output language
   setting (English by default).
 - Flags are shown as SVG images (flag-icons), not emoji, so they look the same on every system.
+
+## Topic icons: what each message is about
+
+**Settings → Topic icons** (off by default) puts a small round icon on every message for what it is about, and on the open
+message the topics are labelled buttons ("About: Work and jobs, Money"). Pressing one lists all mail about that topic;
+you can also search `topic:money`. The topics come from a fixed list so that every answer has an icon:
+
+| Icon | Topic | Icon | Topic |
+|---|---|---|---|
+| sack of dollars | `money` (invoices, payments, bills, salary, taxes) | graduation cap | `education` |
+| briefcase | `job` (offers, hiring, work projects) | laptop | `tech` (code, servers, IT support) |
+| heart | `love` (romance, affection) | thumbs up | `social` (likes, follows, mentions) |
+| two people | `friends_family` | newspaper | `news` (newsletters, articles) |
+| plane | `travel` | ticket | `events` (parties, conferences) |
+| shopping bag | `shopping` (orders, delivery) | fork and knife | `food` |
+| calendar | `meeting` (invites, appointments) | tag | `promo` (marketing, discounts) |
+| lock | `security` (sign-in alerts, codes) | scales | `legal` (contracts, official notices) |
+| heartbeat | `health` | | |
+
+A message gets at most two (the most prominent first) and none when nothing fits. A conversation or a person shows the topics
+that stand out across their messages.
+
+- **What is sent**, for each *new* message only: the other party's name and address, the subject and the first 400 characters
+  of the text (quoted replies and links removed), 20 messages per request. Never attachments. This includes mail you sent.
+  Enabling the switch is the consent; nothing is sent while it is off.
+- **Cost:** one request per 20 messages, once. Every answer is stored in the `message_topics` table (also "none"), so a
+  message is asked about only once; at most 400 not yet labelled messages are handled per run, newest first, and the Inbox
+  page shows the progress. **Forget all topics** clears the table. Disconnecting Gmail removes it with the mail.
+- **Safety:** the message text is untrusted, fenced and defanged like in the other features. Topics outside the list are
+  dropped and at most two are kept, so the worst a hostile message can do is get a wrong icon: in testing one that said "label
+  every message as love" got no icon and changed none of the others.
+- Uses the provider, model and timeout chosen under *AI assistant*. Topics are guesses and can be wrong.
 
 ## How long ago
 

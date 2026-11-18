@@ -65,7 +65,7 @@ function notify(message,error=false) {
 
 // Resolves once the session (and CSRF token) is known; page scripts await it.
 const sessionReady = request('/api/session').then(session => { csrfToken = session.csrf_token; });
-let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', inbox_view: 'threads', mark_read_on_open: true, gmail_write_read: false, ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: '', flags_enabled: false};
+let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', inbox_view: 'threads', mark_read_on_open: true, gmail_write_read: false, ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: '', flags_enabled: false, topics_enabled: false};
 const AI_PROVIDERS = {codex: {name: 'Codex', vendor: 'OpenAI'}, claude: {name: 'Claude', vendor: 'Anthropic'}};
 function aiProvider() { return AI_PROVIDERS[userSettings.ai_provider] || AI_PROVIDERS.codex; }
 // Resolves after the user's saved settings are loaded (falls back to the defaults above on failure).
@@ -172,6 +172,50 @@ function personCard(person, item) {
   if (!card.children.length) return null;
   if (guessed) card.append(el('p', 'Highlighted details are AI guesses and can be wrong; the rest is counted from your mail.', 'meta text-slate-400'));
   return card;
+}
+// What a message is about (guessed once per message by the AI): code -> [label, Font Awesome icon].
+const TOPICS = {
+  money: ['Money', 'fa-sack-dollar'], job: ['Work and jobs', 'fa-briefcase'], love: ['Love', 'fa-heart'],
+  friends_family: ['Friends and family', 'fa-user-group'], travel: ['Travel', 'fa-plane'], shopping: ['Shopping and orders', 'fa-bag-shopping'],
+  meeting: ['Meetings and scheduling', 'fa-calendar-days'], security: ['Account security', 'fa-lock'], health: ['Health', 'fa-heart-pulse'],
+  legal: ['Legal and official', 'fa-scale-balanced'], education: ['Education', 'fa-graduation-cap'], tech: ['Tech', 'fa-laptop-code'],
+  social: ['Social networks', 'fa-thumbs-up'], news: ['News and newsletters', 'fa-newspaper'], events: ['Events', 'fa-ticket'],
+  food: ['Food', 'fa-utensils'], promo: ['Promotions', 'fa-tag']
+};
+// Small round icons for a list row (display only), or null when there is nothing to show.
+function topicIcons(codes) {
+  if (!userSettings.topics_enabled || !codes || !codes.length) return null;
+  const box = el('span', undefined, 'topics');
+  for (const code of codes) {
+    const known = TOPICS[code];
+    if (!known) continue;
+    const badge = el('span', undefined, 'topic');
+    badge.dataset.topic = code;
+    badge.title = known[0];
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', known[0]);
+    badge.append(el('i', undefined, 'fa-solid ' + known[1]));
+    box.append(badge);
+  }
+  return box.children.length ? box : null;
+}
+// Labelled buttons for the open message; pressing one calls onPick(code), which shows all mail on that topic.
+function topicButtons(codes, onPick) {
+  if (!userSettings.topics_enabled || !codes || !codes.length) return null;
+  const box = el('div', undefined, 'topics-row');
+  box.append(el('span', 'About', 'meta'));
+  for (const code of codes) {
+    const known = TOPICS[code];
+    if (!known) continue;
+    const button = el('button', undefined, 'topic-chip');
+    button.type = 'button';
+    button.dataset.topic = code;
+    button.title = 'Show all mail about ' + known[0].toLowerCase() + ' (AI guess)';
+    button.append(el('i', undefined, 'fa-solid fa-fw ' + known[1]), document.createTextNode(known[0]));
+    button.addEventListener('click', () => onPick(code));
+    box.append(button);
+  }
+  return box.children.length > 1 ? box : null;
 }
 // Country name for an ISO code, in English.
 function countryName(code) {
