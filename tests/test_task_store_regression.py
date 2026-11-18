@@ -73,7 +73,7 @@ class TaskStoreRegressionTests(unittest.TestCase):
 
     def test_deadline_state_is_timezone_aware(self):
         task = create_task(self.db, self.message, self.fields)
-        early = datetime(2026, 11, 18, 0, 0, tzinfo=timezone.utc)
+        early = datetime(2026, 11, 19, 0, 0, tzinfo=timezone.utc)
         overdue = datetime(2026, 11, 20, 8, 0, tzinfo=timezone.utc)
         from tasks import decorate
         self.assertEqual(decorate(task, early)["deadline_state"], "due_soon")
