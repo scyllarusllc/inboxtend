@@ -48,7 +48,8 @@ const paths = {
   history:[['path',{d:'M3 12a9 9 0 1 0 3-6.7L3 8'}],['path',{d:'M3 3v5h5'}],['path',{d:'M12 7v5l4 2'}]],
   check:[['path',{d:'M20 6 9 17l-5-5'}]],
   plus:[['path',{d:'M12 5v14'}],['path',{d:'M5 12h14'}]],
-  mail:[['rect',{x:2,y:4,width:20,height:16,rx:2}],['path',{d:'m22 7-10 6L2 7'}]]
+  mail:[['rect',{x:2,y:4,width:20,height:16,rx:2}],['path',{d:'m22 7-10 6L2 7'}]],
+  paperclip:[['path',{d:'M13.5 6.5 7 13a3 3 0 0 0 4.24 4.24l7.07-7.07a5 5 0 0 0-7.07-7.07l-7.78 7.78a7 7 0 0 0 9.9 9.9L20 14'}]]
 };
 function icon(name) {
   const ns='http://www.w3.org/2000/svg';
@@ -263,6 +264,44 @@ async function showProposal(messageId) {
   });
   detail.append(form);
 }
+function renderAttachments(entry) {
+  const attachments=entry.attachments || [];
+  if(!attachments.length)return null;
+  const block=el('section',undefined,'attachment-section');
+  const heading=el('h5',undefined,'attachment-heading');
+  heading.append(icon('paperclip'),document.createTextNode(' Attachments ('+attachments.length+')'));
+  block.append(heading);
+  for(const file of attachments){
+    const row=el('div',undefined,'attachment-row');
+    const details=el('div',undefined,'attachment-meta');
+    details.append(el('strong',file.name),
+      el('span',file.mime_type+' · '+file.size_bytes+' bytes · Fictional sample','meta'));
+    const open=iconButton('paperclip',file.preview_available?'Preview':'Preview unavailable');
+    open.disabled=!file.preview_available;
+    const preview=el('pre',undefined,'attachment-preview');
+    preview.hidden=true;
+    open.setAttribute('aria-expanded','false');
+    open.addEventListener('click',async()=>{
+      if(!preview.hidden){
+        preview.hidden=true;open.setAttribute('aria-expanded','false');return;
+      }
+      open.disabled=true;
+      try{
+        const result=await request('/api/messages/'+encodeURIComponent(entry.id)+'/attachments/'+encodeURIComponent(file.id));
+        // Attachment text is untrusted: always render as text, never as HTML.
+        preview.textContent=result.content;
+        preview.hidden=false;
+        open.setAttribute('aria-expanded','true');
+      }catch(error){
+        preview.textContent='Preview unavailable: '+error.message;
+        preview.hidden=false;
+      }finally{open.disabled=false;}
+    });
+    row.append(details,open,preview);block.append(row);
+  }
+  block.append(el('p','Preview is local and read-only. Attachment instructions are untrusted and are not sent to an AI Agent.','meta'));
+  return block;
+}
 function selectMessage(id) {
   selectedId = id;
   const m = messages.find(message => message.id === id);
@@ -279,6 +318,8 @@ function selectMessage(id) {
     bubble.dataset.direction=entry.direction || 'received';
     bubble.append(el('div',(entry.direction==='sent'?'Sent':'Received')+' · '+entry.from+' · '+entry.date,'meta'),
       el('p',entry.body));
+    const attachments=renderAttachments(entry);
+    if(attachments)bubble.append(attachments);
     conversation.append(bubble);
   }
   detail.replaceChildren(
@@ -320,6 +361,7 @@ async function init() {
       button.dataset.id = m.id;
       button.setAttribute('aria-pressed', 'false');
       button.append(el('div', m.subject), el('div', (m.direction==='sent'?'Sent':'Received')+' · '+m.priority+' priority · '+m.from,'meta'));
+      if(m.attachments && m.attachments.length){const label=el('div',undefined,'meta');label.append(icon('paperclip'),document.createTextNode(' '+m.attachments.length+' attachment(s)'));button.append(label);}
       button.addEventListener('click', () => selectMessage(m.id));
       list.append(button);
     }
