@@ -6,10 +6,22 @@ from zoneinfo import ZoneInfo
 import json
 import sqlite3
 import settings
+from email.utils import getaddresses, parseaddr
 
 STATES = ('new', 'in_progress', 'waiting', 'done')
 PRIORITIES = ('low', 'medium', 'high')
 DEFAULT_DB = Path(__file__).resolve().parent / 'data' / 'tasks.sqlite3'
+
+
+def peer_for(label_ids, from_addr, to_addr):
+    """The other party of a message: the sender of mail you received, the first recipient of mail you sent.
+    Returns (normalized address, display name); the name is empty when the header has none."""
+    if '"SENT"' in (label_ids or ''):
+        pairs = getaddresses([to_addr or ''])
+        name, addr = pairs[0] if pairs else ('', '')
+    else:
+        name, addr = parseaddr(from_addr or '')
+    return (addr or '').strip().lower()[:254], (name or '').strip()[:120]
 
 
 def connection(path=DEFAULT_DB):
@@ -76,9 +88,17 @@ def connection(path=DEFAULT_DB):
             'body_text': "TEXT NOT NULL DEFAULT ''", 'body_html': "TEXT NOT NULL DEFAULT ''",
             'size_estimate': 'INTEGER NOT NULL DEFAULT 0', 'has_full': 'INTEGER NOT NULL DEFAULT 0',
             'in_sent': 'INTEGER NOT NULL DEFAULT 0',
+            'peer_email': "TEXT NOT NULL DEFAULT ''", 'peer_name': "TEXT NOT NULL DEFAULT ''",
         }.items():
             if name not in message_columns:
                 db.execute(f'ALTER TABLE gmail_messages ADD COLUMN {name} {definition}')
+        if 'peer_email' not in message_columns:  # Columns were just added: fill them in for mail stored earlier.
+            for r in db.execute("SELECT user_id,message_id,label_ids,from_addr,to_addr FROM gmail_messages").fetchall():
+                email_address, display = peer_for(r['label_ids'], r['from_addr'], r['to_addr'])
+                db.execute('UPDATE gmail_messages SET peer_email=?,peer_name=? WHERE user_id=? AND message_id=?',
+                           (email_address, display, r['user_id'], r['message_id']))
+        db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_thread ON gmail_messages(user_id,thread_id)')
+        db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_peer ON gmail_messages(user_id,peer_email)')
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_attachments (
             id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, message_id TEXT NOT NULL,
             part_id TEXT NOT NULL DEFAULT '', filename TEXT NOT NULL, mime_type TEXT NOT NULL,

@@ -42,6 +42,10 @@
             <input name="due_soon_hours" type="number" min="1" max="720" step="1" required>
             <span class="meta">Tasks due within this time are flagged “Due soon”.</span>
           </label>
+          <label>Group Inbox mail by
+            <select name="inbox_view"><option value="threads">Conversations</option><option value="messages">Messages</option><option value="people">People</option></select>
+            <span class="meta">Also switchable on the Inbox page. People groups by the other party: the sender of mail you received, the first recipient of mail you sent.</span>
+          </label>
           <label>Default priority for suggested tasks
             <select name="default_priority"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
           </label>

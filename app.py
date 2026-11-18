@@ -5,6 +5,7 @@ import os
 import secrets
 import time
 import sqlite3
+import traceback
 from html import escape
 from contextlib import contextmanager, closing
 from pathlib import Path
@@ -341,12 +342,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,
                                    'last_sync':stamp,'stored':stored,'counts':counts,'sync':gmail_web.sync_progress(session['id'])})
         if path == '/api/connectors/gmail/messages':  # Local copy only; POST /sync talks to Gmail.
-            folder = parse_qs(urlparse(self.path).query).get('folder',['inbox'])[0]
+            query = parse_qs(urlparse(self.path).query)
+            folder = query.get('folder',['inbox'])[0]
+            view = query.get('view',['messages'])[0]
             if folder not in gmail_web.FOLDERS: raise RequestError(400,'Unknown folder')
+            if view not in gmail_web.VIEWS: raise RequestError(400,'Unknown view')
             with self._db() as db:
                 if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
-                rows,stamp = gmail_web.cached_inbox(db,session['id'],folder),gmail_web.last_sync(db,session['id'])
-            return self._json(200,{'messages':rows,'folder':folder,'last_sync':stamp,'read_only':True})
+                listing = gmail_web.grouped_inbox(db,session['id'],folder,view)
+                stamp = gmail_web.last_sync(db,session['id'])
+            return self._json(200,dict(listing,folder=folder,view=view,last_sync=stamp,read_only=True))
         if path == '/api/ai/status':
             with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
             return self._json(200,dict(ai.status(self.gmail_config),enabled=user['ai_enabled'],provider=ai.provider_of(user)))
@@ -412,6 +417,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(503,{'error':'Gmail connection unavailable'})
         except sqlite3.Error:
             self._json(503,{'error':'Task database unavailable'})
+        except Exception:  # Never drop the connection: answer in JSON and keep the traceback in the log (journalctl).
+            traceback.print_exc()
+            self._json(500,{'error':'Internal error; see the server log'})
 
     def do_GET(self): self._handle()
     def do_POST(self): self._handle(True)

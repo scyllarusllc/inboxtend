@@ -2,7 +2,7 @@
 const list = document.getElementById('messages');
 const detail = document.getElementById('detail');
 const draft = document.getElementById('draft');
-let messages = [], selectedId = null, folder = 'inbox';
+let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null;
 const translationPanel = document.getElementById('translation-panel');
 const translationBox = document.getElementById('translation');
 const translationCaption = document.getElementById('translation-caption');
@@ -137,7 +137,7 @@ async function selectMessage(id) {
   selectedId = id;
   const m = messages.find(message => message.id === id) || {id, subject: '', from: '', date: ''};
   for (const button of list.querySelectorAll('button.message')) {
-    button.setAttribute('aria-pressed', String(button.dataset.id === id));
+    button.setAttribute('aria-pressed', String(button.dataset.id === (currentGroup ? currentGroup.id : id)));
   }
   draft.replaceChildren();
   detail.replaceChildren(el('h3', m.subject || '(No subject)'),
@@ -156,7 +156,21 @@ async function selectMessage(id) {
   detail.replaceChildren(...head, body);
   const attachments = renderAttachments(full);
   if (attachments) detail.append(attachments);
-  if (full.thread.length > 1) {
+  if (currentGroup && currentGroup.kind === 'person' && currentGroup.messages.length > 1) {
+    const all = el('section', undefined, 'conversation-thread');
+    all.append(el('h4', 'All messages with ' + currentGroup.title + ' · ' + currentGroup.messages.length));
+    for (const t of currentGroup.messages) {
+      const item = el('button', undefined, 'message');
+      item.type = 'button';
+      item.setAttribute('aria-pressed', String(t.id === id));
+      item.append(el('div', (t.direction === 'sent' ? 'Sent · ' : 'Received · ') + (t.subject || '(No subject)')),
+        el('div', formatWhen(t.internal_date, t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
+      item.addEventListener('click', () => selectMessage(t.id));
+      all.append(item);
+    }
+    detail.append(all);
+  }
+  if (full.thread.length > 1 && !(currentGroup && currentGroup.kind === 'person')) {
     const thread = el('section', undefined, 'conversation-thread');
     thread.append(el('h4', 'Conversation · ' + full.thread.length + ' message(s)'));
     for (const t of full.thread) {
@@ -227,6 +241,21 @@ function aiControls(id, isSent) {
   return box;
 }
 
+const viewButtons = {threads: document.getElementById('view-threads'), messages: document.getElementById('view-messages'), people: document.getElementById('view-people')};
+function showViewState() {
+  for (const [name, button] of Object.entries(viewButtons)) button.setAttribute('aria-pressed', String(name === view));
+  viewButtons.people.textContent = folder === 'sent' ? 'Recipients' : 'People';
+}
+function chooseView(next) {
+  if (view === next) return;
+  view = next; currentGroup = null; selectedId = null;
+  showViewState();
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+  userSettings.inbox_view = next;
+  request('/api/settings', 'PATCH', {inbox_view: next}).catch(() => {});  // Remembered for next time.
+  refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
+}
+for (const [name, button] of Object.entries(viewButtons)) button.addEventListener('click', () => chooseView(name));
 const folderInbox = document.getElementById('folder-inbox');
 const folderSent = document.getElementById('folder-sent');
 function chooseFolder(next) {
@@ -234,7 +263,8 @@ function chooseFolder(next) {
   folder = next;
   folderInbox.setAttribute('aria-pressed', String(next === 'inbox'));
   folderSent.setAttribute('aria-pressed', String(next === 'sent'));
-  selectedId = null;
+  selectedId = null; currentGroup = null;
+  showViewState();
   detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
 }
@@ -248,24 +278,51 @@ let refreshRun = 0;
 function syncLabel(state) {
   return state.last_sync ? ' Last synced ' + formatWhen(state.last_sync * 1000) + '.' : '';
 }
+function rowButton(key, pressed) {
+  const button = el('button', undefined, 'message');
+  button.dataset.id = key;
+  button.setAttribute('aria-pressed', String(pressed));
+  return button;
+}
+function attachmentLabel(count) {
+  const label = el('div', undefined, 'meta');
+  label.append(icon('paperclip'), document.createTextNode(' ' + count + ' attachment(s)'));
+  return label;
+}
 function renderList(data) {
   const previous = selectedId;
   list.replaceChildren();
-  messages = data.messages;
-  if (!messages.some(m => m.id === previous)) { selectedId = null; detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); }
+  groups = data.groups || [];
+  messages = data.groups ? groups.flatMap(g => g.messages) : data.messages;
+  if (!messages.some(m => m.id === previous)) {
+    selectedId = null; currentGroup = null;
+    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+  } else if (currentGroup) {
+    currentGroup = groups.find(g => g.id === currentGroup.id) || null;  // Fresh data for the open group.
+  }
   if (!messages.length) { list.textContent = folder === 'sent' ? 'No sent messages found.' : 'No inbox messages found.'; return; }
-  for (const m of messages) {
-    const button = el('button', undefined, 'message');
-    button.dataset.id = m.id;
-    button.setAttribute('aria-pressed', String(m.id === selectedId));
-    button.append(el('div', m.subject || '(No subject)'),
-      el('div', (folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender')) + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'));
-    if (m.attachment_count) {
-      const label = el('div', undefined, 'meta');
-      label.append(icon('paperclip'), document.createTextNode(' ' + m.attachment_count + ' attachment(s)'));
-      button.append(label);
+  if (!data.groups) {
+    for (const m of messages) {
+      const button = rowButton(m.id, m.id === selectedId);
+      button.append(el('div', m.subject || '(No subject)'),
+        el('div', (folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender')) + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'));
+      if (m.attachment_count) button.append(attachmentLabel(m.attachment_count));
+      button.addEventListener('click', () => { currentGroup = null; selectMessage(m.id); });
+      list.append(button);
     }
-    button.addEventListener('click', () => selectMessage(m.id));
+    return;
+  }
+  for (const g of groups) {
+    const button = rowButton(g.id, currentGroup && g.id === currentGroup.id);
+    const last = g.last;
+    const top = el('div', undefined, 'group-title');
+    top.append(el('span', g.title || '(No subject)', 'group-name'));
+    if (g.count > 1) top.append(el('span', String(g.count), 'count-badge'));
+    const who = g.kind === 'person' ? (g.address || '') : (g.participants || []).join(', ');
+    button.append(top, el('div', (who ? who + ' · ' : '') + formatWhen(last.internal_date, last.date || 'No date'), 'meta'),
+      el('div', (last.direction === 'sent' ? 'You: ' : '') + (g.kind === 'person' ? (last.subject || '') + ' — ' : '') + (last.snippet || ''), 'meta group-snippet'));
+    if (g.attachment_count) button.append(attachmentLabel(g.attachment_count));
+    button.addEventListener('click', () => { currentGroup = g; selectMessage(g.last.id); });
     list.append(button);
   }
 }
@@ -298,7 +355,7 @@ async function refreshGmail(startSync = false) {
       startSync = true; continue;
     }
     gmailRefresh.disabled = sync.running;
-    const data = await request('/api/connectors/gmail/messages?folder=' + folder);
+    const data = await request('/api/connectors/gmail/messages?folder=' + folder + '&view=' + view);
     if (run !== refreshRun) return;
     renderList(data);
     folderInbox.textContent = 'Inbox (' + state.counts.inbox + ')';
@@ -331,6 +388,8 @@ gmailRefresh.addEventListener('click', async () => {
 async function init() {
   try { await sessionReady; } catch (error) { notify('Could not load session: ' + error.message, true); return; }
   await settingsReady;
+  view = ['threads', 'messages', 'people'].includes(userSettings.inbox_view) ? userSettings.inbox_view : 'threads';
+  showViewState();
   if (userSettings.translate_enabled) {
     translationPanel.hidden = false;
     document.getElementById('inbox-grid').classList.add('has-translation');

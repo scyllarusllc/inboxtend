@@ -8,6 +8,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
+from email.utils import parseaddr
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -16,7 +17,7 @@ try:
 except ImportError:  # Everything except Gmail works without the optional dependency.
     AESGCM = None
 from connectors.gmail_readonly import SCOPES, GmailReadError, list_message_ids, get_message_full, get_attachment
-from tasks import connection
+from tasks import connection, peer_for
 import settings as prefs
 
 AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -181,18 +182,18 @@ def _store(db,user_id,item,in_inbox=0):  # Folder flags are set on insert only; 
     h = item['headers']
     db.execute('''INSERT INTO gmail_messages
         (user_id,message_id,thread_id,from_addr,subject,date_header,snippet,internal_date,in_inbox,fetched_at,
-         to_addr,cc_addr,label_ids,headers_json,body_text,body_html,size_estimate,has_full)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         to_addr,cc_addr,label_ids,headers_json,body_text,body_html,size_estimate,peer_email,peer_name,has_full)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
         ON CONFLICT(user_id,message_id) DO UPDATE SET thread_id=excluded.thread_id,from_addr=excluded.from_addr,
           subject=excluded.subject,date_header=excluded.date_header,snippet=excluded.snippet,
           internal_date=excluded.internal_date,fetched_at=excluded.fetched_at,
           to_addr=excluded.to_addr,cc_addr=excluded.cc_addr,label_ids=excluded.label_ids,
           headers_json=excluded.headers_json,body_text=excluded.body_text,body_html=excluded.body_html,
-          size_estimate=excluded.size_estimate,has_full=1''',
+          size_estimate=excluded.size_estimate,peer_email=excluded.peer_email,peer_name=excluded.peer_name,has_full=1''',
         (user_id,item['id'],item.get('thread_id') or '',h.get('from',''),h.get('subject',''),h.get('date',''),
          item.get('snippet',''),item.get('internal_date',0),in_inbox,int(time.time()),
          h.get('to',''),h.get('cc',''),json.dumps(item.get('label_ids',[])),json.dumps(item.get('all_headers',[])),
-         item.get('body_text',''),item.get('body_html',''),item.get('size_estimate',0)))
+         item.get('body_text',''),item.get('body_html',''),item.get('size_estimate',0),*peer_for(json.dumps(item.get('label_ids',[])),h.get('from',''),h.get('to',''))))
     db.execute('DELETE FROM gmail_attachments WHERE user_id=? AND message_id=?',(user_id,item['id']))
     for a in item.get('attachments',[]):
         db.execute('INSERT INTO gmail_attachments(user_id,message_id,part_id,filename,mime_type,size_bytes,content,skipped_reason) '
@@ -211,6 +212,62 @@ def cached_inbox(db,user_id,folder='inbox'):
     rows = db.execute('SELECT m.*,(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
                       f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1 ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,))
     return [dict(_row(r),attachment_count=r['n_att']) for r in rows]
+
+VIEWS = ('messages','threads','people')
+
+def grouped_inbox(db,user_id,folder,view):
+    """The folder as the user wants to see it. `messages`: one entry per message. `threads`: one per Gmail
+    conversation. `people`: one per other party (sender of received mail, first recipient of sent mail).
+    A group is listed in a folder when any of its messages is in it, and holds all stored messages of the
+    conversation or person, from both folders. Purely local: no Gmail request."""
+    if view == 'messages':
+        return {'messages':cached_inbox(db,user_id,folder)}
+    column = FOLDERS[folder]
+    rows = db.execute('SELECT message_id,thread_id,from_addr,to_addr,subject,date_header,snippet,internal_date,label_ids,'
+                      f'peer_email,peer_name,{column} AS in_folder,'
+                      '(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
+                      'FROM gmail_messages m WHERE user_id=? AND has_full=1 ORDER BY internal_date DESC, message_id DESC',(user_id,))
+    groups, names, names_to = {}, {}, {}
+    for r in rows:
+        if r['peer_email'] and r['peer_name']:  # Newest display name per address; names people chose for themselves win.
+            table = names_to if '"SENT"' in (r['label_ids'] or '') else names
+            table.setdefault(r['peer_email'], r['peer_name'])
+        if view == 'threads' and r['thread_id']:
+            key = 't:' + r['thread_id']
+        elif view == 'people' and r['peer_email']:
+            key = 'p:' + r['peer_email']
+        else:
+            key = 'm:' + r['message_id']
+        group = groups.setdefault(key,{'id':key,'kind':'thread' if view == 'threads' else 'person','messages':[],'in_folder':False,
+                                       'address':r['peer_email'] if view == 'people' else ''})
+        group['messages'].append(dict(_row(r),attachment_count=r['n_att']))
+        group['in_folder'] = group['in_folder'] or bool(r['in_folder'])
+    def who(address, fallback=''):
+        return names.get(address) or names_to.get(address) or (address.split('@')[0] if address else '') or fallback
+    result = []
+    for group in groups.values():
+        if not group.pop('in_folder'): continue
+        messages = group['messages']          # newest first
+        group['last'] = messages[0]
+        group['count'] = len(messages)
+        group['attachment_count'] = sum(m['attachment_count'] for m in messages)
+        if view == 'people':
+            group['title'] = who(group['address'], '(Unknown)')
+        else:
+            group['title'] = messages[-1]['subject'] or '(No subject)'
+            seen, labels = set(), []
+            for m in messages:                # One entry per person, newest first; the address decides who is who.
+                address = parseaddr(m['from'])[1].lower()
+                label = 'You' if m['direction'] == 'sent' else who(address, 'Unknown')
+                if (address or label) not in seen:
+                    seen.add(address or label); labels.append(label)
+            group['participants'] = labels[:4]
+        result.append(group)
+    return {'groups':result}
+
+def group_name(address):
+    name, email_address = parseaddr(address or '')
+    return (name or email_address.split('@')[0]).strip()
 
 def folder_counts(db,user_id):
     row = db.execute('SELECT COALESCE(SUM(in_inbox),0),COALESCE(SUM(in_sent),0) FROM gmail_messages WHERE user_id=?',(user_id,)).fetchone()

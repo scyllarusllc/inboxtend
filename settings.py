@@ -12,10 +12,12 @@ from zoneinfo import ZoneInfo
 
 PRIORITIES = ('low', 'medium', 'high')
 AI_PROVIDERS = ('codex', 'claude')
+INBOX_VIEWS = ('threads', 'messages', 'people')
 DEFAULTS = {
     'timezone': 'Pacific/Saipan',   # Default for new task deadlines; also how mail times are displayed.
     'due_soon_hours': 48,           # A task due within this many hours is flagged "due soon".
     'default_priority': 'medium',   # Priority pre-selected when suggesting a task.
+    'inbox_view': 'threads',        # How the Inbox lists mail: threads (conversations), messages or people.
     'sync_sent': True,              # Also mirror sent mail.
     'sync_max_messages': 200,       # Per folder.
     'attachment_max_mb': 10,        # Larger attachments are recorded as metadata only.
@@ -58,6 +60,10 @@ def _clean(key, value):
     if key in _BOOLS:
         if not isinstance(value, bool):
             raise ValueError(f'Invalid value for {key}')
+        return value
+    if key == 'inbox_view':
+        if value not in INBOX_VIEWS:
+            raise ValueError('Unknown inbox view')
         return value
     if key == 'ai_provider':
         if value not in AI_PROVIDERS:

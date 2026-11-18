@@ -44,6 +44,7 @@ function readForm() {
     timezone: form.timezone.value.trim(),
     due_soon_hours: Number(form.due_soon_hours.value),
     default_priority: form.default_priority.value,
+    inbox_view: form.inbox_view.value,
     sync_sent: form.sync_sent.checked,
     sync_max_messages: Number(form.sync_max_messages.value),
     attachment_max_mb: Number(form.attachment_max_mb.value),
