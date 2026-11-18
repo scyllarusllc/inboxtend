@@ -216,6 +216,8 @@ class Handler(BaseHTTPRequestHandler):
                 if kind is None or not target.is_relative_to(ROOT/'static'/'vendor') or not target.is_file():
                     raise RequestError(404,'Not found')
                 return self._send(200,target.read_bytes(),kind,(('Cache-Control','public, max-age=86400'),))
+            if path == '/LICENSE':   # AGPL: the license text is offered to everyone who uses the service
+                return self._send(200,(ROOT/'LICENSE').read_bytes(),'text/plain; charset=utf-8')
             if path == '/privacy':
                 return self._send(200,render_page('privacy'),'text/html; charset=utf-8')
             if path == '/api/health': return self._json(200,{'status':'ok'})
@@ -244,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 with self._db() as db:
                     level,next_page = gmail_web.finish(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),query['state'][0],query['code'][0])
-                    prefs.save(db,session['id'],{'gmail_write_read':level == 'modify'})  # Granting write access turns it on; read-only turns it off.
+                    prefs.save(db,session['id'],{'gmail_write_read':gmail_web.write_access(db,session['id'])})  # On while at least one account may change read/unread.
             except gmail_web.GmailConnectionError:
                 return self._redirect('/user/settings?gmail=failed')
             if level == 'modify': return self._redirect('/user/settings?gmail=write')
@@ -263,7 +265,9 @@ class Handler(BaseHTTPRequestHandler):
                         if access not in gmail_web.LEVELS: raise RequestError(400,'Unknown access level')
                         next_page = data.get('next','inbox')
                         if next_page not in ('inbox','settings'): raise RequestError(400,'Unknown return page')
-                        url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),access,next_page)
+                        account_id = data.get('account_id')
+                        if account_id is not None and (not isinstance(account_id,int) or isinstance(account_id,bool)): raise RequestError(400,'Invalid account')
+                        url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),access,next_page,account_id)
                 except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
                 return self._json(200,{'authorization_url':url})
             if path == '/api/connectors/gmail/sync' and self.command == 'POST':
@@ -271,10 +275,21 @@ class Handler(BaseHTTPRequestHandler):
                     if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
                 if not gmail_web.configured(self.gmail_config): raise RequestError(503,'Gmail is not configured')
                 # Runs in the background: a full sync outlasts proxy timeouts. Poll /status for progress.
-                return self._json(202,{'sync':gmail_web.start_sync(self.db_path,self.gmail_config,session['id'])})
+                account_id = data.get('account_id')
+                if account_id is not None:
+                    with self._db() as db:
+                        if not isinstance(account_id,int) or isinstance(account_id,bool) or account_id not in [a['id'] for a in gmail_web.accounts(db,session['id'])]:
+                            raise RequestError(404,'Unknown Gmail account')
+                return self._json(202,{'sync':gmail_web.start_sync(self.db_path,self.gmail_config,session['id'],account_id)})
             if path == '/api/connectors/gmail/disconnect' and self.command == 'POST':
-                with self._db() as db: gmail_web.disconnect(db,session['id'])
-                return self._json(200,{'connected':False})
+                account_id = data.get('account_id')   # One account, or (none given) all of them
+                with self._db() as db:
+                    if account_id is not None and (not isinstance(account_id,int) or isinstance(account_id,bool) or account_id not in [a['id'] for a in gmail_web.accounts(db,session['id'])]):
+                        raise RequestError(404,'Unknown Gmail account')
+                    gmail_web.disconnect(db,session['id'],account_id)
+                    if not gmail_web.write_access(db,session['id']): prefs.save(db,session['id'],{'gmail_write_read':False})
+                    connected = gmail_web.status(db,session['id'])
+                return self._json(200,{'connected':connected})
             if path == '/api/settings' and self.command == 'PATCH':
                 with self._db() as db:
                     prefs.save(db,session['id'],data)
@@ -389,11 +404,11 @@ class Handler(BaseHTTPRequestHandler):
                 stored = gmail_web.stored_count(db,session['id']) if connected else 0
                 counts = gmail_web.folder_counts(db,session['id']) if connected else {'inbox':0,'sent':0}
                 writable = gmail_web.write_access(db,session['id']) if connected else False
-                remote = gmail_web.remote_counts(db,self.gmail_config,session['id']) if connected else None
+                accounts,remote = gmail_web.overview(db,self.gmail_config,session['id']) if connected else ([],None)
                 guessing = dict(flags.progress(session['id']),pending=flags.pending_count(db,session['id']) if connected else 0)
                 labelling = dict(topics.progress(session['id']),pending=topics.pending_count(db,session['id']) if connected else 0)
                 limit = prefs.effective(db,session['id'],self.gmail_config)['sync_max_messages'] if connected else None
-            return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,
+            return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,'accounts':accounts,
                                    'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'remote':remote,'flags':guessing,'topics':labelling,'sync_limit':limit,'sync':gmail_web.sync_progress(session['id'])})
         if path == '/api/connectors/gmail/messages':  # Local copy only; POST /sync talks to Gmail.
             query = parse_qs(urlparse(self.path).query)
@@ -405,9 +420,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
                 search = mailsearch.parse(query.get('q',[''])[0],unread=query.get('unread',[''])[0] == '1',attachments=query.get('attachments',[''])[0] == '1')
                 searching = bool(mailsearch.condition(search)[0])
-                listing = gmail_web.grouped_inbox(db,session['id'],folder,view,search if searching else None)
-                stamp = gmail_web.last_sync(db,session['id'])
-            return self._json(200,dict(listing,folder=folder,view=view,last_sync=stamp,read_only=True,searching=searching))
+                wanted = query.get('account',[''])[0]
+                if wanted and (not wanted.isdigit() or int(wanted) not in [a['id'] for a in gmail_web.accounts(db,session['id'])]): raise RequestError(404,'Unknown Gmail account')
+                account_id = int(wanted) if wanted else None
+                listing = gmail_web.grouped_inbox(db,session['id'],folder,view,search if searching else None,account_id)
+                counts = gmail_web.folder_counts(db,session['id'],account_id)
+                stamp = gmail_web.last_sync(db,session['id'],account_id)
+            return self._json(200,dict(listing,folder=folder,view=view,last_sync=stamp,counts=counts,read_only=True,searching=searching))
         if path == '/api/ai/status':
             with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
             return self._json(200,dict(ai.status(self.gmail_config),enabled=user['ai_enabled'],provider=ai.provider_of(user)))

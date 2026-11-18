@@ -22,6 +22,8 @@ from auth import hash_password  # noqa: E402
 from tasks import connection, create_task, update_task  # noqa: E402
 
 USERNAME, PASSWORD = 'demo@example.org', 'demo-password-123'
+# Two connected Gmail accounts: the first has no id prefix, later ones do (see gmail_web._store).
+ACCOUNTS = {1: {'id': 1, 'prefix': '', 'email': 'jordan.rivera@gmail.com'}, 2: {'id': 2, 'prefix': '2~', 'email': 'jordan@riverside.example'}}
 TZ = ZoneInfo('America/New_York')
 ME = 'Jordan Rivera <demo@example.org>'
 PDF = {'part_id': '1', 'filename': 'Invoice-1042.pdf', 'mime_type': 'application/pdf', 'size': 48211, 'content': b'%PDF-1.4 demo', 'skipped_reason': ''}
@@ -41,30 +43,31 @@ def build(path: Path) -> None:
     def header_date(ts, offset_hours):
         return datetime.fromtimestamp(ts, timezone(timedelta(hours=offset_hours))).strftime('%a, %d %b %Y %H:%M:%S ') + '%+03d00' % offset_hours
 
-    def add(subject, who, ts, body, *, offset=-5, unread=False, mine=False, thread=None, listed=True, attachments=(), topics=()):
+    def add(subject, who, ts, body, *, offset=-5, unread=False, mine=False, thread=None, listed=True, attachments=(), topics=(), acct=1):
         n[0] += 1
-        mid = f'demo{n[0]:03d}'
+        account = ACCOUNTS[acct]
+        mid = account['prefix'] + f'demo{n[0]:03d}'
         labels = ['SENT'] if mine else ['INBOX'] + (['UNREAD'] if unread else [])
         frm, to = (ME, who) if mine else (who, ME)
         gmail_web._store(db, 1, {
-            'id': mid, 'thread_id': thread or f'th{n[0]:03d}', 'snippet': ' '.join(body.split())[:140], 'internal_date': ts * 1000,
+            'id': f'demo{n[0]:03d}', 'thread_id': thread or f'th{n[0]:03d}', 'snippet': ' '.join(body.split())[:140], 'internal_date': ts * 1000,
             'label_ids': labels, 'size_estimate': len(body), 'all_headers': [],
             'headers': {'subject': subject, 'from': frm, 'to': to, 'date': header_date(ts, offset)},
-            'body_text': body, 'body_html': '', 'attachments': [dict(a) for a in attachments]}, 1)
+            'body_text': body, 'body_html': '', 'attachments': [dict(a) for a in attachments]}, 1, account=account)
         if listed:
             (sent if mine else inbox).append(mid)
         if topics:
             db.execute('INSERT OR REPLACE INTO message_topics(user_id,message_id,topics,provider,guessed_at) VALUES (1,?,?,?,?)', (mid, ','.join(topics), 'demo', now))
         return mid
 
-    def history(who, thread_prefix, count, offset, reply_hours=3):
+    def history(who, thread_prefix, count, offset, reply_hours=3, acct=1):
         """Older back-and-forth, outside the synced window: gives the person a history (reply speed, hours)."""
         for i in range(count):
             day = (midnight - (45 + i * 52) * 86400) // 86400 * 86400
             t0 = day + ((9 - offset) % 24) * 3600          # 09:00 in the sender's own timezone
             thread = f'old-{thread_prefix}{i}'             # Never the id of a thread shown in the list
-            add('Re: earlier thread', who, t0, 'Thanks, noted. I will send the update shortly.', offset=offset, thread=thread, listed=False)
-            add('Earlier thread', who, t0 - reply_hours * 3600, 'Could you send the latest numbers when you have a moment?', mine=True, offset=-5, thread=thread, listed=False)
+            add('Re: earlier thread', who, t0, 'Thanks, noted. I will send the update shortly.', offset=offset, thread=thread, listed=False, acct=acct)
+            add('Earlier thread', who, t0 - reply_hours * 3600, 'Could you send the latest numbers when you have a moment?', mine=True, offset=-5, thread=thread, listed=False, acct=acct)
 
     with db:
         for table in ('gmail_messages', 'gmail_attachments', 'message_topics', 'message_translations', 'sender_countries', 'tasks', 'task_events',
@@ -80,22 +83,22 @@ def build(path: Path) -> None:
                    'Hola Jordan,\n\nGracias por la reunión de ayer. Adjunto la propuesta de renovación del contrato: el precio anual es de 24.000 USD, '
                    'con pago trimestral. ¿Podríamos confirmar la fecha de firma antes del viernes a las 17:00?\n\nQuedo atenta a sus comentarios.\n\n'
                    'Saludos cordiales,\nMaría García\nDirectora de Compras\nEmpresa SA de CV\nAv. Paseo de la Reforma 222, 06600 Ciudad de México\nTel. +52 55 1234 5678',
-                   offset=-6, unread=True, topics=('money', 'meeting'))
+                   offset=-6, unread=True, topics=('money', 'meeting'), acct=2)
         db.execute('INSERT OR REPLACE INTO message_translations(user_id,message_id,language_key,language,subject,body,source_language,same_language,provider,model,created_at) '
                    'VALUES (1,?,?,?,?,?,?,0,?,?,?)', (m_id, 'english', 'English', 'Contract renewal proposal',
                    'Hello Jordan,\n\nThank you for yesterday\'s meeting. I am attaching the contract renewal proposal: the annual price is USD 24,000, paid quarterly. '
                    'Could we confirm the signing date before Friday at 5:00 pm?\n\nI look forward to your comments.\n\nKind regards,\nMaría García\n'
                    'Purchasing Director\nEmpresa SA de CV\nAv. Paseo de la Reforma 222, 06600 Mexico City\nTel. +52 55 1234 5678', 'Spanish', 'codex', 'provider default', now - 200))
-        history(maria, 'thm', 4, -6, 4)
+        history(maria, 'thm', 4, -6, 4, acct=2)
         hiro = 'Hiroshi Tanaka <h.tanaka@acme.co.jp>'
         add('Re: Quarterly review', hiro, now - 1080,
             'Hi Jordan,\n\nThe numbers look good on our side. Can we move the review to Thursday morning my time? I can share the updated deck tonight.\n\n'
-            'Best regards,\nHiroshi Tanaka\nSales Manager, Acme Corporation\nShibuya, Tokyo\nTEL +81-3-1234-5678', offset=9, unread=True, thread='thh0', topics=('job', 'meeting'))
-        add('Quarterly review', hiro, now - 30 * 3600, 'Please find the agenda for the quarterly review attached. Let me know if anything is missing.', offset=9, thread='thh0', topics=('job', 'meeting'))
-        history(hiro, 'thh', 5, 9, 3)
+            'Best regards,\nHiroshi Tanaka\nSales Manager, Acme Corporation\nShibuya, Tokyo\nTEL +81-3-1234-5678', offset=9, unread=True, thread='thh0', topics=('job', 'meeting'), acct=2)
+        add('Quarterly review', hiro, now - 30 * 3600, 'Please find the agenda for the quarterly review attached. Let me know if anything is missing.', offset=9, thread='thh0', topics=('job', 'meeting'), acct=2)
+        history(hiro, 'thh', 5, 9, 3, acct=2)
         add('Invoice #1042 for November', 'CloudHost Billing <billing@cloudhost.example>', now - 1620,
             'Your invoice for November is attached. Amount due: $1,240.00. Payment is due within 14 days by card or bank transfer.\n\nThank you for your business.',
-            offset=0, unread=True, attachments=(PDF, CSV), topics=('money',))
+            offset=0, unread=True, attachments=(PDF, CSV), topics=('money',), acct=2)
 
         # ---- yesterday
         add('Staff Engineer opportunity at Contoso', 'Sarah Lee <sarah@talentco.io>', midnight - 3 * 3600,
@@ -123,7 +126,7 @@ def build(path: Path) -> None:
         add('Appointment reminder', 'Riverside Clinic <clinic@riverside.example>', midnight - 8 * 86400,
             'This is a reminder of your appointment with Dr. Lee on Monday at 09:30. Please bring your insurance card.', offset=-5, topics=('health', 'meeting'))
         add('Draft services agreement', 'Bennett & Co <contracts@bennett.co.uk>', midnight - 11 * 86400,
-            'Attached is the draft services agreement. Please review the indemnification and termination clauses before signing.\n\nKind regards,\nPriya Nair\nSolicitor, Bennett & Co, London', offset=0, topics=('legal',))
+            'Attached is the draft services agreement. Please review the indemnification and termination clauses before signing.\n\nKind regards,\nPriya Nair\nSolicitor, Bennett & Co, London', offset=0, topics=('legal',), acct=2)
         add('Weekend sale: 50% off everything', 'Store <deals@store.example>', midnight - 13 * 86400,
             'Huge sale! Use code SAVE50 for 50 percent off everything, this weekend only. Hurry, limited stock.', offset=0, topics=('promo',))
 
@@ -152,9 +155,12 @@ def build(path: Path) -> None:
             db.execute("INSERT OR REPLACE INTO sender_countries(user_id,peer_email,country,confidence,reason,provider,guessed_at,basis,city,company,role,language,relationship,formality,brevity) "
                        "VALUES (1,?,?,?,?,'demo',?,'profile',?,?,?,?,?,?,?)", (peer, country, conf, reason, now, city, company, role, language, relation, formality, brevity))
 
-        db.execute("INSERT INTO gmail_connections(user_id,refresh_token,connected_at,last_sync,scopes,remote_counts) VALUES (1,x'00',?,?,?,?)",
-                   (now - 86400, now - 420, 'https://www.googleapis.com/auth/gmail.readonly',
-                    json.dumps({'all': 2140, 'threads': 1530, 'inbox': 1486, 'inbox_unread': 31, 'sent': 312, 'checked_at': now})))
+        for acct, synced, scopes, remote in (
+                (1, now - 420, 'https://www.googleapis.com/auth/gmail.modify', {'all': 1210, 'threads': 880, 'inbox': 640, 'inbox_unread': 12, 'sent': 190}),
+                (2, now - 300, 'https://www.googleapis.com/auth/gmail.readonly', {'all': 930, 'threads': 650, 'inbox': 846, 'inbox_unread': 19, 'sent': 122})):
+            a = ACCOUNTS[acct]
+            db.execute("INSERT INTO gmail_connections(id,user_id,email,refresh_token,connected_at,last_sync,scopes,prefix,remote_counts) VALUES (?,1,?,x'00',?,?,?,?,?)",
+                       (a['id'], a['email'], now - 86400 * 9, synced, scopes, a['prefix'], json.dumps(dict(remote, checked_at=now))))
 
     settings.save(db, 1, {'timezone': 'America/New_York', 'inbox_view': 'threads', 'mark_read_on_open': False, 'ai_enabled': True, 'ai_provider': 'codex',
                           'flags_enabled': True, 'topics_enabled': True, 'translate_enabled': True, 'translate_language': 'English'})

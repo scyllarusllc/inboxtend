@@ -286,7 +286,7 @@ def get_attachment(token: str, message_id: str, attachment_id: str, *,
     return data
 
 
-# ---- Mailbox totals (counts only; the profile also holds the address, which is deliberately not returned) ----
+# ---- Mailbox totals (counts only: get_totals never returns the address) and the account address ----
 
 def _count(value) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
@@ -300,3 +300,11 @@ def get_totals(token: str, *, opener=urlopen) -> dict:
     return {"all": _count(profile.get("messagesTotal")), "threads": _count(profile.get("threadsTotal")),
             "inbox": _count(inbox.get("messagesTotal")), "inbox_unread": _count(inbox.get("messagesUnread")),
             "sent": _count(sent.get("messagesTotal"))}
+
+
+def get_address(token: str, *, opener=urlopen) -> str:
+    """The Gmail address the token belongs to (lower case), or '' if Google did not say. Used once per account,
+    to tell several connected accounts apart."""
+    value = _get_json(token, "/profile", opener=opener).get("emailAddress")
+    value = value.strip().lower() if isinstance(value, str) else ""
+    return value if 3 <= len(value) <= 254 and "@" in value and not any(c.isspace() or c in '<>"' for c in value) else ""

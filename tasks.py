@@ -73,13 +73,26 @@ def connection(path=DEFAULT_DB):
             csrf_token TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL)''')
         db.execute('CREATE INDEX IF NOT EXISTS user_sessions_expiry ON user_sessions(expires_at)')
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_oauth_pending (state_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, session_hash TEXT NOT NULL, verifier TEXT NOT NULL, expires_at INTEGER NOT NULL)''')
-        db.execute('''CREATE TABLE IF NOT EXISTS gmail_connections (user_id INTEGER PRIMARY KEY, refresh_token BLOB NOT NULL, connected_at INTEGER NOT NULL)''')
-        if 'last_sync' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
-            db.execute('ALTER TABLE gmail_connections ADD COLUMN last_sync INTEGER')
-        if 'remote_counts' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
-            db.execute("ALTER TABLE gmail_connections ADD COLUMN remote_counts TEXT NOT NULL DEFAULT ''")  # JSON: totals in Gmail, cached
-        if 'scopes' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
-            db.execute("ALTER TABLE gmail_connections ADD COLUMN scopes TEXT NOT NULL DEFAULT ''")  # '' = read-only (older connections)
+        # One row per connected Gmail account (a user may connect several). Databases from before multiple accounts
+        # have one row per user with user_id as the key: it becomes that user's first account.
+        legacy = {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}
+        if legacy and 'id' not in legacy:
+            db.execute('ALTER TABLE gmail_connections RENAME TO gmail_connections_v1')
+        db.execute('''CREATE TABLE IF NOT EXISTS gmail_connections (
+            id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, email TEXT NOT NULL DEFAULT '',
+            refresh_token BLOB NOT NULL, connected_at INTEGER NOT NULL, last_sync INTEGER,
+            remote_counts TEXT NOT NULL DEFAULT '',   -- JSON: totals in Gmail, cached
+            scopes TEXT NOT NULL DEFAULT '',          -- '' = read-only (older connections)
+            prefix TEXT NOT NULL DEFAULT '',          -- put before this account's Gmail ids so ids never clash between accounts ('' for the first)
+            UNIQUE (user_id, email))''')
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='gmail_connections_v1'").fetchone():
+            old = {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections_v1)')}
+            pick = lambda column, fallback: column if column in old else fallback
+            db.execute(f"INSERT INTO gmail_connections(user_id,refresh_token,connected_at,last_sync,remote_counts,scopes) "
+                       f"SELECT user_id,refresh_token,connected_at,{pick('last_sync','NULL')},{pick('remote_counts',chr(39)*2)},{pick('scopes',chr(39)*2)} FROM gmail_connections_v1")
+            db.execute('DROP TABLE gmail_connections_v1')
+        if 'account_id' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_oauth_pending)')}:
+            db.execute('ALTER TABLE gmail_oauth_pending ADD COLUMN account_id INTEGER')  # Set when an existing account is being re-authorised
         if 'level' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_oauth_pending)')}:
             db.execute("ALTER TABLE gmail_oauth_pending ADD COLUMN level TEXT NOT NULL DEFAULT 'readonly'")
         if 'next' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_oauth_pending)')}:
@@ -98,6 +111,7 @@ def connection(path=DEFAULT_DB):
             'body_text': "TEXT NOT NULL DEFAULT ''", 'body_html': "TEXT NOT NULL DEFAULT ''",
             'size_estimate': 'INTEGER NOT NULL DEFAULT 0', 'has_full': 'INTEGER NOT NULL DEFAULT 0',
             'in_sent': 'INTEGER NOT NULL DEFAULT 0',
+            'account_id': 'INTEGER',   # The gmail_connections row the message came from (NULL: stored before accounts existed)
             'peer_email': "TEXT NOT NULL DEFAULT ''", 'peer_name': "TEXT NOT NULL DEFAULT ''",
             'read_override': 'INTEGER',  # NULL = follow Gmail's UNREAD label; 1 = read here; 0 = unread here.
         }.items():
@@ -108,6 +122,9 @@ def connection(path=DEFAULT_DB):
                 email_address, display = peer_for(r['label_ids'], r['from_addr'], r['to_addr'])
                 db.execute('UPDATE gmail_messages SET peer_email=?,peer_name=? WHERE user_id=? AND message_id=?',
                            (email_address, display, r['user_id'], r['message_id']))
+        db.execute('UPDATE gmail_messages SET account_id=(SELECT c.id FROM gmail_connections c WHERE c.user_id=gmail_messages.user_id ORDER BY c.id LIMIT 1) '
+                   'WHERE account_id IS NULL AND EXISTS (SELECT 1 FROM gmail_connections c WHERE c.user_id=gmail_messages.user_id)')  # Mail from before accounts belongs to the user's first account
+        db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_account ON gmail_messages(user_id,account_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_thread ON gmail_messages(user_id,thread_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_peer ON gmail_messages(user_id,peer_email)')
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_attachments (

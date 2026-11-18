@@ -66,6 +66,13 @@ const toWorkspace = async page => { await page.evaluate(() => { const top = docu
   await page.evaluate(() => document.getElementById('ai').scrollIntoView()); await page.waitForTimeout(400);
   await shot(page, 'settings');
 }
+// 5b. Gmail accounts (settings)
+{
+  const {page} = await open(1440, 1000);
+  await page.goto(base + '/user/settings'); await settle(page);
+  await page.evaluate(() => { const t = document.getElementById('gmail').getBoundingClientRect().top + scrollY - 90; window.scrollTo({top: t, behavior: 'instant'}); }); await page.waitForTimeout(400);
+  await shot(page, 'accounts');
+}
 // 6. Phone
 {
   const {page, set} = await open(390, 844);

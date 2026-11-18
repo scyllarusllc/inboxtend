@@ -33,4 +33,6 @@ Gmail is contacted only when you connect and when you press **Refresh inbox** (n
 
 ## Look around first
 
+Connect more Gmail accounts any time under Settings → Gmail accounts; the Inbox then lets you pick one account or see them all.
+
 `make demo` starts the app with fictional data and no Gmail on http://127.0.0.1:8781 (demo@example.org / demo-password-123).

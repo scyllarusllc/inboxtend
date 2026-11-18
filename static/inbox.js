@@ -5,6 +5,8 @@ const draft = document.getElementById('draft');
 let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null, gmailWriteAccess = false;
 // What the list shows: search words (Gmail-style operators work), two quick filters, and how many rows are drawn.
 let flagsAttempted = false, topicsAttempted = false;
+// Connected Gmail accounts (from the status) and the one the list is narrowed to ('' = all of them).
+let accounts = [], accountFilter = sessionStorage.getItem('inboxtend-account') || '';
 let searchText = '', onlyUnread = false, onlyAttachments = false, listLimit = 100, lastData = null, listRun = 0;
 const PAGE = 100;
 const filtersActive = () => searchText.trim() !== '' || onlyUnread || onlyAttachments;
@@ -13,9 +15,11 @@ function listUrl() {
   if (searchText.trim()) q.set('q', searchText.trim());
   if (onlyUnread) q.set('unread', '1');
   if (onlyAttachments) q.set('attachments', '1');
+  if (accountFilter) q.set('account', accountFilter);
   return '/api/connectors/gmail/messages?' + q;
 }
-const writesToGmail = () => gmailWriteAccess && userSettings.gmail_write_read;
+// Read state reaches Gmail only if the user allowed it and the message's own account has the permission (`account` is optional).
+const writesToGmail = account => gmailWriteAccess && userSettings.gmail_write_read && (!account || account.write);
 const translationPanel = document.getElementById('translation-panel');
 const translationBox = document.getElementById('translation');
 const translationCaption = document.getElementById('translation-caption');
@@ -168,7 +172,7 @@ async function setRead(id, markRead) {
   paintRead();
   for (const m of messages) if (m.id === id) m.unread = result.unread;
   for (const g of groups) g.unread_count = g.messages.filter(m => m.unread).length;
-  request('/api/connectors/gmail/status').then(state => showCounts(state.counts)).catch(() => {});
+  request('/api/connectors/gmail/status').then(state => { const own = accountFilter ? (state.accounts || []).find(a => String(a.id) === accountFilter) : null; showCounts(own ? own.counts : state.counts); }).catch(() => {});
   renderList(groups.length ? {groups} : {messages});
   return result.unread;
 }
@@ -193,6 +197,8 @@ async function selectMessage(id) {
   const head = [el('h3', full.subject || '(No subject)'),
     el('div', 'From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date'), 'meta')];
   if (full.to) head.push(el('div', 'To ' + full.to, 'meta'));
+  const owner = accounts.length > 1 ? accounts.find(a => a.id === full.account_id) : null;
+  if (owner) { const line = el('div', undefined, 'meta account-line'); line.append(accountDot(owner.id), document.createTextNode('Account ' + accountName(owner))); head.push(line); }
   if (full.cc) head.push(el('div', 'Cc ' + full.cc, 'meta'));
   head[1] = el('div', undefined, 'meta flex flex-wrap items-center gap-x-1.5 gap-y-1');
   head[1].append(el('span', (full.direction === 'sent' ? 'Sent' : 'Received') + ' · From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date')), agoSpan(full.internal_date));
@@ -269,7 +275,7 @@ async function selectMessage(id) {
       toggle.disabled = false;
     });
     bar.append(toggle);
-    note = el('p', writesToGmail() ? 'Read and unread changes are also applied in Gmail.' : 'Read and unread changes are kept in Inbox Tend only; Gmail is not changed.', 'meta mt-2');
+    note = el('p', writesToGmail(accounts.find(a => a.id === full.account_id)) ? 'Read and unread changes are also applied in Gmail.' : 'Read and unread changes are kept in Inbox Tend only; Gmail is not changed.', 'meta mt-2');
   }
   detail.append(bar);
   if (note) detail.append(note);
@@ -402,9 +408,25 @@ function subjectLine(text, codes) {
   if (icons) line.append(icons);
   return line;
 }
+// With several accounts, a small coloured dot says which account a message belongs to (the colour follows the account's
+// position in the list; the address is its tooltip and, in the open message, written out).
+const accountName = account => account.email || 'Gmail account ' + account.id;
+function accountDot(id) {
+  const at = accounts.findIndex(a => a.id === id);
+  if (at < 0) return null;
+  const dot = el('span', undefined, 'account-dot');
+  dot.dataset.slot = String(at % 6);
+  dot.title = accountName(accounts[at]);
+  return dot;
+}
+function accountDots(ids) {
+  if (accounts.length < 2 || accountFilter) return [];
+  return [...new Set(ids)].map(accountDot).filter(Boolean);
+}
 // "[flag] name · 2 h ago": the line under a row's title.
 function rowMeta(item, who, ms, fallbackDate, offsetMinutes) {
   const line = el('div', undefined, 'row-meta');
+  for (const dot of accountDots(item && item.messages ? item.messages.map(m => m.account_id) : [item && item.account_id])) line.append(dot);
   const flag = flagEl(item);
   if (flag) line.append(flag);
   line.append(el('span', who, 'who'), el('span', '·'), agoSpan(ms, fallbackDate || 'No date'));
@@ -532,8 +554,12 @@ async function refreshGmail(startSync = false) {
       messages = []; selectedId = null; gmailRefresh.disabled = false;
       return;
     }
+    accounts = state.accounts || [];
+    showAccountFilter();
+    const scoped = accountFilter ? accounts.find(a => String(a.id) === accountFilter) : null;
+    const shown = scoped ? Object.assign({}, state, {counts: scoped.counts, remote: scoped.remote, stored: scoped.stored, last_sync: scoped.last_sync}) : state;   // The numbers follow the account filter.
     const sync = state.sync;
-    if (!sync.running && !state.last_sync && !sync.error && !startSync) {  // First visit after connecting.
+    if (!sync.running && accounts.some(a => !a.last_sync) && !sync.error && !startSync) {  // First visit after connecting an account.
       try { await request('/api/connectors/gmail/sync', 'POST', {}); } catch (error) { gmailStatus.textContent = error.message; }
       startSync = true; continue;
     }
@@ -560,10 +586,10 @@ async function refreshGmail(startSync = false) {
       if (mine === listRun) renderList(data);   // A newer search may already have drawn its own result.
       lastSignature = signature;
     }
-    showCounts(state.counts);
-    showTotals(state);
+    showCounts(shown.counts);
+    showTotals(shown);
     gmailWriteAccess = state.write_access;
-    gmailStatus.textContent = 'Gmail connected. ' + state.stored + ' message(s) saved locally (inbox and sent).' + syncLabel(state) +
+    gmailStatus.textContent = (accounts.length > 1 ? accounts.length + ' Gmail accounts connected. ' : 'Gmail connected. ') + (scoped ? accountName(scoped) + ': ' : '') + shown.stored + ' message(s) saved locally (inbox and sent).' + syncLabel(shown) +
       (sync.running ? ' Syncing… ' + sync.done + ' of ' + sync.total + ' new message(s).' + (sync.rate_limited_s > 0 ? ' Gmail is limiting requests, so the download is paused for about ' + sync.rate_limited_s + ' s and then continues.' : '') : '') +
       (!sync.running && sync.error ? ' ' + sync.error : '') +
       (guess.running ? ' Guessing countries… ' + guess.done + ' of ' + guess.total + ' senders.' : '') +
@@ -575,6 +601,25 @@ async function refreshGmail(startSync = false) {
     if (run !== refreshRun) return;
   }
 }
+// The account chooser appears only when there is more than one account to choose from.
+const accountSelect = document.getElementById('account-filter');
+function showAccountFilter() {
+  if (accountFilter && !accounts.some(a => String(a.id) === accountFilter)) { accountFilter = ''; sessionStorage.removeItem('inboxtend-account'); }
+  const wanted = ['', ...accounts.map(a => String(a.id))].join(',');
+  if (accountSelect.dataset.options !== wanted) {
+    accountSelect.dataset.options = wanted;
+    accountSelect.replaceChildren(new Option('All accounts (' + accounts.length + ')', ''), ...accounts.map(a => new Option(accountName(a), String(a.id))));
+  }
+  accountSelect.value = accountFilter;
+  document.getElementById('account-filter-label').hidden = accounts.length < 2;
+}
+accountSelect.addEventListener('change', () => {
+  accountFilter = accountSelect.value;
+  if (accountFilter) sessionStorage.setItem('inboxtend-account', accountFilter); else sessionStorage.removeItem('inboxtend-account');
+  listLimit = PAGE; selectedId = null; currentGroup = null;
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+  refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
+});
 gmailRefresh.addEventListener('click', async () => {
   try { await refreshGmail(true); } catch (error) { gmailStatus.textContent = error.message; }
 });

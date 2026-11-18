@@ -2,7 +2,7 @@
   "name": "inbox-tend-ui",
   "private": true,
   "description": "Build tooling for Inbox Tend's stylesheet. The running app needs only Python: the compiled CSS and the Font Awesome files are committed.",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "build:css": "tailwindcss -i static/src/app.css -o static/styles.css --minify",
     "watch:css": "tailwindcss -i static/src/app.css -o static/styles.css --watch",

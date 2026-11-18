@@ -1,6 +1,6 @@
 # Inbox Tend
 
-**Self-hosted Gmail workspace · SQLite · Apache-2.0**
+**Self-hosted Gmail workspace · SQLite · AGPL-3.0**
 
 Inbox Tend copies your Gmail into a SQLite database on your own server, shows who each message is from and what it is about, translates it, and helps you turn the next step into a tracked task. No email is ever sent, deleted or trashed.
 
@@ -10,6 +10,9 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 
 ## Features
 
+- **Several Gmail accounts.** Connect as many as you like (Settings → Gmail accounts). Their mail is stored and searched together, the Inbox can be narrowed to one account, and each account has its own read-only or read/unread access and can be removed on its own.
+
+  ![Two connected Gmail accounts in Settings](static/screens/accounts.jpg)
 - **Local copy of your mail.** Inbox and sent mail with full headers, text and HTML bodies, labels and attachments, saved in SQLite. Browsing never calls Gmail; **Refresh inbox** fetches only what is new. Gmail access is read-only unless you opt in (Settings → Gmail access) to marking mail read or unread in Gmail.
 - **Search like Gmail**, locally and instantly: words, `from:`, `to:`, `subject:"…"`, `is:unread`, `has:attachment`, `topic:money`.
 - **Three views:** conversations, single messages, or people (one row per correspondent). Rows are grouped Today, Yesterday and Earlier, with unread in bold and how long ago each message arrived.
@@ -40,7 +43,7 @@ make demo        # fictional data on http://127.0.0.1:8781
 
 Sign in as `demo@example.org` / `demo-password-123`. The demo never calls an AI. To retake the screenshots, see `scripts/screenshots.mjs`.
 
-**Your data lives on your server.** The database holds your correspondence in plain form (only the Gmail refresh token is encrypted), so run Inbox Tend on a private machine behind HTTPS and the built-in login, keep `data/` and `.env` private (mode 700/600, both git-ignored), and use disk encryption and encrypted backups. Disconnecting Gmail deletes the stored messages and attachments. Message bodies and attachments are untrusted: they are shown as plain text only, HTML is never rendered, and attachments are downloaded as opaque files, never opened or executed. Per-user preferences (timezone, due-soon window, default priority, sync of sent mail, messages per folder, attachment size limit, password change) are on the **Settings** page and stored in the `user_settings` table; they override the `.env` values below. Tunables (`.env`): `INBOX_TEND_SYNC_QUERY` (default `in:inbox`), `INBOX_TEND_SYNC_SENT_QUERY` (default `in:sent`), `INBOX_TEND_SYNC_MAX_MESSAGES` (default 200 per folder), `INBOX_TEND_ATTACHMENT_MAX_BYTES` (default 10 MiB).
+**Your data lives on your server.** The database holds your correspondence in plain form (only the Gmail refresh token is encrypted), so run Inbox Tend on a private machine behind HTTPS and the built-in login, keep `data/` and `.env` private (mode 700/600, both git-ignored), and use disk encryption and encrypted backups. Removing a Gmail account deletes its stored messages and attachments. Message bodies and attachments are untrusted: they are shown as plain text only, HTML is never rendered, and attachments are downloaded as opaque files, never opened or executed. Per-user preferences (timezone, due-soon window, default priority, sync of sent mail, messages per folder, attachment size limit, password change) are on the **Settings** page and stored in the `user_settings` table; they override the `.env` values below. Tunables (`.env`): `INBOX_TEND_SYNC_QUERY` (default `in:inbox`), `INBOX_TEND_SYNC_SENT_QUERY` (default `in:sent`), `INBOX_TEND_SYNC_MAX_MESSAGES` (default 200 per folder), `INBOX_TEND_ATTACHMENT_MAX_BYTES` (default 10 MiB).
 
 ## Current architecture
 
@@ -58,4 +61,6 @@ For the internal subdomain's current setup and remaining gates, see [docs/deploy
 
 ## License
 
-[Apache License, Version 2.0](LICENSE). Copyright 2026 Scyllarus LLC.
+[GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later). Copyright 2026 Scyllarus LLC.
+
+You may use, study, change and share Inbox Tend, including running it for others as a hosted service. If you let other people use a modified version over a network, the AGPL requires you to offer them the source code of your version under the same license. The footer of every page links to the source for that reason; keep that link (pointing at your own source if you modified the app). The fonts, icons and CSS tooling bundled under `static/vendor/` keep their own licenses (see `THIRD_PARTY_LICENSES.md`), all compatible with the AGPL.

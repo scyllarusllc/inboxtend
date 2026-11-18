@@ -270,6 +270,21 @@
   .task-proposal > button { @apply justify-self-start; }
   .task-proposal > .ai-box { @apply my-0; }
 
+  /* Several Gmail accounts */
+  .account-dot { @apply inline-block size-2.5 shrink-0 rounded-full bg-slate-400; }
+  .account-dot[data-slot="0"] { @apply bg-indigo-500; }
+  .account-dot[data-slot="1"] { @apply bg-emerald-500; }
+  .account-dot[data-slot="2"] { @apply bg-amber-500; }
+  .account-dot[data-slot="3"] { @apply bg-rose-500; }
+  .account-dot[data-slot="4"] { @apply bg-sky-500; }
+  .account-dot[data-slot="5"] { @apply bg-violet-500; }
+  .account-line { @apply flex items-center gap-1.5; }
+  .account-filter { @apply mb-3 block; }
+  .account-list { @apply my-3 grid list-none gap-2 p-0; }
+  .account-list:empty { @apply hidden; }
+  .account-row { @apply grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]; }
+  .account-actions { @apply col-span-2 flex flex-wrap gap-2 sm:col-span-1; }
+
   /* Public pages: home, privacy, login */
   .public-page { @apply mx-auto max-w-6xl; }
   .public-hero { @apply mx-auto max-w-3xl py-10 text-center sm:py-16; }

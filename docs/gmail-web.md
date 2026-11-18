@@ -21,10 +21,10 @@ Never commit these values. A local HTTP test is allowed only with a `localhost` 
 
 ## Flow and storage
 
-1. The signed-in user presses Connect, Reconnect or one of the access-level buttons in **Settings → Gmail connection** (the Inbox page itself only shows status, sync progress and *Refresh inbox*; `POST /api/connectors/gmail/connect` takes `{"access": "readonly"|"modify", "next": "inbox"|"settings"}`, and `next` decides which page the callback returns to). A JSON POST requires same origin and the session CSRF token. The server creates a random state and PKCE verifier for that user and the hash of that exact app session, expiring in five minutes. A second attempt invalidates the first.
+1. The signed-in user presses Connect, *Add another Gmail account* or one of an account's access-level buttons in **Settings → Gmail accounts** (the Inbox page itself only shows status, sync progress and *Refresh inbox*; `POST /api/connectors/gmail/connect` takes `{"access": "readonly"|"modify", "next": "inbox"|"settings", "account_id": <optional>}`; `next` decides which page the callback returns to, and `account_id` re-authorises that account instead of adding one). A JSON POST requires same origin and the session CSRF token. The server creates a random state and PKCE verifier for that user and the hash of that exact app session, expiring in five minutes. A second attempt invalidates the first.
 2. Google redirects to the fixed callback. The callback requires the same signed-in session, matching state, and an unused pending request. The server consumes state before exchanging the code. It sends the Web client secret and PKCE verifier directly to Google's token endpoint.
 3. The server accepts only the exact Gmail read-only scope and a refresh token. It encrypts the refresh token with AES-256-GCM and binds the ciphertext to the app user ID. The access token is never persisted. Database and directory permissions are restricted to the process owner.
-4. Inbox reads refresh access server-side, list only inbox message IDs, then request selected headers and snippet. Disconnect (Settings → Gmail connection, after a confirmation) deletes the local encrypted token and pending state, and also the stored messages, attachments and translations of that user. To revoke the Google grant itself, also remove Inbox Tend access in the Google Account permissions page.
+4. Inbox reads refresh access server-side, list only inbox message IDs, then request selected headers and snippet. Removing an account (Settings → Gmail accounts, after a confirmation; `POST /api/connectors/gmail/disconnect` with `{"account_id": n}`) deletes that account's encrypted token and its stored messages, attachments, topics and translations, and leaves the other accounts alone; without `account_id` every account of the user is removed. To revoke the Google grant itself, also remove Inbox Tend access in the Google Account permissions page.
 
 The app currently has one bootstrapped administrator. Task queries and Gmail connections are filtered by app user ID. Legacy tasks are assigned to user ID 1 during migration; review ownership before introducing additional users. The legacy task table still has a global unique message ID constraint, so adding a second user requires a schema migration to permit the same demo message ID for multiple users.
 
@@ -91,3 +91,28 @@ parameterised SQL condition (`LIKE … ESCAPE`, `%` and `_` are literal), so use
 In *Conversations* and *People* a group is listed when any of its messages in that folder matches, and shows
 `matches` out of `count`. It is a scan of the local table: about 50 to 125 ms for 5000 messages with full text, no
 Gmail request, no AI.
+
+## Several Gmail accounts
+
+A user can connect more than one Gmail account (**Settings → Gmail accounts → Add another Gmail account**; Google's
+account picker is shown). Nothing else about the model changes: every account is read with its own refresh token,
+synced on its own and has its own read-only or `gmail.modify` access.
+
+- `gmail_connections` has one row per account (`id`, `user_id`, `email`, `scopes`, `last_sync`, `remote_counts`, `prefix`),
+  unique per `(user_id, email)`. Connecting an address that is already connected refreshes that account. Re-authorising an
+  account (`account_id`) passes Google a `login_hint` and is refused if the person signs in as someone else.
+  The address comes from Gmail's profile once at connection; an account connected before addresses were recorded learns it at
+  its next sync.
+- Every stored message has an `account_id`. Gmail ids are only unique inside one mailbox, so the stored `message_id` and
+  `thread_id` of every account after the first start with `<account id>~` (the first account keeps Gmail's plain ids, so
+  databases from before this feature need no rewriting). Topics, translations, attachments and tasks refer to the stored id
+  and so follow along. Gmail itself is always called with the id without the prefix.
+- Sync (*Refresh inbox*) runs the accounts one after the other in one background job and adds up the progress; a failing account
+  is named in the message and does not stop the others. Folder flags are reconciled per account, so one account's inbox never
+  changes what another account's mail shows.
+- **People** and sender details are per correspondent, not per account: a person who writes to two of your accounts is one row.
+  **Conversations** stay inside one account.
+- With two or more accounts the Inbox gets an account chooser (counts and "synced x of y" follow it), each row a coloured
+  dot and the open message the account address. The read/unread change reaches Gmail only if that message's own account has the
+  `gmail.modify` grant; otherwise it is kept locally and the reason is shown.
+- Disclosure for the AI features is unchanged: they work on stored messages and do not care which account they came from.

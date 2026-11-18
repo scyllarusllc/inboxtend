@@ -1,6 +1,6 @@
 # Third-party notices
 
-Inbox Tend itself is licensed under the Apache License 2.0 (see `LICENSE`). The user interface uses three third-party
+Inbox Tend itself is licensed under the GNU Affero General Public License v3.0 or later (see `LICENSE`). The user interface uses three third-party
 components. All are used as self-hosted static files: the running app contacts no CDN or other external service
 for them.
 

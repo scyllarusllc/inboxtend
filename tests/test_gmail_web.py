@@ -44,6 +44,7 @@ class GmailWebTests(unittest.TestCase):
             gmail_web.finish(self.db,CONFIG,2,'session-a',state,'code')
         calls=[]
         def fake_open(request,timeout):
+            if request.data is None: return Response({'emailAddress':'Me@Example.test'})  # The profile request that names the account
             body=parse_qs(request.data.decode());calls.append(body)
             return Response({'scope':gmail_web.SCOPE,'token_type':'Bearer','access_token':'ephemeral-access','refresh_token':'private-refresh'})
         gmail_web.finish(self.db,CONFIG,1,'session-a',state,'code',opener=fake_open)

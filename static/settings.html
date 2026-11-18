@@ -36,7 +36,7 @@
     <div class="grid items-start gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
       <nav class="min-w-0 lg:sticky lg:top-24" aria-label="Settings sections">
         <ul class="flex gap-1 overflow-x-auto lg:flex-col">
-          <li><a class="nav-link" href="#gmail"><i class="fa-solid fa-plug fa-fw" aria-hidden="true"></i><span>Gmail connection</span></a></li>
+          <li><a class="nav-link" href="#gmail"><i class="fa-solid fa-plug fa-fw" aria-hidden="true"></i><span>Gmail accounts</span></a></li>
           <li><a class="nav-link" href="#time"><i class="fa-regular fa-clock fa-fw" aria-hidden="true"></i><span>Time and tasks</span></a></li>
           <li><a class="nav-link" href="#sync"><i class="fa-solid fa-rotate fa-fw" aria-hidden="true"></i><span>Mail sync</span></a></li>
           <li><a class="nav-link" href="#ai"><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i><span>AI assistant</span></a></li>
@@ -50,20 +50,20 @@
       <div class="min-w-0 max-w-4xl">
         <form id="prefs-form" class="settings-form">
           <section id="gmail" class="panel settings-section scroll-mt-24" aria-labelledby="access-heading">
-            <h2 id="access-heading"><i class="fa-solid fa-plug" aria-hidden="true"></i>Gmail connection</h2>
+            <h2 id="access-heading"><i class="fa-solid fa-plug" aria-hidden="true"></i>Gmail accounts</h2>
             <p id="access-status" role="status" class="font-medium text-slate-800">Checking…</p>
+            <ul id="gmail-accounts" class="account-list" aria-label="Connected Gmail accounts"></ul>
             <div class="settings-actions">
               <button id="connect-gmail" type="button" hidden><i class="fa-solid fa-plug" aria-hidden="true"></i><span>Connect Gmail</span></button>
-              <button id="grant-modify" type="button" hidden><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Allow changing read/unread in Gmail…</span></button>
-              <button id="grant-readonly" type="button" hidden><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Return to read-only access…</span></button>
-              <button id="disconnect-gmail" type="button" class="danger" hidden><i class="fa-solid fa-link-slash" aria-hidden="true"></i><span>Disconnect Gmail</span></button>
+              <button id="grant-modify" type="button" hidden><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Connect Gmail with read/unread changes…</span></button>
             </div>
-            <p>By default Inbox Tend can only <strong>read</strong> your mail. You may additionally let it mark messages <strong>read or unread in Gmail</strong>. That needs Google&rsquo;s broader <code>gmail.modify</code> permission, which Google describes as &ldquo;read, compose and send emails &hellip; except permanent deletion&rdquo;. Inbox Tend&rsquo;s code only ever changes the unread flag of one message at a time (it cannot send, delete or trash mail), but the permission itself allows more, so grant it only on a server you trust. You can withdraw it here or at <code>myaccount.google.com/permissions</code>.</p>
+            <p>You can connect <strong>several Gmail accounts</strong>. Their mail is stored together and listed together (you can narrow the Inbox to one account), and each account is synced on its own. Add one with the button above and choose it in Google&rsquo;s account picker.</p>
+            <p>By default Inbox Tend can only <strong>read</strong> your mail. For each account you may additionally let it mark messages <strong>read or unread in Gmail</strong>. That needs Google&rsquo;s broader <code>gmail.modify</code> permission, which Google describes as &ldquo;read, compose and send emails &hellip; except permanent deletion&rdquo;. Inbox Tend&rsquo;s code only ever changes the unread flag of one message at a time (it cannot send, delete or trash mail), but the permission itself allows more, so grant it only on a server you trust. You can withdraw it here or at <code>myaccount.google.com/permissions</code>.</p>
             <div class="task-form">
               <label class="check"><input name="gmail_write_read" type="checkbox" disabled><span class="font-medium text-slate-800">Apply read/unread changes to Gmail too</span>
                 <span class="meta">Pause this to keep read state local without withdrawing the permission. A failed Gmail update never loses the local change.</span></label>
             </div>
-            <p class="meta"><strong>Disconnect Gmail</strong> removes the sign-in from this server and deletes the saved messages, attachments and translations. Your tasks are kept. It does not revoke Google&rsquo;s permission; do that at <code>myaccount.google.com/permissions</code>.</p>
+            <p class="meta"><strong>Remove</strong> deletes that account&rsquo;s sign-in from this server together with its saved messages, attachments, topics and translations; the other accounts and your tasks are kept. It does not revoke Google&rsquo;s permission; do that at <code>myaccount.google.com/permissions</code>.</p>
           </section>
 
           <section id="time" class="panel settings-section scroll-mt-24" aria-labelledby="time-heading">
@@ -199,6 +199,6 @@
     </div>
   </main>
 
-  <footer class="site-footer"><span><i class="fa-solid fa-shield-halved mr-1.5 text-slate-400" aria-hidden="true"></i>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · Apache-2.0</span></footer>
+  <footer class="site-footer"><span><i class="fa-solid fa-shield-halved mr-1.5 text-slate-400" aria-hidden="true"></i>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · <a href="/LICENSE" class="underline">AGPL-3.0</a> · <a href="https://github.com/scyllarusllc/inboxtend" rel="noopener" class="underline">Source code</a></span></footer>
 </body>
 </html>

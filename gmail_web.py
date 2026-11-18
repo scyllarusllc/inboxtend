@@ -18,7 +18,7 @@ try:
 except ImportError:  # Everything except Gmail works without the optional dependency.
     AESGCM = None
 from connectors.gmail_modify import MODIFY_SCOPE, GmailWriteError, set_unread as gmail_set_unread
-from connectors.gmail_readonly import SCOPES, GmailReadError, GmailRateLimitError, cooldown_remaining, get_totals, list_message_ids, get_message_full, get_attachment
+from connectors.gmail_readonly import SCOPES, GmailReadError, GmailRateLimitError, cooldown_remaining, get_totals, get_address, list_message_ids, get_message_full, get_attachment
 from tasks import connection, peer_for
 import settings as prefs
 import mailsearch
@@ -74,23 +74,30 @@ def _post(url, fields, *, opener=urlopen):
     except (URLError, OSError, TimeoutError, ValueError):
         raise GmailConnectionError('Google authorization request failed') from None
 
-def begin(db, config, user_id, session_token, level='readonly', next_page='inbox'):
+def begin(db, config, user_id, session_token, level='readonly', next_page='inbox', account_id=None):
+    """Start Google sign-in. With `account_id` an existing account is re-authorised (for example to allow marking mail
+    read); without it, a new account is added (or, if it turns out to be one already connected, refreshed)."""
     if not configured(config): raise GmailConnectionError('Gmail is not configured')
     if level not in LEVELS: raise GmailConnectionError('Unknown access level')
     if next_page not in ('inbox','settings'): raise GmailConnectionError('Unknown return page')
+    hint = None
+    if account_id is not None:
+        account = db.execute('SELECT email FROM gmail_connections WHERE id=? AND user_id=?',(account_id,user_id)).fetchone()
+        if account is None: raise GmailConnectionError('Unknown Gmail account')
+        hint = account['email'] or None
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
     challenge = _b64(hashlib.sha256(verifier.encode()).digest())
     session_hash = hashlib.sha256(session_token.encode()).hexdigest()
     with db:
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=? OR expires_at<?', (user_id,int(time.time())))
-        db.execute('INSERT INTO gmail_oauth_pending(state_hash,user_id,session_hash,verifier,expires_at,level,next) VALUES (?,?,?,?,?,?,?)',
-                   (hashlib.sha256(state.encode()).hexdigest(),user_id,session_hash,verifier,int(time.time())+300,level,next_page))
-    return AUTHORIZE + '?' + urlencode({
+        db.execute('INSERT INTO gmail_oauth_pending(state_hash,user_id,session_hash,verifier,expires_at,level,next,account_id) VALUES (?,?,?,?,?,?,?,?)',
+                   (hashlib.sha256(state.encode()).hexdigest(),user_id,session_hash,verifier,int(time.time())+300,level,next_page,account_id))
+    return AUTHORIZE + '?' + urlencode(dict(({'login_hint':hint} if hint else {}),**{
         'client_id':config['INBOX_TEND_GOOGLE_CLIENT_ID'],
         'redirect_uri':config['INBOX_TEND_GOOGLE_REDIRECT_URI'],
         'response_type':'code','scope':SCOPE if level == 'readonly' else MODIFY_SCOPE,'state':state,'code_challenge':challenge,
-        'code_challenge_method':'S256','access_type':'offline','prompt':'consent',
-        'include_granted_scopes':'false'})
+        'code_challenge_method':'S256','access_type':'offline','prompt':'consent' if account_id is not None else 'select_account consent',
+        'include_granted_scopes':'false'}))
 
 def finish(db, config, user_id, session_token, state, code, *, opener=urlopen):
     if not isinstance(state,str) or len(state)>200 or not isinstance(code,str) or not code or len(code)>4096:
@@ -116,41 +123,90 @@ def finish(db, config, user_id, session_token, state, code, *, opener=urlopen):
     key = _key(config)
     nonce = secrets.token_bytes(12)
     encrypted = nonce + AESGCM(key).encrypt(nonce,result['refresh_token'].encode(),str(user_id).encode())
+    try: email = get_address(result['access_token'],opener=opener)
+    except GmailReadError: email = ''
+    expected = None
+    if row['account_id'] is not None:
+        expected = db.execute('SELECT id,email FROM gmail_connections WHERE id=? AND user_id=?',(row['account_id'],user_id)).fetchone()
+        if expected is None: raise GmailConnectionError('The Gmail account was removed meanwhile')
+        if expected['email'] and email and email != expected['email']:
+            raise GmailConnectionError(f"You signed in as {email}, not {expected['email']}")
     with db:
-        db.execute('INSERT INTO gmail_connections(user_id,refresh_token,connected_at,scopes) VALUES (?,?,?,?) '
-                   'ON CONFLICT(user_id) DO UPDATE SET refresh_token=excluded.refresh_token,connected_at=excluded.connected_at,scopes=excluded.scopes',
-                   (user_id,encrypted,int(time.time()),' '.join(sorted(granted))))
+        target = expected['id'] if expected is not None else None
+        if target is None:
+            found = db.execute('SELECT id FROM gmail_connections WHERE user_id=? AND email=?',(user_id,email)).fetchone()
+            target = found['id'] if found else None
+        if target is not None:
+            db.execute('UPDATE gmail_connections SET refresh_token=?,connected_at=?,scopes=?,email=COALESCE(NULLIF(?,\'\'),email) WHERE id=?',
+                       (encrypted,int(time.time()),' '.join(sorted(granted)),email,target))
+        else:
+            cursor = db.execute('INSERT INTO gmail_connections(user_id,email,refresh_token,connected_at,scopes) VALUES (?,?,?,?,?)',
+                                (user_id,email,encrypted,int(time.time()),' '.join(sorted(granted))))
+            first = db.execute("SELECT 1 FROM gmail_connections WHERE user_id=? AND prefix='' AND id<>?",(user_id,cursor.lastrowid)).fetchone() is None
+            if not first: db.execute('UPDATE gmail_connections SET prefix=? WHERE id=?',(f'{cursor.lastrowid}~',cursor.lastrowid))
     return row['level'], row['next']
 
-def _granted(db,user_id):
-    row = db.execute('SELECT scopes FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
-    return set((row['scopes'] if row else '').split()) or {SCOPE}   # Connections made before write access existed are read-only.
+def accounts(db,user_id):
+    """The user's connected Gmail accounts, oldest first."""
+    return [dict(id=r['id'],email=r['email'],prefix=r['prefix'],connected_at=r['connected_at'],last_sync=r['last_sync'],
+                 write=MODIFY_SCOPE in set(r['scopes'].split()))
+            for r in db.execute('SELECT * FROM gmail_connections WHERE user_id=? ORDER BY id',(user_id,))]
 
-def write_access(db,user_id):
-    """True when the user granted gmail.modify (an opt-in; the default connection is read-only)."""
-    return MODIFY_SCOPE in _granted(db,user_id)
+def _account(db,user_id,account_id=None):
+    """One of the user's accounts: the given one, or (no id) the first. Raises when there is none."""
+    row = (db.execute('SELECT * FROM gmail_connections WHERE id=? AND user_id=?',(account_id,user_id)).fetchone() if account_id is not None
+           else db.execute('SELECT * FROM gmail_connections WHERE user_id=? ORDER BY id LIMIT 1',(user_id,)).fetchone())
+    if not row: raise GmailConnectionError('Gmail is disconnected' if account_id is None else 'Unknown Gmail account')
+    return row
+
+def _granted(row):
+    return set((row['scopes'] or '').split()) or {SCOPE}   # Connections made before write access existed are read-only.
+
+def write_access(db,user_id,account_id=None):
+    """True when the user granted gmail.modify (an opt-in; the default connection is read-only): for the given
+    account, or (no id) for at least one of them."""
+    return any(a['write'] for a in accounts(db,user_id) if account_id is None or a['id'] == account_id)
 
 def status(db,user_id):
     return db.execute('SELECT 1 FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone() is not None
 
-def disconnect(db,user_id):
+def label(account):
+    """Short name for an account in the UI and in messages."""
+    return account['email'] or f"Gmail account {account['id']}"
+
+def _split(db,user_id,message_id):
+    """Account and Gmail's own id for a stored message id (stored ids of later accounts start with '<account id>~')."""
+    if '~' in message_id:
+        head, _, gmail_id = message_id.partition('~')
+        return _account(db,user_id,int(head) if head.isdigit() else -1), gmail_id
+    row = db.execute('SELECT account_id FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,message_id)).fetchone()
+    return _account(db,user_id,row['account_id'] if row and row['account_id'] is not None else None), message_id
+
+def disconnect(db,user_id,account_id=None):
+    """Remove one account (with all of its stored mail) or, without an id, every account of the user. The mail of
+    other accounts is untouched. Tasks are kept."""
     with db:
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=?',(user_id,))
-        db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))
-        db.execute('DELETE FROM sender_countries WHERE user_id=?',(user_id,))
-        db.execute('DELETE FROM message_topics WHERE user_id=?',(user_id,))
-        db.execute('DELETE FROM message_translations WHERE user_id=?',(user_id,))  # Disconnecting also removes the local copy
-        db.execute('DELETE FROM gmail_attachments WHERE user_id=?',(user_id,))
-        db.execute('DELETE FROM gmail_messages WHERE user_id=?',(user_id,))
+        if account_id is not None:
+            _account(db,user_id,account_id)
+            own = 'SELECT message_id FROM gmail_messages WHERE user_id=? AND account_id=?'
+            for table in ('message_topics','message_translations','gmail_attachments'):
+                db.execute(f'DELETE FROM {table} WHERE user_id=? AND message_id IN ({own})',(user_id,user_id,account_id))
+            db.execute('DELETE FROM gmail_messages WHERE user_id=? AND account_id=?',(user_id,account_id))
+            db.execute('DELETE FROM gmail_connections WHERE id=? AND user_id=?',(account_id,user_id))
+            db.execute('DELETE FROM sender_countries WHERE user_id=? AND peer_email NOT IN (SELECT peer_email FROM gmail_messages WHERE user_id=?)',(user_id,user_id))
+            if status(db,user_id): return
+        db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))   # Disconnecting (the last account) also removes the local copy
+        for table in ('sender_countries','message_topics','message_translations','gmail_attachments','gmail_messages'):
+            db.execute(f'DELETE FROM {table} WHERE user_id=?',(user_id,))
 
 def _scope_matches(returned,expected):
     if MODIFY_SCOPE in expected:
         return MODIFY_SCOPE in returned and returned <= {SCOPE,MODIFY_SCOPE}
     return returned == {SCOPE}
 
-def _access_token(db,config,user_id,*,opener=urlopen):
-    row = db.execute('SELECT refresh_token FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
-    if not row: raise GmailConnectionError('Gmail is disconnected')
+def _access_token(db,config,user_id,*,account_id=None,opener=urlopen):
+    row = _account(db,user_id,account_id)
     try:
         encrypted = row['refresh_token']
         refresh = AESGCM(_key(config)).decrypt(encrypted[:12],encrypted[12:],str(user_id).encode()).decode()
@@ -161,7 +217,7 @@ def _access_token(db,config,user_id,*,opener=urlopen):
                            'refresh_token':refresh,'grant_type':'refresh_token'},opener=opener)
     if (not isinstance(result.get('access_token'),str) or not result['access_token']
         or result.get('token_type','').lower() != 'bearer'
-        or ('scope' in result and not _scope_matches(set(result['scope'].split()),_granted(db,user_id)))):
+        or ('scope' in result and not _scope_matches(set(result['scope'].split()),_granted(row)))):
         raise GmailConnectionError('Google returned different access than was granted; reconnect Gmail')
     return result['access_token']
 
@@ -193,22 +249,25 @@ def _row(r):
     return {'id':r['message_id'],'thread_id':r['thread_id'],'from':r['from_addr'],'to':r['to_addr'],
             'subject':r['subject'],'date':r['date_header'],'internal_date':r['internal_date'],'snippet':r['snippet'],
             'direction':'sent' if '"SENT"' in (r['label_ids'] or '') else 'received','unread':_is_unread(r),
-            'peer':r['peer_email'] if 'peer_email' in r.keys() else ''}
+            'peer':r['peer_email'] if 'peer_email' in r.keys() else '',
+            'account_id':r['account_id'] if 'account_id' in r.keys() else None}
 
 def set_read(db,config,user_id,message_id,read,*,write=False,opener=urlopen):
     """Mark a message read or unread. Always recorded in Inbox Tend; with `write` (the user's choice) and the
-    gmail.modify grant, the UNREAD label is changed in Gmail too. A failed Gmail update keeps the local state
-    and is reported, never raised. Returns None if the message is unknown."""
-    row = db.execute('SELECT label_ids FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,message_id)).fetchone()
+    gmail.modify grant of the message's own account, the UNREAD label is changed in Gmail too. A failed Gmail update
+    keeps the local state and is reported, never raised. Returns None if the message is unknown."""
+    row = db.execute('SELECT label_ids,account_id FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,message_id)).fetchone()
     if row is None: return None
     want_unread = not read
     outcome = {'unread':want_unread,'gmail_changed':False,'gmail_error':None}
     if write:
-        if not write_access(db,user_id):
-            outcome['gmail_error'] = 'Write access to Gmail has not been granted (Settings → Gmail access).'
-        else:
+        try: account, gmail_id = _split(db,user_id,message_id)
+        except GmailConnectionError as exc: account, gmail_id = None, ''; outcome['gmail_error'] = str(exc)
+        if account is not None and MODIFY_SCOPE not in _granted(account):
+            outcome['gmail_error'] = f"Write access to Gmail has not been granted for {label(account)} (Settings → Gmail connection)."
+        elif account is not None:
             try:
-                gmail_set_unread(_access_token(db,config,user_id,opener=opener),message_id,want_unread)
+                gmail_set_unread(_access_token(db,config,user_id,account_id=account['id'],opener=opener),gmail_id,want_unread)
                 try: labels = json.loads(row['label_ids'] or '[]')
                 except ValueError: labels = []
                 labels = [x for x in labels if x != 'UNREAD'] + (['UNREAD'] if want_unread else [])
@@ -240,58 +299,69 @@ def _fetch(token,message_id,attachment_max):
         a['content'], a['skipped_reason'] = content, reason
     return item
 
-def _store(db,user_id,item,in_inbox=0):  # Folder flags are set on insert only; run_sync's reconcile owns them afterwards.
+def _store(db,user_id,item,in_inbox=0,account=None):  # Folder flags are set on insert only; run_sync's reconcile owns them afterwards.
+    """Save one downloaded message. `account` (a gmail_connections row) says whose it is; its prefix is put before
+    Gmail's ids so that two accounts can never overwrite each other's mail."""
+    prefix = account['prefix'] if account is not None else ''
+    account_id = account['id'] if account is not None else None
+    sid = prefix + item['id']
+    thread = prefix + item['thread_id'] if item.get('thread_id') else ''
     h = item['headers']
     db.execute('''INSERT INTO gmail_messages
         (user_id,message_id,thread_id,from_addr,subject,date_header,snippet,internal_date,in_inbox,fetched_at,
-         to_addr,cc_addr,label_ids,headers_json,body_text,body_html,size_estimate,peer_email,peer_name,has_full)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         to_addr,cc_addr,label_ids,headers_json,body_text,body_html,size_estimate,peer_email,peer_name,has_full,account_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)
         ON CONFLICT(user_id,message_id) DO UPDATE SET thread_id=excluded.thread_id,from_addr=excluded.from_addr,
           subject=excluded.subject,date_header=excluded.date_header,snippet=excluded.snippet,
           internal_date=excluded.internal_date,fetched_at=excluded.fetched_at,
           to_addr=excluded.to_addr,cc_addr=excluded.cc_addr,label_ids=excluded.label_ids,
           headers_json=excluded.headers_json,body_text=excluded.body_text,body_html=excluded.body_html,
-          size_estimate=excluded.size_estimate,peer_email=excluded.peer_email,peer_name=excluded.peer_name,has_full=1''',
-        (user_id,item['id'],item.get('thread_id') or '',h.get('from',''),h.get('subject',''),h.get('date',''),
+          size_estimate=excluded.size_estimate,peer_email=excluded.peer_email,peer_name=excluded.peer_name,has_full=1,
+          account_id=COALESCE(gmail_messages.account_id,excluded.account_id)''',
+        (user_id,sid,thread,h.get('from',''),h.get('subject',''),h.get('date',''),
          item.get('snippet',''),item.get('internal_date',0),in_inbox,int(time.time()),
          h.get('to',''),h.get('cc',''),json.dumps(item.get('label_ids',[])),json.dumps(item.get('all_headers',[])),
-         item.get('body_text',''),item.get('body_html',''),item.get('size_estimate',0),*peer_for(json.dumps(item.get('label_ids',[])),h.get('from',''),h.get('to',''))))
-    db.execute('DELETE FROM gmail_attachments WHERE user_id=? AND message_id=?',(user_id,item['id']))
+         item.get('body_text',''),item.get('body_html',''),item.get('size_estimate',0),*peer_for(json.dumps(item.get('label_ids',[])),h.get('from',''),h.get('to','')),
+         account_id))
+    db.execute('DELETE FROM gmail_attachments WHERE user_id=? AND message_id=?',(user_id,sid))
     for a in item.get('attachments',[]):
         db.execute('INSERT INTO gmail_attachments(user_id,message_id,part_id,filename,mime_type,size_bytes,content,skipped_reason) '
-                   'VALUES (?,?,?,?,?,?,?,?)',(user_id,item['id'],a['part_id'],a['filename'],a['mime_type'],
+                   'VALUES (?,?,?,?,?,?,?,?)',(user_id,sid,a['part_id'],a['filename'],a['mime_type'],
                    len(a['content']) if a['content'] is not None else a['size'],a['content'],a['skipped_reason']))
 
-def last_sync(db,user_id):
-    row = db.execute('SELECT last_sync FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
-    return row['last_sync'] if row else None
+def last_sync(db,user_id,account_id=None):
+    """When mail was last synced: for the given account, or (no id) the most recent sync of any account."""
+    row = db.execute('SELECT MAX(last_sync) FROM gmail_connections WHERE user_id=?'+(' AND id=?' if account_id is not None else ''),
+                     (user_id,) if account_id is None else (user_id,account_id)).fetchone()
+    return row[0]
 
 FOLDERS = {'inbox':'in_inbox','sent':'in_sent'}
 
-def cached_inbox(db,user_id,folder='inbox',search=None):
+def cached_inbox(db,user_id,folder='inbox',search=None,account_id=None):
     """Folder rows from the local SQLite copy; makes no Gmail request. `search` is a mailsearch.parse() result."""
     column = FOLDERS[folder]
     where, params = mailsearch.condition(search) if search else ('',[])
     rows = db.execute('SELECT m.*,(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
-                      f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1' + (f' AND ({where})' if where else '') +
-                      ' ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,*params))
+                      f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1' + (' AND m.account_id=?' if account_id is not None else '') + (f' AND ({where})' if where else '') +
+                      ' ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,*(() if account_id is None else (account_id,)),*params))
     return topics.attach(db,user_id,flags.attach(db,user_id,[dict(_row(r),attachment_count=r['n_att']) for r in rows]))
 
 VIEWS = ('messages','threads','people')
 
-def grouped_inbox(db,user_id,folder,view,search=None):
+def grouped_inbox(db,user_id,folder,view,search=None,account_id=None):
     """The folder as the user wants to see it. `messages`: one entry per message. `threads`: one per Gmail
     conversation. `people`: one per other party (sender of received mail, first recipient of sent mail).
     A group is listed in a folder when any of its messages is in it, and holds all stored messages of the
     conversation or person, from both folders. Purely local: no Gmail request."""
     if view == 'messages':
-        return {'messages':cached_inbox(db,user_id,folder,search)}
+        return {'messages':cached_inbox(db,user_id,folder,search,account_id)}
     column = FOLDERS[folder]
     where, params = mailsearch.condition(search) if search else ('',[])
-    rows = db.execute('SELECT m.message_id,m.thread_id,m.from_addr,m.to_addr,m.subject,m.date_header,m.snippet,m.internal_date,m.label_ids,m.read_override,'
+    rows = db.execute('SELECT m.account_id,m.message_id,m.thread_id,m.from_addr,m.to_addr,m.subject,m.date_header,m.snippet,m.internal_date,m.label_ids,m.read_override,'
                       f'm.peer_email,m.peer_name,m.{column} AS in_folder,' + (f'CASE WHEN {where} THEN 1 ELSE 0 END' if where else '1') + ' AS hit,'
                       '(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
-                      'FROM gmail_messages m WHERE m.user_id=? ORDER BY m.internal_date DESC, m.message_id DESC',(*params,user_id))  # Metadata-only rows (older syncs) group fine too.
+                      'FROM gmail_messages m WHERE m.user_id=?' + (' AND m.account_id=?' if account_id is not None else '') + ' ORDER BY m.internal_date DESC, m.message_id DESC',
+                      (*params,user_id,*(() if account_id is None else (account_id,))))  # Metadata-only rows (older syncs) group fine too.
     groups, names, names_to = {}, {}, {}
     for r in rows:
         if r['peer_email'] and r['peer_name']:  # Newest display name per address; names people chose for themselves win.
@@ -343,13 +413,15 @@ def group_name(address):
     name, email_address = parseaddr(address or '')
     return (name or email_address.split('@')[0]).strip()
 
-def folder_counts(db,user_id):
-    row = db.execute('SELECT COALESCE(SUM(in_inbox),0),COALESCE(SUM(in_sent),0) FROM gmail_messages WHERE user_id=?',(user_id,)).fetchone()
-    unread = sum(1 for r in db.execute('SELECT label_ids,read_override FROM gmail_messages WHERE user_id=? AND in_inbox=1',(user_id,)) if _is_unread(r))
+def folder_counts(db,user_id,account_id=None):
+    scope, args = (' AND account_id=?', (user_id,account_id)) if account_id is not None else ('', (user_id,))
+    row = db.execute('SELECT COALESCE(SUM(in_inbox),0),COALESCE(SUM(in_sent),0) FROM gmail_messages WHERE user_id=?'+scope,args).fetchone()
+    unread = sum(1 for r in db.execute('SELECT label_ids,read_override FROM gmail_messages WHERE user_id=? AND in_inbox=1'+scope,args) if _is_unread(r))
     return {'inbox':row[0],'sent':row[1],'unread':unread}
 
-def stored_count(db,user_id):
-    return db.execute('SELECT COUNT(*) FROM gmail_messages WHERE user_id=? AND has_full=1',(user_id,)).fetchone()[0]
+def stored_count(db,user_id,account_id=None):
+    scope, args = (' AND account_id=?', (user_id,account_id)) if account_id is not None else ('', (user_id,))
+    return db.execute('SELECT COUNT(*) FROM gmail_messages WHERE user_id=? AND has_full=1'+scope,args).fetchone()[0]
 
 def _listing(token,query,limit):
     ids, page = [], None
@@ -360,58 +432,89 @@ def _listing(token,query,limit):
         if not page or not result['message_ids']: break
     return ids[:limit]
 
-def _reconcile(db,user_id,column,ids):
-    """Flag listed messages as in the folder; stored ones newer than the oldest listed message but absent
-    from the listing have left it (archived, deleted, moved) and are unflagged but kept."""
+def _reconcile(db,user_id,account_id,column,ids):
+    """Flag listed messages as in the folder; stored ones of this account newer than the oldest listed message but
+    absent from the listing have left it (archived, deleted, moved) and are unflagged but kept. Other accounts'
+    mail is never touched."""
     if not ids:
-        db.execute(f'UPDATE gmail_messages SET {column}=0 WHERE user_id=?',(user_id,)); return
+        db.execute(f'UPDATE gmail_messages SET {column}=0 WHERE user_id=? AND account_id=?',(user_id,account_id)); return
     marks = ','.join('?' * len(ids))
-    db.execute(f'UPDATE gmail_messages SET {column}=1 WHERE user_id=? AND message_id IN ({marks})',(user_id,*ids))
-    floor = db.execute(f'SELECT MIN(internal_date) FROM gmail_messages WHERE user_id=? AND message_id IN ({marks})',
-                       (user_id,*ids)).fetchone()[0] or 0
-    db.execute(f'UPDATE gmail_messages SET {column}=0 WHERE user_id=? AND {column}=1 AND internal_date>=? '
-               f'AND message_id NOT IN ({marks})',(user_id,floor,*ids))
+    db.execute(f'UPDATE gmail_messages SET {column}=1 WHERE user_id=? AND account_id=? AND message_id IN ({marks})',(user_id,account_id,*ids))
+    floor = db.execute(f'SELECT MIN(internal_date) FROM gmail_messages WHERE user_id=? AND account_id=? AND message_id IN ({marks})',
+                       (user_id,account_id,*ids)).fetchone()[0] or 0
+    db.execute(f'UPDATE gmail_messages SET {column}=0 WHERE user_id=? AND account_id=? AND {column}=1 AND internal_date>=? '
+               f'AND message_id NOT IN ({marks})',(user_id,account_id,floor,*ids))
 
-def remote_counts(db,config,user_id,*,max_age=600,force=False,opener=urlopen):
-    """How many messages Gmail holds (mailbox, inbox, sent), cached for `max_age` seconds so that polling the
-    status never calls Google more than a few times an hour. Never raises: on failure the older value (or None)
-    is returned."""
-    row = db.execute('SELECT remote_counts FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
-    try: cached = json.loads(row['remote_counts']) if row and row['remote_counts'] else None
+def remote_counts(db,config,user_id,*,account_id=None,max_age=600,force=False,opener=urlopen):
+    """How many messages Gmail holds (mailbox, inbox, sent) for one account (default: the first), cached for `max_age`
+    seconds so that polling the status never calls Google more than a few times an hour. Never raises: on failure the
+    older value (or None) is returned."""
+    try: account = _account(db,user_id,account_id)
+    except GmailConnectionError: return None
+    try: cached = json.loads(account['remote_counts']) if account['remote_counts'] else None
     except ValueError: cached = None
     if cached and not force and time.time() - cached.get('checked_at',0) < max_age: return cached
     try:
-        totals = get_totals(_access_token(db,config,user_id,opener=opener),opener=opener)
+        totals = get_totals(_access_token(db,config,user_id,account_id=account['id'],opener=opener),opener=opener)
     except (GmailConnectionError,GmailReadError,ValueError):
         return cached
     if all(v is None for v in totals.values()): return cached   # An unexpected answer: keep what we had.
     totals['checked_at'] = int(time.time())
     with db:
-        db.execute('UPDATE gmail_connections SET remote_counts=? WHERE user_id=?',(json.dumps(totals),user_id))
+        db.execute('UPDATE gmail_connections SET remote_counts=? WHERE id=?',(json.dumps(totals),account['id']))
     return totals
 
-def _refresh_unread(db,user_id,listed_ids,unread_ids):
+def overview(db,config,user_id):
+    """Accounts with their own numbers, plus the totals over all of them (Gmail's counts are cached, see remote_counts)."""
+    result, remote_all = [], []
+    for a in accounts(db,user_id):
+        remote = remote_counts(db,config,user_id,account_id=a['id'])
+        remote_all.append(remote)
+        result.append(dict(a,label=label(a),stored=stored_count(db,user_id,a['id']),counts=folder_counts(db,user_id,a['id']),remote=remote))
+    total = None
+    if remote_all and all(remote_all):
+        keys = ('all','threads','inbox','inbox_unread','sent')
+        total = {k:(sum(r[k] for r in remote_all) if all(r.get(k) is not None for r in remote_all) else None) for k in keys}
+        total['checked_at'] = min(r.get('checked_at',0) for r in remote_all)
+    return result, total
+
+def _refresh_unread(db,user_id,account,listed_ids,unread_ids):
     """Stored messages keep the labels they had when downloaded, so a message read in Gmail since would stay
     "unread" here. For the messages in the sync window, set or clear UNREAD from Gmail's current answer."""
     if not listed_ids: return
+    prefix = account['prefix']
     marks = ','.join('?' * len(listed_ids))
-    for row in db.execute(f'SELECT message_id,label_ids FROM gmail_messages WHERE user_id=? AND message_id IN ({marks})',(user_id,*listed_ids)).fetchall():
+    for row in db.execute(f'SELECT message_id,label_ids FROM gmail_messages WHERE user_id=? AND account_id=? AND message_id IN ({marks})',(user_id,account['id'],*[prefix + i for i in listed_ids])).fetchall():
         try: labels = json.loads(row['label_ids'] or '[]')
         except ValueError: labels = []
-        want = row['message_id'] in unread_ids
+        want = row['message_id'][len(prefix):] in unread_ids
         if want == ('UNREAD' in labels): continue
         labels = [x for x in labels if x != 'UNREAD'] + (['UNREAD'] if want else [])
         db.execute('UPDATE gmail_messages SET label_ids=? WHERE user_id=? AND message_id=?',(json.dumps(labels),user_id,row['message_id']))
 
-def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
-    """Download every inbox and sent message not stored in full yet (bodies and attachments), then reconcile
-    the folder flags. Each message is committed as it arrives, so an interrupted sync resumes where it stopped."""
+def _learn_address(db,account,token,opener):
+    """Accounts connected before addresses were recorded learn theirs on the next sync (best effort)."""
+    if account['email']: return
+    try: email = get_address(token,opener=opener)
+    except (GmailReadError,ValueError): return
+    if email:
+        try:
+            with db: db.execute('UPDATE gmail_connections SET email=? WHERE id=?',(email,account['id']))
+        except Exception: pass   # The same address is already connected as another account: leave this one as it is.
+
+def run_sync(db,config,user_id,*,account_id=None,report=lambda **kw: None,opener=urlopen):
+    """Download every inbox and sent message of one account (default: the first) that is not stored in full yet
+    (bodies and attachments), then reconcile the folder flags. Each message is committed as it arrives, so an
+    interrupted sync resumes where it stopped."""
+    account = _account(db,user_id,account_id)
+    account_id, prefix = account['id'], account['prefix']
     settings = sync_settings(config,prefs.stored(db,user_id))
-    token = _access_token(db,config,user_id,opener=opener)
-    remote_counts(db,config,user_id,force=True,opener=opener)  # So the page can show "x of y" while syncing.
+    token = _access_token(db,config,user_id,account_id=account_id,opener=opener)
+    _learn_address(db,account,token,opener)
+    remote_counts(db,config,user_id,account_id=account_id,force=True,opener=opener)  # So the page can show "x of y" while syncing.
     inbox_ids = _listing(token,settings['query'],settings['max_messages'])
     sent_ids = _listing(token,settings['sent_query'],settings['max_messages']) if settings['sync_sent'] else None
-    have_full = {r[0] for r in db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND has_full=1',(user_id,))}
+    have_full = {r[0][len(prefix):] for r in db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND account_id=? AND has_full=1',(user_id,account_id))}
     todo = [i for i in dict.fromkeys(inbox_ids + (sent_ids or [])) if i not in have_full]
     done = failed = 0
     first_error = None
@@ -423,7 +526,7 @@ def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
             for future in as_completed(futures):
                 try:
                     item = future.result()
-                    with db: _store(db,user_id,item)
+                    with db: _store(db,user_id,item,account=account)
                     done += 1; limited_in_a_row = 0
                 except cf.CancelledError:
                     continue
@@ -437,12 +540,13 @@ def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
     if todo and not done:
         raise GmailReadError(first_error or 'No messages could be downloaded')
     unread_ids = set(_listing(token,f"({settings['query']}) is:unread",settings['max_messages']))
+    stored = lambda ids: [prefix + i for i in ids]
     with db:
-        _refresh_unread(db,user_id,inbox_ids,unread_ids)
-        _reconcile(db,user_id,'in_inbox',inbox_ids)
+        _refresh_unread(db,user_id,account,inbox_ids,unread_ids)
+        _reconcile(db,user_id,account_id,'in_inbox',stored(inbox_ids))
         if sent_ids is not None:  # Sent mail sync switched off: keep what is stored, change nothing.
-            _reconcile(db,user_id,'in_sent',sent_ids)
-        db.execute('UPDATE gmail_connections SET last_sync=? WHERE user_id=?',(int(time.time()),user_id))
+            _reconcile(db,user_id,account_id,'in_sent',stored(sent_ids))
+        db.execute('UPDATE gmail_connections SET last_sync=? WHERE id=?',(int(time.time()),account_id))
     skipped = len(todo) - done
     if skipped:
         note = first_error or 'Reason unknown.'
@@ -459,22 +563,39 @@ def _update(user_id,**fields):
     with _LOCK:
         _PROGRESS.setdefault(user_id,{'running':False,'total':0,'done':0,'failed':0,'error':None}).update(fields)
 
-def _background(db_path,config,user_id):
-    problem = None
+def _background(db_path,config,user_id,account_ids):
+    """Sync the accounts one after the other. Progress adds up over all of them; a failing account is reported by
+    name and does not stop the others."""
+    problems, base = [], {'total':0,'done':0,'failed':0}
     try:
         with closing(connection(db_path)) as db:
-            run_sync(db,config,user_id,report=lambda **kw: _update(user_id,**kw))
-    except (GmailConnectionError,GmailReadError) as exc: problem = str(exc)
-    except Exception: problem = 'Sync failed unexpectedly'
-    _update(user_id,running=False,**({'error':problem} if problem else {}))
+            several = len(account_ids) > 1
+            for account_id in account_ids:
+                name = label(_account(db,user_id,account_id)) if several else ''
+                current = {'total':0,'done':0,'failed':0}
+                def report(**kw):
+                    for key in current:
+                        if key in kw: current[key] = kw[key]
+                    update = {key:base[key] + current[key] for key in current if key in kw}
+                    if 'error' in kw: update['error'] = (name + ': ' if name else '') + kw['error']
+                    _update(user_id,**update)
+                try: run_sync(db,config,user_id,account_id=account_id,report=report)
+                except (GmailConnectionError,GmailReadError) as exc: problems.append((name + ': ' if name else '') + str(exc))
+                except Exception: problems.append((name + ': ' if name else '') + 'Sync failed unexpectedly')
+                for key in base: base[key] += current[key]
+    except Exception: problems.append('Sync failed unexpectedly')
+    _update(user_id,running=False,**({'error':' '.join(problems)} if problems else {}))
 
-def start_sync(db_path,config,user_id):
-    """Start a sync thread unless one is already running for this user. Returns the current progress."""
+def start_sync(db_path,config,user_id,account_id=None):
+    """Start a sync thread (all of the user's accounts, or just `account_id`) unless one is already running for this
+    user. Returns the current progress."""
     with _LOCK:
         current = _PROGRESS.get(user_id)
         if current and current['running']: return dict(current)
         _PROGRESS[user_id] = {'running':True,'total':0,'done':0,'failed':0,'error':None}
-    threading.Thread(target=_background,args=(db_path,config,user_id),daemon=True,name=f'gmail-sync-{user_id}').start()
+    with closing(connection(db_path)) as db:
+        ids = [account_id] if account_id is not None else [a['id'] for a in accounts(db,user_id)]
+    threading.Thread(target=_background,args=(db_path,config,user_id,ids or [None]),daemon=True,name=f'gmail-sync-{user_id}').start()
     return sync_progress(user_id)
 
 def message(db,config,user_id,message_id,*,opener=urlopen):
@@ -483,11 +604,12 @@ def message(db,config,user_id,message_id,*,opener=urlopen):
         raise GmailReadError('Invalid message ID')
     row = db.execute('SELECT * FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,message_id)).fetchone()
     if row and row['has_full']: return _detail(db,user_id,row)
-    token = _access_token(db,config,user_id,opener=opener)
-    try: item = _fetch(token,message_id,sync_settings(config,prefs.stored(db,user_id))['attachment_max'])
+    account, gmail_id = _split(db,user_id,message_id)
+    token = _access_token(db,config,user_id,account_id=account['id'],opener=opener)
+    try: item = _fetch(token,gmail_id,sync_settings(config,prefs.stored(db,user_id))['attachment_max'])
     except ValueError: raise GmailReadError('Invalid message ID') from None
-    with db: _store(db,user_id,item)
-    return _detail(db,user_id,db.execute('SELECT * FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,item['id'])).fetchone())
+    with db: _store(db,user_id,item,account=account)
+    return _detail(db,user_id,db.execute('SELECT * FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,account['prefix'] + item['id'])).fetchone())
 
 def _detail(db,user_id,row):
     detail = _row(row)
