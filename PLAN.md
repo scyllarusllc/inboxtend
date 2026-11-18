@@ -35,6 +35,26 @@ Privacy and safety boundaries:
 
 **Current implementation boundary (2026-11-18):** only fictional correspondence is shown. The local task editor can record a proposed demo-agent assignment with status `pending_approval`. No actual agent runtime, permissions engine, Gmail OAuth, full mailbox sync, or real outgoing-email integration has been implemented or verified. Keep UI labels accurate.
 
+## Attachment handling — part of every email conversation
+
+The system must treat attachments as first-class message resources, linked by the provider's stable message ID and attachment ID. Incoming **and** outgoing attachments must remain associated with their thread and source message.
+
+**Current demo (not real Gmail):**
+- Fictional `.txt` and `.csv` attachments can be listed and previewed on demand in the local UI.
+- The demo API returns metadata and a read-only plain-text preview; it never executes attachment content, sends files to a model, or grants an agent access.
+- There is no attachment upload, local file picker, real MIME decoding, PDF/Office parser, or Gmail attachment download yet.
+
+**Future implementation order:**
+1. Fetch Gmail attachment metadata only after user-provided OAuth read access; require the user to open or approve full content access as appropriate.
+2. Download on demand with size, type, and count limits; never trust file extensions or message-provided MIME type alone. Detect suspicious files, constrain archive depth/decompression, and prevent path traversal.
+3. Safe text extraction: plain text and CSV first; then PDF (including scan/OCR considerations), DOCX, XLSX, and images using isolated parsers. Preserve source message ID, attachment ID, page/sheet/cell or other traceable reference when possible.
+4. Render previews as escaped text or sandboxed media, never executable HTML, scripts, macros, or active document content.
+5. Link attachment excerpts to proposed tasks with citations and explicit evidence. Treat any embedded instruction as untrusted content, not as authority to run commands or override the user's request.
+6. Agent assignments initially share **nothing**. A separate review step must specify the exact attachments or selected excerpts, recipient agent, permitted tools, and data-retention implications before execution.
+7. Enforce local retention/deletion, access logs, and separate explicit approval before external model transfer. Secrets in attachments must not be logged or committed.
+
+**Important:** File type support is incremental; do not claim PDF, images, Office documents, or full mailbox attachments work until corresponding safe parsing and review flows are verified.
+
 ## Phase 1 — Local MVP
 
 - [ ] Ingest *fictional / sanitized* email examples (do not publish actual customer email).
