@@ -96,6 +96,21 @@ def list_tasks(db, now=None):
     return [decorate(r, now) for r in rows]
 
 
+
+def task_summary(db, now=None):
+    """Aggregated read-only counters for a local dashboard."""
+    rows = list_tasks(db, now)
+    by_status = {status: 0 for status in STATES}
+    overdue = due_soon = 0
+    for item in rows:
+        by_status[item['status']] += 1
+        overdue += item['deadline_state'] == 'overdue'
+        due_soon += item['deadline_state'] == 'due_soon'
+    return {'total': len(rows), 'by_status': by_status,
+            'overdue': overdue, 'due_soon': due_soon}
+
+
+
 def get_task(db, task_id, now=None):
     row = db.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
     return decorate(row, now) if row else None
