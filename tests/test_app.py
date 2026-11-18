@@ -72,6 +72,21 @@ class DemoTests(unittest.TestCase):
             self.assertIn(b'Sign in to Inbox Tend',response.read())
         with urlopen(self.url+'/login') as response:
             self.assertIn(b'id="login-form"',response.read())
+    def test_shared_header_footer_on_all_pages(self):
+        pages=[]
+        for path,headers in (('/',{}),('/login',{}),('/user/dashboard',{'Cookie':self.cookie})):
+            with urlopen(Request(self.url+path,headers=headers)) as response:
+                page=response.read().decode()
+            self.assertEqual(page.count('<header class="site-header">'),1)
+            self.assertEqual(page.count('<footer class="site-footer">'),1)
+            self.assertEqual(page.count('href="/static/styles.css"'),1)
+            self.assertIn('aria-label="Main navigation"',page)
+            pages.append(page)
+        footers=[page.split('<footer class="site-footer">',1)[1].split('</footer>',1)[0] for page in pages]
+        self.assertEqual(footers[0],footers[1])
+        self.assertEqual(footers[1],footers[2])
+        self.assertIn('id="logout"',pages[2])
+        self.assertNotIn('id="logout"',pages[0])
     def test_login_logout_and_csrf(self):
         cross_site=Request(self.url+'/api/auth/login',data=b'{"username":"admin@example.test","password":"fictional-test-password-123"}',
                            headers={'Content-Type':'application/json','Origin':'https://evil.example'},method='POST')

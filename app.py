@@ -4,6 +4,7 @@ import json
 import os
 import secrets
 import sqlite3
+from html import escape
 from contextlib import contextmanager, closing
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,6 +13,32 @@ from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
 ROOT = Path(__file__).resolve().parent
+PAGE_NAV = {
+    'public': '<a href="/">Home</a><a href="/user/dashboard">Workspace</a><a href="/login">Sign in</a>',
+    'workspace': '<a href="/">Home</a><a href="#inbox-workspace">Inbox</a><a href="#task-workspace">Tasks</a><a href="#privacy-note">Privacy</a><button id="logout" type="button">Sign out</button>',
+}
+PAGES = {
+    'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', '', 'public'),
+    'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', '/static/login.js', 'public'),
+    'index': ('Inbox Tend · Workspace preview', 'Review fictional messages and track local follow-up tasks.', '/static/app.js', 'workspace'),
+}
+
+def render_page(name):
+    """Compose trusted static page content with one shared header and footer."""
+    title, description, script, nav = PAGES[name]
+    layout = (ROOT/'static'/'layout.html').read_text()
+    content = (ROOT/'static'/f'{name}.html').read_text()
+    replacements = {
+        '{{TITLE}}': escape(title, quote=True),
+        '{{DESCRIPTION}}': escape(description, quote=True),
+        '{{SCRIPT}}': f'<script src="{script}" defer></script>' if script else '',
+        '{{NAV}}': PAGE_NAV[nav],
+        '{{CONTENT}}': content,
+    }
+    for marker, value in replacements.items():
+        layout = layout.replace(marker, value)
+    return layout.encode('utf-8')
+
 MESSAGES = [
  {'id':'sample-1','thread_id':'thread-1','provider':'demo','from':'alex@example.org','subject':'Website login issue','date':'2026-11-15','body':'Hi, the login form sometimes fails after submitting. Could you investigate and let us know what you find?','priority':'high'},
  {'id':'sample-2','thread_id':'thread-2','provider':'demo','from':'team@example.org','subject':'Friday project update','date':'2026-11-14','body':'Please send a short progress update for the dashboard project when you have time.','priority':'medium'},
@@ -167,10 +194,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok(): raise RequestError(403,'Invalid Host')
         if not write:
             if path == '/':
-                return self._send(200,(ROOT/'static'/'home.html').read_bytes(),'text/html; charset=utf-8')
+                return self._send(200,render_page('home'),'text/html; charset=utf-8')
             if path == '/login':
                 if self._session(): return self._redirect('/user/dashboard')
-                return self._send(200,(ROOT/'static'/'login.html').read_bytes(),'text/html; charset=utf-8')
+                return self._send(200,render_page('login'),'text/html; charset=utf-8')
             if path == '/static/app.js':
                 return self._send(200,(ROOT/'static'/'app.js').read_bytes(),'text/javascript; charset=utf-8')
             if path == '/static/login.js':
@@ -195,7 +222,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._redirect('/login')
             raise RequestError(401,'Sign in required')
         if not write and path == '/user/dashboard':
-            return self._send(200,(ROOT/'static'/'index.html').read_bytes(),'text/html; charset=utf-8')
+            return self._send(200,render_page('index'),'text/html; charset=utf-8')
         if write:
             self._write_ok(session)
             data = self._read_json()
