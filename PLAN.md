@@ -10,7 +10,7 @@ Updated 2026-11-18. Internal validation on a Scyllarus subdomain is the near-ter
 - [x] Review, create, list, edit, transition and reopen tasks in the browser.
 - [x] Saipan-time upcoming/due-soon/overdue indicators and unsent reply templates.
 - [x] Local HTTP and unit tests without Gmail or secrets.
-- [x] Public `/` and `/login` pages, private `/user/dashboard`, single-admin SQLite user/session tables and session-bound CSRF.
+- [x] Public `/`, `/login` and `/privacy` pages, separate private `/user/inbox` and `/user/tasks` pages, single-admin SQLite user/session tables and session-bound CSRF.
 
 ## Before real-mail or internal web deployment
 

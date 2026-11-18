@@ -39,7 +39,8 @@ def _get_json(token: str, path: str, params: dict | None = None, *,
         return obj
     except HTTPError as exc:
         # Do not print the response body; it may include account information.
-        raise GmailReadError(f"Gmail API rejected the read request (HTTP {exc.code})") from None
+        hint = " Check that the Gmail API is enabled for the Google Cloud project." if exc.code == 403 else ""
+        raise GmailReadError(f"Gmail API rejected the read request (HTTP {exc.code}).{hint}") from None
     except (URLError, TimeoutError, OSError):
         raise GmailReadError("Gmail API connection failed") from None
     except (ValueError, UnicodeError):

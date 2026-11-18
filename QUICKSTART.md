@@ -7,7 +7,7 @@ make dev                 # 127.0.0.1:8765
 make dev PORT=8766       # choose another local port
 ```
 
-Open `http://127.0.0.1:8765`. The public landing page is `/`, sign-in is `/login`, and the private panel starts at `/user/dashboard`. The server listens on `127.0.0.1` only. Its SQLite file is `data/tasks.sqlite3` (ignored by Git); keep it private and back it up before removing it. Override the port with `INBOX_TEND_PORT=8766` if needed.
+Open `http://127.0.0.1:8765`. The public landing page is `/`, sign-in is `/login`, `/privacy` is public, and the private pages are `/user/inbox` and `/user/tasks` (`/user/dashboard` redirects to the inbox). The server listens on `127.0.0.1` only. Its SQLite file is `data/tasks.sqlite3` (ignored by Git); keep it private and back it up before removing it. Override the port with `INBOX_TEND_PORT=8766` if needed.
 
 Before starting, copy `.env.example` to a private `.env`, set its permissions to `600`, set the admin email, and generate `INBOX_TEND_ADMIN_PASSWORD_HASH` with `python3 -c 'import getpass; from auth import hash_password; print(hash_password(getpass.getpass("Admin password: ")))'`. The first start creates this administrator in the database if the `users` table is empty. Changing `.env` later does not reset an existing account. On the current VM these values are already present in its root-only `.env`; do not commit or print them. If no administrator is configured, private pages remain inaccessible.
 
@@ -27,6 +27,6 @@ Run all tests:
 make test
 ```
 
-The three page bodies live in `static/pages/`; `static/layout.html` supplies their shared header, navigation and footer. After editing either, run `make build-pages` to refresh the full-page compatibility files used by older running processes. The current server composes the layout directly.
+The page bodies live in `static/pages/` (home, login, inbox, tasks, privacy); `static/layout.html` supplies their shared header, navigation and footer. After editing either, run `make build-pages` to refresh the full-page compatibility files used by older running processes. The current server composes the layout directly.
 
 The Gmail panel displays real headers and snippets after explicit consent. The VM's internal subdomain uses HTTPS and application login; Gmail connections and task queries are scoped by app user ID. The separate Desktop OAuth command remains experimental. Agent assignment only records pending approval; no agent runs or receives message content. Gmail is read on demand; no background sync, model extraction, reminders or sending exists. Review [docs/deployment-internal.md](docs/deployment-internal.md) before connecting a mailbox that holds client correspondence.

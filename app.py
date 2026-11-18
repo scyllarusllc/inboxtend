@@ -14,26 +14,34 @@ from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
 ROOT = Path(__file__).resolve().parent
-PAGE_NAV = {
-    'public': '<a href="/">Home</a><a href="/user/dashboard">Workspace</a><a href="/login">Sign in</a>',
-    'workspace': '<a href="/">Home</a><a href="#inbox-workspace">Inbox</a><a href="#task-workspace">Tasks</a><a href="#privacy-note">Privacy</a><button id="logout" type="button">Sign out</button>',
-}
+NAV_ITEMS = (('home','/','Home'),('inbox','/user/inbox','Inbox'),('tasks','/user/tasks','Tasks'),('privacy','/privacy','Privacy'))
+# name -> (title, description, scripts, active nav item, signed in)
 PAGES = {
-    'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', '', 'public'),
-    'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', '/static/login.js', 'public'),
-    'index': ('Inbox Tend · Workspace', 'Review your Gmail inbox and track local follow-up tasks.', '/static/app.js', 'workspace'),
+    'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', (), 'home', False),
+    'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', ('/static/login.js',), None, False),
+    'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js'), 'inbox', True),
+    'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/tasks.js'), 'tasks', True),
+    'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), 'privacy', False),
 }
+STATIC_FILES = {'/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript',
+                '/static/tasks.js':'text/javascript','/static/login.js':'text/javascript'}
+
+def nav_html(active, signed_in):
+    """Identical four links on every page; only the current-page marker and the auth control vary."""
+    links = ''.join('<a href="%s"%s>%s</a>' % (href, ' aria-current="page"' if key == active else '', label)
+                    for key, href, label in NAV_ITEMS)
+    return links + ('<button id="logout" type="button">Sign out</button>' if signed_in else '<a href="/login">Sign in</a>')
 
 def render_page(name):
     """Compose trusted static page content with one shared header and footer."""
-    title, description, script, nav = PAGES[name]
+    title, description, scripts, active, signed_in = PAGES[name]
     layout = (ROOT/'static'/'layout.html').read_text()
     content = (ROOT/'static'/'pages'/f'{name}.html').read_text()
     replacements = {
         '{{TITLE}}': escape(title, quote=True),
         '{{DESCRIPTION}}': escape(description, quote=True),
-        '{{SCRIPT}}': f'<script src="{script}" defer></script>' if script else '',
-        '{{NAV}}': PAGE_NAV[nav],
+        '{{SCRIPT}}': ''.join(f'<script src="{src}" defer></script>' for src in scripts),
+        '{{NAV}}': nav_html(active, signed_in),
         '{{CONTENT}}': content,
     }
     for marker, value in replacements.items():
@@ -99,7 +107,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with self._db() as db: return gmail_web.message(db,self.gmail_config,session['id'],message_id)
         except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
-        except gmail_web.GmailReadError as exc: raise RequestError(502,str(exc)) from None
+        except gmail_web.GmailReadError as exc: raise RequestError(424,str(exc)) from None  # 4xx: Cloudflare replaces origin 502/504 with an HTML page
 
     def _db(self):
         @contextmanager
@@ -159,14 +167,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/':
                 return self._send(200,render_page('home'),'text/html; charset=utf-8')
             if path == '/login':
-                if self._session(): return self._redirect('/user/dashboard')
+                if self._session(): return self._redirect('/user/inbox')
                 return self._send(200,render_page('login'),'text/html; charset=utf-8')
-            if path == '/static/app.js':
-                return self._send(200,(ROOT/'static'/'app.js').read_bytes(),'text/javascript; charset=utf-8')
-            if path == '/static/login.js':
-                return self._send(200,(ROOT/'static'/'login.js').read_bytes(),'text/javascript; charset=utf-8')
-            if path == '/static/styles.css':
-                return self._send(200,(ROOT/'static'/'styles.css').read_bytes(),'text/css; charset=utf-8')
+            if path in STATIC_FILES:
+                return self._send(200,(ROOT/path.lstrip('/')).read_bytes(),STATIC_FILES[path]+'; charset=utf-8')
+            if path == '/privacy':
+                return self._send(200,render_page('privacy'),'text/html; charset=utf-8')
             if path == '/api/health': return self._json(200,{'status':'ok'})
         if write and path == '/api/auth/login' and self.command == 'POST':
             self._same_origin()
@@ -188,17 +194,19 @@ class Handler(BaseHTTPRequestHandler):
             from urllib.parse import parse_qs
             query = parse_qs(urlparse(self.path).query)
             if 'error' in query:
-                return self._redirect('/user/dashboard?gmail=declined')
+                return self._redirect('/user/inbox?gmail=declined')
             if len(query.get('state',[])) != 1 or len(query.get('code',[])) != 1:
                 raise RequestError(400,'Invalid OAuth callback')
             try:
                 with self._db() as db:
                     gmail_web.finish(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),query['state'][0],query['code'][0])
             except gmail_web.GmailConnectionError:
-                return self._redirect('/user/dashboard?gmail=failed')
-            return self._redirect('/user/dashboard?gmail=connected')
+                return self._redirect('/user/inbox?gmail=failed')
+            return self._redirect('/user/inbox?gmail=connected')
         if not write and path == '/user/dashboard':
-            return self._send(200,render_page('index'),'text/html; charset=utf-8')
+            return self._redirect('/user/inbox')  # Legacy URL
+        if not write and path in ('/user/inbox','/user/tasks'):
+            return self._send(200,render_page(path.rsplit('/',1)[1]),'text/html; charset=utf-8')
         if write:
             self._write_ok(session)
             data = self._read_json()
@@ -246,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 with self._db() as db: rows = gmail_web.inbox(db,self.gmail_config,session['id'])
             except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
-            except gmail_web.GmailReadError as exc: raise RequestError(502,str(exc)) from None
+            except gmail_web.GmailReadError as exc: raise RequestError(424,str(exc)) from None  # 4xx: Cloudflare replaces origin 502/504 with an HTML page
             return self._json(200,{'messages':rows,'mode':'gmail','read_only':True})
         if path == '/api/session':
             return self._json(200,{'csrf_token':session['csrf_token'],'user':{'username':session['username'],'role':session['role']}})

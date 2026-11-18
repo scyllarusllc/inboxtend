@@ -1,0 +1,170 @@
+'use strict';
+const taskList = document.getElementById('tasks');
+const taskSummary = document.getElementById('task-summary');
+const taskSearch = document.getElementById('task-search');
+const taskFilter = document.getElementById('task-filter');
+const taskRefresh = document.getElementById('task-refresh');
+let cachedTasks = [];
+function makeEditForm(task) {
+  const form=el('form',undefined,'task-form');
+  const title=field(form,'Title','title',task.title); title.required=true; title.maxLength=200;
+  field(form,'Description','description',task.description,'textarea').parentElement.classList.add('wide');
+  field(form,'Owner','owner',task.owner || '');
+  const priority=field(form,'Priority','priority',task.priority,'select');
+  for(const value of ['low','medium','high']) {
+    const option=el('option',value); option.value=value; priority.append(option);
+  }
+  priority.value=task.priority;
+  field(form,'Due date (YYYY-MM-DD)','due_date',task.due_date || '');
+  field(form,'Due time (HH:MM)','due_time',task.due_time || '');
+  field(form,'Project','project_label',task.project_label || '');
+  field(form,'Customer','customer_label',task.customer_label || '');
+  const agent=field(form,'AI Agent (assignment only)','assigned_agent',task.assigned_agent || '','select');
+  for(const [value,label] of [['','Unassigned'],['Research Agent','Research Agent'],['Coding Agent','Coding Agent'],['General Agent','General Agent']]){
+    const option=el('option',label); option.value=value; agent.append(option);
+  }
+  agent.value=task.assigned_agent || '';
+  form.append(el('p','Assigning an agent only records a pending approval. No agent is executed and no emails are shared.','meta'));
+
+  const save=iconButton('check','Save changes'); save.type='submit'; save.className+=' action';
+  form.append(save);
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const values=Object.fromEntries(new FormData(form).entries());
+    values.due_date=values.due_date.trim() || null;
+    values.due_time=values.due_time.trim() || null;
+    const changed=values.due_date!==task.due_date || values.due_time!==task.due_time;
+    if(changed && Boolean(values.due_date)!==Boolean(values.due_time)){
+      notify('Enter both due date and time, or leave both blank.',true); return;
+    }
+    values.revision=task.revision;
+    if(!changed){delete values.due_date;delete values.due_time;}
+    save.disabled=true;
+    try{
+      await request('/api/tasks/'+task.id,'PATCH',values);
+      notify('Task changes saved locally.');
+      await refreshTasks();
+    }catch(error){notify(error.message+' — refresh and try again.',true);save.disabled=false;}
+  });
+  return form;
+}
+function renderTasks() {
+  taskList.replaceChildren();
+  const term=taskSearch.value.trim().toLowerCase();
+  const filter=taskFilter.value;
+  const matching=cachedTasks.filter(task=>{
+    const searchable=[task.title,task.description,task.owner,task.project_label,task.customer_label]
+      .filter(Boolean).join(' ').toLowerCase();
+    if(term && !searchable.includes(term))return false;
+    if(filter==='active')return task.status!=='done';
+    if(filter==='done')return task.status==='done';
+    if(filter==='overdue' || filter==='due_soon')return task.deadline_state===filter;
+    return true;
+  });
+  if(!matching.length){
+    taskList.append(el('p',cachedTasks.length?'No tasks match the current filter.':'No saved tasks yet. Open an inbox message and suggest a task to create one.'));
+    return;
+  }
+  for(const task of matching){
+    const item=el('article',undefined,'task-item');
+    item.dataset.deadline=task.deadline_state;
+    const date=task.due_date?task.due_date+' '+(task.due_time || '23:59')+' ('+task.due_timezone+')':'No deadline';
+    const head=el('div',undefined,'task-header');
+    head.append(el('h3',task.title));
+    const labels=el('div',undefined,'task-labels');
+    const statusBadge=el('span',task.status.replaceAll('_',' '),'task-pill');
+    if(task.status==='done')statusBadge.dataset.tone='complete';
+    labels.append(statusBadge);
+    if(task.deadline_state==='overdue' || task.deadline_state==='due_soon'){
+      const dueBadge=el('span',task.deadline_state==='overdue'?'Overdue':'Due soon','task-pill');
+      dueBadge.dataset.tone=task.deadline_state==='overdue'?'warning':'info';
+      labels.append(dueBadge);
+    }
+    head.append(labels);
+    const meta=el('div',undefined,'task-metadata');
+    meta.append(el('span','Priority: '+task.priority),el('span','·'),el('span',date));
+    if(task.owner){meta.append(el('span','·'),el('span','Owner: '+task.owner));}
+    if(task.project_label){meta.append(el('span','·'),el('span','Project: '+task.project_label));}
+    if(task.assigned_agent){meta.append(el('span','·'),el('span','Agent: '+task.assigned_agent+' ('+task.agent_status+')'));}
+    item.append(head,meta,el('p',task.description));
+    const label=el('label','Status: ');
+    const select=document.createElement('select');
+    for(const status of ['new','in_progress','waiting','done']){
+      const option=el('option',status.replaceAll('_',' '));option.value=status;select.append(option);
+    }
+    select.value=task.status; label.append(select);
+    const save=iconButton('check','Update status');
+    save.disabled=true;
+    select.addEventListener('change',()=>{save.disabled=select.value===task.status;});
+    save.addEventListener('click',async()=>{
+      save.disabled=true;
+      try{
+        await request('/api/tasks/'+task.id,'PATCH',{revision:task.revision,status:select.value});
+        notify('Task status saved locally.');await refreshTasks();
+      }catch(error){notify(error.message+' — refresh and retry.',true);save.disabled=false;}
+    });
+    const actions=el('div',undefined,'task-actions');actions.append(label,save);
+    const editor=el('details');
+    const editSummary=document.createElement('summary');editSummary.append(icon('pencil'),document.createTextNode(' Edit task'));
+    editor.append(editSummary);
+    editor.addEventListener('toggle',()=>{
+      if(editor.open && editor.children.length===1)editor.append(makeEditForm(task));
+    });
+    const history=el('details');
+    const historySummary=document.createElement('summary');historySummary.append(icon('history'),document.createTextNode(' Activity history'));
+    history.append(historySummary);
+    history.addEventListener('toggle',async()=>{
+      if(!history.open || history.dataset.loaded==='true')return;
+      const placeholder=el('p','Loading history…','meta');history.append(placeholder);
+      try{
+        const result=await request('/api/tasks/'+task.id+'/events');
+        const ordered=el('ol');
+        for(const event of result.events){
+          let changes=event.changes;
+          if(typeof changes==='string'){
+            try{changes=JSON.parse(changes);}catch(_){/* Display original */ }
+          }
+          const timestamp=new Date(event.created_at);
+          const when=Number.isNaN(timestamp.getTime())?event.created_at:timestamp.toLocaleString();
+          const line=el('li',event.action+' · '+when);
+          line.append(el('div',typeof changes==='string'?changes:JSON.stringify(changes),'meta'));
+          ordered.append(line);
+        }
+        placeholder.replaceWith(ordered);history.dataset.loaded='true';
+      }catch(error){placeholder.textContent='Could not load history: '+error.message;}
+    });
+    item.append(actions,editor,history);
+    taskList.append(item);
+  }
+}
+async function refreshTasks() {
+  try {
+    const [overview,rows]=await Promise.all([request('/api/tasks/summary'),request('/api/tasks')]);
+    cachedTasks=rows.tasks;
+    const summary=overview.summary;
+    taskSummary.replaceChildren();
+    for(const [label,count] of [
+      ['Total',summary.total],['New',summary.by_status.new],
+      ['In progress',summary.by_status.in_progress],['Waiting',summary.by_status.waiting],
+      ['Done',summary.by_status.done],['Due soon',summary.due_soon],['Overdue',summary.overdue]
+    ]){
+      const card=el('div',undefined,'metric-card');
+      if(label==='Overdue')card.dataset.tone='warning';
+      if(label==='Due soon')card.dataset.tone='info';
+      card.append(el('span',label,'metric-label'),el('strong',String(count),'metric-value'));
+      taskSummary.append(card);
+    }
+    renderTasks();
+  }catch(error){notify('Could not load tasks: '+error.message,true);}
+}
+
+async function init() {
+  taskSearch.addEventListener('input',renderTasks);
+  taskFilter.addEventListener('change',renderTasks);
+  taskRefresh.prepend(icon('refresh'));
+  taskRefresh.classList.add('icon-button');
+  taskRefresh.addEventListener('click',async()=>{notify('');await refreshTasks();});
+  try { await sessionReady; } catch (error) { notify('Could not load session: '+error.message,true); return; }
+  await refreshTasks();
+}
+init();

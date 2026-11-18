@@ -56,8 +56,9 @@ class AppTests(unittest.TestCase):
         self.assertIsNone(proposal(message)['inferred']['due_date'])
         self.assertEqual(proposal(dict(message,subject=''))['inferred']['title'],'(No subject)')
     def test_list_and_page(self):
-        with urlopen(Request(self.url+'/user/dashboard',headers={'Cookie':self.cookie})) as response:
-            page=response.read().decode().lower()
+        for path in ('/user/inbox','/user/tasks','/privacy'):
+            with urlopen(Request(self.url+path,headers={'Cookie':self.cookie})) as response:
+                page=response.read().decode().lower()
             for word in ('demo','fictional','sample'):
                 self.assertNotIn(word,page)
         with urlopen(self.url) as response:
@@ -65,10 +66,14 @@ class AppTests(unittest.TestCase):
             self.assertIn(b'Inbox Tend',page)
             self.assertIn(b'href="/static/styles.css"',page)
             self.assertNotIn(b'id="task-summary"',page)
-        with urlopen(Request(self.url+'/user/dashboard',headers={'Cookie':self.cookie})) as response:
+        with urlopen(Request(self.url+'/user/tasks',headers={'Cookie':self.cookie})) as response:
             page=response.read()
             self.assertIn(b'id="task-summary"',page)
             self.assertNotIn("'unsafe-inline'",response.headers['Content-Security-Policy'])
+        with urlopen(Request(self.url+'/user/inbox',headers={'Cookie':self.cookie})) as response:
+            page=response.read()
+            self.assertIn(b'id="messages"',page)
+            self.assertNotIn(b'id="task-summary"',page)
         with urlopen(self.url+'/static/styles.css') as response:
             self.assertEqual(response.headers.get_content_type(),'text/css')
             self.assertIn(b'.workspace-grid',response.read())
@@ -78,13 +83,17 @@ class AppTests(unittest.TestCase):
                 urlopen(self.url+path)
             self.assertEqual(error.exception.code,401)
             error.exception.close()
-        with urlopen(self.url+'/user/dashboard') as response:
-            self.assertIn(b'Sign in to Inbox Tend',response.read())
+        for path in ('/user/inbox','/user/tasks','/user/dashboard'):
+            with urlopen(self.url+path) as response:  # redirected to /login
+                self.assertIn(b'Sign in to Inbox Tend',response.read())
+                self.assertTrue(response.url.endswith('/login'))
         with urlopen(self.url+'/login') as response:
             self.assertIn(b'id="login-form"',response.read())
     def test_shared_header_footer_on_all_pages(self):
         pages=[]
-        for path,headers in (('/',{}),('/login',{}),('/user/dashboard',{'Cookie':self.cookie})):
+        paths=('/','/login','/privacy','/user/inbox','/user/tasks')
+        for path in paths:
+            headers={'Cookie':self.cookie} if path.startswith('/user/') else {}
             with urlopen(Request(self.url+path,headers=headers)) as response:
                 page=response.read().decode()
             self.assertEqual(page.count('<header class="site-header">'),1)
@@ -93,10 +102,17 @@ class AppTests(unittest.TestCase):
             self.assertIn('aria-label="Main navigation"',page)
             pages.append(page)
         footers=[page.split('<footer class="site-footer">',1)[1].split('</footer>',1)[0] for page in pages]
-        self.assertEqual(footers[0],footers[1])
-        self.assertEqual(footers[1],footers[2])
-        self.assertIn('id="logout"',pages[2])
-        self.assertNotIn('id="logout"',pages[0])
+        self.assertEqual(len(set(footers)),1)
+        import re
+        for page in pages:
+            nav=page.split('aria-label="Main navigation">',1)[1].split('</nav>',1)[0]
+            links=re.findall(r'<a href="([^"]+)"[^>]*>([^<]+)</a>',nav)
+            self.assertEqual(links[:4],[('/','Home'),('/user/inbox','Inbox'),('/user/tasks','Tasks'),('/privacy','Privacy')])
+        self.assertIn('href="/user/inbox" aria-current="page"',pages[3])
+        self.assertIn('href="/user/tasks" aria-current="page"',pages[4])
+        self.assertIn('id="logout"',pages[3]);self.assertIn('id="logout"',pages[4])
+        for public in pages[:3]:
+            self.assertNotIn('id="logout"',public)
     def test_built_pages_match_shared_layout(self):
         for name in PAGES:
             self.assertEqual((ROOT/'static'/f'{name}.html').read_bytes(),render_page(name))

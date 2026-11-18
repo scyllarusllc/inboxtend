@@ -1,0 +1,30 @@
+<main id="main" class="page-shell">
+    <section class="page-intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Your workspace</p>
+        <h1 id="page-title">Inbox</h1>
+        <p class="intro-copy">Open a message from your Gmail inbox, review the suggested task, and save it to your task list.</p>
+      </div>
+      <div class="preview-callout" role="note"><strong>Review before action</strong><span>Gmail access is read-only. Tasks stay on this computer and replies are never sent.</span></div>
+    </section>
+
+    <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
+
+    <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
+      <div class="section-heading"><div><p class="eyebrow">Review</p><h2 id="inbox-heading">Gmail inbox</h2></div><span class="section-hint">Read-only headers and snippets</span></div>
+      <div class="panel"><p id="gmail-status" role="status">Checking Gmail connection…</p>
+        <div class="task-tools"><button id="gmail-connect" type="button">Connect Gmail</button><button id="gmail-disconnect" type="button" hidden>Disconnect Gmail</button><button id="gmail-refresh" type="button" hidden>Refresh inbox</button></div>
+      </div>
+      <div class="workspace-grid">
+        <section class="panel inbox-panel" aria-labelledby="messages-heading">
+          <div class="panel-heading"><h3 id="messages-heading">Inbox</h3></div>
+          <div id="messages">Connect Gmail to see your inbox.</div>
+        </section>
+        <section class="panel review-panel" aria-labelledby="review-heading">
+          <div class="panel-heading"><h3 id="review-heading">Message review</h3><span class="panel-caption">Nothing is sent automatically</span></div>
+          <div id="detail">Choose a message to see its details.</div>
+          <div id="draft"></div>
+        </section>
+      </div>
+    </section>
+  </main>

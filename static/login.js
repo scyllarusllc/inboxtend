@@ -10,6 +10,6 @@ form.addEventListener('submit',async event=>{
     const response=await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const result=await response.json();
     if(!response.ok)throw Error(result.error||'Sign in failed');
-    location.assign('/user/dashboard');
+    location.assign('/user/inbox');
   }catch(error){status.textContent=error.message;button.disabled=false;}
 });
