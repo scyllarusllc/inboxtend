@@ -270,9 +270,22 @@ function selectMessage(id) {
   for (const button of list.querySelectorAll('button')) {
     button.setAttribute('aria-pressed', String(button.dataset.id === id));
   }
+  const related=messages.filter(msg=>msg.thread_id===m.thread_id)
+    .slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const conversation=el('section',undefined,'conversation-thread');
+  conversation.append(el('h4','Conversation · '+related.length+' fictional message(s)'));
+  for(const entry of related){
+    const bubble=el('article',undefined,'conversation-message');
+    bubble.dataset.direction=entry.direction || 'received';
+    bubble.append(el('div',(entry.direction==='sent'?'Sent':'Received')+' · '+entry.from+' · '+entry.date,'meta'),
+      el('p',entry.body));
+    conversation.append(bubble);
+  }
   detail.replaceChildren(
-    el('h3', m.subject), el('div', m.from + ' · ' + m.date, 'meta'),
-    el('p', m.body), el('h4', 'Excerpt (not AI-generated)'), el('p', m.summary)
+    el('h3',m.subject),
+    el('div','Conversation '+m.thread_id+' · '+related.length+' message(s)','meta'),
+    conversation,
+    el('h4','Selected message excerpt (not AI-generated)'),el('p',m.summary)
   );
   const reply = iconButton('mail','Prepare an unsent reply draft');
   reply.className += ' action';
@@ -306,7 +319,7 @@ async function init() {
       const button = el('button', undefined, 'message');
       button.dataset.id = m.id;
       button.setAttribute('aria-pressed', 'false');
-      button.append(el('div', m.subject), el('div', m.priority + ' priority · ' + m.from, 'meta'));
+      button.append(el('div', m.subject), el('div', (m.direction==='sent'?'Sent':'Received')+' · '+m.priority+' priority · '+m.from,'meta'));
       button.addEventListener('click', () => selectMessage(m.id));
       list.append(button);
     }
