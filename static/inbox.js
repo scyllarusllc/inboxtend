@@ -446,6 +446,29 @@ function attachmentLabel(count) {
   label.append(icon('paperclip'), document.createTextNode(' ' + count + ' attachment(s)'));
   return label;
 }
+// "Mark all as read": everything unread that the list shows (the search, filters and account choice count), Inbox only.
+const markAllButton = document.getElementById('mark-all-read');
+function showMarkAll(data) {
+  const unread = data.unread_in_view != null ? data.unread_in_view : messages.filter(m => m.unread).length;
+  markAllButton.hidden = folder !== 'inbox' || unread === 0;
+  markAllButton.lastChild.textContent = (filtersActive() ? 'Mark these as read' : 'Mark all as read') + ' (' + unread.toLocaleString() + ')';
+}
+markAllButton.addEventListener('click', async () => {
+  const n = markAllButton.lastChild.textContent.match(/\(([\d,.\s]+)\)/);
+  const writes = gmailWriteAccess && userSettings.gmail_write_read;
+  if (!confirm('Mark ' + (n ? n[1] : 'all') + ' unread message(s) as read?\n\n' + (filtersActive() || accountFilter ? 'Only the messages in the current list are changed. ' : '') +
+               (writes ? 'This is also applied in Gmail for accounts that allow it.' : 'This changes Inbox Tend only; Gmail is not changed.'))) return;
+  markAllButton.disabled = true;
+  try {
+    const body = {folder, q: searchText.trim(), unread: onlyUnread, attachments: onlyAttachments};
+    if (accountFilter) body.account_id = Number(accountFilter);
+    const result = await request('/api/connectors/gmail/messages/read-all', 'POST', body);
+    if (result.gmail_error) notify('Marked as read here, but Gmail was not fully updated: ' + result.gmail_error, true);
+    else notify(result.marked + ' message(s) marked as read' + (result.gmail_changed ? ' (also in Gmail).' : '.'));
+    await refreshGmail();
+  } catch (error) { notify('Could not mark messages as read: ' + error.message, true); }
+  markAllButton.disabled = false;
+});
 function renderList(data) {
   const previous = selectedId;
   list.replaceChildren();
@@ -460,6 +483,7 @@ function renderList(data) {
     currentGroup = groups.find(g => g.id === currentGroup.id) || null;  // Fresh data for the open group.
   }
   lastData = data;
+  showMarkAll(data);
   const items = data.groups ? groups : messages;
   const noun = view === 'threads' ? 'conversation' : view === 'people' ? 'person' : 'message';
   const info = document.getElementById('search-info');

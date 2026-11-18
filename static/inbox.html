@@ -18,7 +18,7 @@
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="/" aria-label="Inbox Tend home"><span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-inbox"></i></span><span class="text-lg tracking-tight">Inbox <strong>Tend</strong></span></a>
-      <nav class="primary-nav" aria-label="Main navigation"><a href="/user/inbox" aria-current="page" class="nav-link"><i class="fa-solid fa-inbox fa-fw" aria-hidden="true"></i><span>Inbox</span></a><a href="/user/tasks" class="nav-link"><i class="fa-solid fa-list-check fa-fw" aria-hidden="true"></i><span>Tasks</span></a><a href="/privacy" class="nav-link"><i class="fa-solid fa-shield-halved fa-fw" aria-hidden="true"></i><span>Privacy</span></a><a href="/user/settings" class="nav-link"><i class="fa-solid fa-gear fa-fw" aria-hidden="true"></i><span>Settings</span></a><button id="logout" type="button"><i class="fa-solid fa-right-from-bracket fa-fw" aria-hidden="true"></i><span>Sign out</span></button></nav>
+      <nav class="primary-nav" aria-label="Main navigation"><a href="/user/inbox" aria-current="page" class="nav-link"><i class="fa-solid fa-inbox fa-fw" aria-hidden="true"></i><span>Inbox</span></a><a href="/user/tasks" class="nav-link"><i class="fa-solid fa-list-check fa-fw" aria-hidden="true"></i><span>Tasks</span></a><a href="/user/settings" class="nav-link"><i class="fa-solid fa-gear fa-fw" aria-hidden="true"></i><span>Settings</span></a><button id="logout" type="button"><i class="fa-solid fa-right-from-bracket fa-fw" aria-hidden="true"></i><span>Sign out</span></button></nav>
       <span class="environment-badge hidden xl:inline-flex"><span class="status-dot" aria-hidden="true"></span>Preview workspace</span>
     </div>
   </header>
@@ -51,6 +51,7 @@
           <div class="search-box">
             <div class="relative"><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true"></i><input id="mail-search" class="pl-9" type="search" placeholder="Search mail…" aria-label="Search mail" maxlength="200" autocomplete="off" spellcheck="false" title="Words match subject, people and text. Operators: from:  to:  subject:&quot;a phrase&quot;  is:unread  has:attachment. Press / to search."></div>
             <div class="folder-tabs filter-tabs" role="group" aria-label="Filters"><button id="filter-unread" type="button" aria-pressed="false">Unread</button><button id="filter-attachments" type="button" aria-pressed="false">With attachments</button></div>
+            <button id="mark-all-read" type="button" class="mark-all" hidden><i class="fa-solid fa-check-double" aria-hidden="true"></i><span>Mark all as read</span></button>
             <p id="search-info" class="meta" role="status"></p>
           </div>
           <div id="messages">Loading…</div>
@@ -68,6 +69,6 @@
     </section>
   </main>
 
-  <footer class="site-footer"><span><i class="fa-solid fa-shield-halved mr-1.5 text-slate-400" aria-hidden="true"></i>Inbox Tend · Local-first preview</span><span>Scyllarus LLC · <a href="/LICENSE" class="underline">AGPL-3.0</a> · <a href="https://github.com/scyllarusllc/inboxtend" rel="noopener" class="underline">Source code</a></span></footer>
+  <footer class="site-footer"><span><i class="fa-solid fa-shield-halved mr-1.5 text-slate-400" aria-hidden="true"></i>Inbox Tend · Local-first preview</span><span><a href="/privacy" class="underline">Privacy</a> · Scyllarus LLC · <a href="/LICENSE" class="underline">AGPL-3.0</a> · <a href="https://github.com/scyllarusllc/inboxtend" rel="noopener" class="underline">Source code</a></span></footer>
 </body>
 </html>

@@ -116,3 +116,12 @@ synced on its own and has its own read-only or `gmail.modify` access.
   dot and the open message the account address. The read/unread change reaches Gmail only if that message's own account has the
   `gmail.modify` grant; otherwise it is kept locally and the reason is shown.
 - Disclosure for the AI features is unchanged: they work on stored messages and do not care which account they came from.
+
+## Mark all as read
+
+`POST /api/connectors/gmail/messages/read-all` with `{"folder", "q", "unread", "attachments", "account_id"}` (the same filters as the
+list) marks every unread message of that result as read. The server picks the messages itself, so the client never sends
+a list of ids. The change is always saved locally (`read_override`). With "Apply read/unread changes to Gmail too" on, the
+messages of every account that has the `gmail.modify` grant are also changed in Gmail with one `messages.batchModify` request
+(up to 1000 ids each, only the `UNREAD` label is removed); messages of read-only accounts are changed locally and reported.
+The list response carries `unread_in_view`, the number the button shows.

@@ -14,6 +14,7 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 
   ![Two connected Gmail accounts in Settings](static/screens/accounts.jpg)
 - **Local copy of your mail.** Inbox and sent mail with full headers, text and HTML bodies, labels and attachments, saved in SQLite. Browsing never calls Gmail; **Refresh inbox** fetches only what is new. Gmail access is read-only unless you opt in (Settings → Gmail access) to marking mail read or unread in Gmail.
+- **Mark all as read.** One button in the Inbox marks every unread message in the current list as read (search, filters and the account choice count). It is always saved in Inbox Tend, and also in Gmail, in one batch request per account, for accounts that allow changing read/unread.
 - **Search like Gmail**, locally and instantly: words, `from:`, `to:`, `subject:"…"`, `is:unread`, `has:attachment`, `topic:money`.
 - **Three views:** conversations, single messages, or people (one row per correspondent). Rows are grouped Today, Yesterday and Earlier, with unread in bold and how long ago each message arrived.
 - **Sender details** (opt-in, AI guess once per sender, saved):

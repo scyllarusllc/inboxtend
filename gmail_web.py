@@ -17,7 +17,7 @@ try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except ImportError:  # Everything except Gmail works without the optional dependency.
     AESGCM = None
-from connectors.gmail_modify import MODIFY_SCOPE, GmailWriteError, set_unread as gmail_set_unread
+from connectors.gmail_modify import MODIFY_SCOPE, GmailWriteError, set_unread as gmail_set_unread, clear_unread_many as gmail_clear_unread_many
 from connectors.gmail_readonly import SCOPES, GmailReadError, GmailRateLimitError, cooldown_remaining, get_totals, get_address, list_message_ids, get_message_full, get_attachment
 from tasks import connection, peer_for
 import settings as prefs
@@ -282,6 +282,43 @@ def set_read(db,config,user_id,message_id,read,*,write=False,opener=urlopen):
     override = None if want_unread == gmail_unread else (0 if want_unread else 1)  # Back in step with Gmail: follow it again.
     with db:
         db.execute('UPDATE gmail_messages SET read_override=? WHERE user_id=? AND message_id=?',(override,user_id,message_id))
+    return outcome
+
+def unread_ids(db,user_id,folder='inbox',search=None,account_id=None):
+    """Stored ids of the unread messages in a folder that match the search and account filter."""
+    return [r['id'] for r in cached_inbox(db,user_id,folder,search,account_id) if r['unread']]
+
+def mark_all_read(db,config,user_id,ids,*,write=False,opener=urlopen):
+    """Mark many messages read: always in Inbox Tend, and with `write` also in Gmail for the messages whose own account
+    has the gmail.modify grant (one batch request per account). A failed Gmail update keeps the local change and is
+    reported, never raised. Returns {'marked', 'gmail_changed', 'gmail_error'}."""
+    ids = list(dict.fromkeys(ids))
+    outcome = {'marked':len(ids),'gmail_changed':0,'gmail_error':None}
+    if not ids: return outcome
+    marks = ','.join('?' * len(ids))
+    with db:   # Read here; if Gmail still says unread, remember the local override (cleared below once Gmail agrees).
+        db.execute("UPDATE gmail_messages SET read_override=CASE WHEN label_ids LIKE '%\"UNREAD\"%' THEN 1 ELSE NULL END "
+                   f"WHERE user_id=? AND message_id IN ({marks})",(user_id,*ids))
+    if not write: return outcome
+    by_account, errors, skipped = {}, [], {}
+    for r in db.execute(f'SELECT message_id,account_id FROM gmail_messages WHERE user_id=? AND message_id IN ({marks})',(user_id,*ids)):
+        by_account.setdefault(r['account_id'],[]).append(r['message_id'])
+    for account_id,stored in by_account.items():
+        try: account = _account(db,user_id,account_id)
+        except GmailConnectionError as exc: errors.append(str(exc)); continue
+        if MODIFY_SCOPE not in _granted(account):
+            skipped[label(account)] = len(stored); continue
+        try:
+            gmail_clear_unread_many(_access_token(db,config,user_id,account_id=account['id'],opener=opener),[m[len(account['prefix']):] for m in stored],opener=opener)
+        except (GmailConnectionError,GmailWriteError,ValueError) as exc:
+            errors.append(f'{label(account)}: {exc}'); continue
+        with db:
+            for m in stored:
+                labels = [x for x in json.loads(db.execute('SELECT label_ids FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,m)).fetchone()[0] or '[]') if x != 'UNREAD']
+                db.execute('UPDATE gmail_messages SET label_ids=?,read_override=NULL WHERE user_id=? AND message_id=?',(json.dumps(labels),user_id,m))
+        outcome['gmail_changed'] += len(stored)
+    notes = errors + [f'{n} message(s) of {name} were not changed in Gmail: no write access for that account' for name,n in skipped.items()]
+    outcome['gmail_error'] = '; '.join(notes) or None
     return outcome
 
 def _fetch(token,message_id,attachment_max):

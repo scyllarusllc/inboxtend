@@ -278,6 +278,7 @@
   .account-dot[data-slot="3"] { @apply bg-rose-500; }
   .account-dot[data-slot="4"] { @apply bg-sky-500; }
   .account-dot[data-slot="5"] { @apply bg-violet-500; }
+  .mark-all { @apply w-full; }
   .account-line { @apply flex items-center gap-1.5; }
   .account-filter { @apply mb-3 block; }
   .account-list { @apply my-3 grid list-none gap-2 p-0; }

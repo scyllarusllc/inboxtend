@@ -107,12 +107,14 @@ class AppTests(unittest.TestCase):
         for page in pages:
             nav=page.split('aria-label="Main navigation">',1)[1].split('</nav>',1)[0]
             links=[(href,re.sub(r'<[^>]+>','',text)) for href,text in re.findall(r'<a href="([^"]+)"[^>]*>(.*?)</a>',nav)]  # Links carry an icon element now.
-            self.assertEqual(links[:3],[('/user/inbox','Inbox'),('/user/tasks','Tasks'),('/privacy','Privacy')])  # No Home link: the logo goes home.
+            self.assertEqual(links[:2],[('/user/inbox','Inbox'),('/user/tasks','Tasks')])  # No Home link (the logo goes home) and no Privacy link (it is in the footer).
+            self.assertNotIn('/privacy',nav)
             self.assertNotIn('>Home<',nav)
             self.assertIn('href="/" aria-label="Inbox Tend home"',page)
         self.assertIn('href="/user/inbox" aria-current="page"',pages[3])
         self.assertIn('href="/user/tasks" aria-current="page"',pages[4])
         self.assertIn('id="logout"',pages[3]);self.assertIn('id="logout"',pages[4])
+        for page in pages: self.assertIn('<a href="/privacy" class="underline">Privacy</a>',page.split('<footer class="site-footer">',1)[1])
         for public in pages[:3]:
             self.assertNotIn('id="logout"',public)
     def test_built_pages_match_shared_layout(self):

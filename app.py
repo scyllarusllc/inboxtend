@@ -21,7 +21,7 @@ from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
 ROOT = Path(__file__).resolve().parent
-NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'),('privacy','/privacy','Privacy','shield-halved'))
+NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'))
 # name -> (title, description, scripts, active nav item, signed in)
 PAGES = {
     'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', (), 'home', False),
@@ -29,7 +29,7 @@ PAGES = {
     'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js'), 'inbox', True),
     'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/tasks.js'), 'tasks', True),
     'settings': ('Settings · Inbox Tend', 'Timezone, display, mail sync and account settings.', ('/static/common.js','/static/settings.js'), 'settings', True),
-    'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), 'privacy', False),
+    'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), None, False),
 }
 VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.svg':'image/svg+xml'}
 SCREEN_TYPES = {'.jpg':'image/jpeg','.png':'image/png'}   # Screenshots of the demo data, shown on the public home page
@@ -299,6 +299,19 @@ class Handler(BaseHTTPRequestHandler):
                 if result == 'throttled': raise RequestError(429,'Too many attempts; try again in a few minutes')
                 if result == 'invalid': raise RequestError(403,'Current password is incorrect')
                 return self._json(200,{'changed':True})
+            if path == '/api/connectors/gmail/messages/read-all' and self.command == 'POST':   # Everything unread that the list currently shows
+                folder = data.get('folder','inbox')
+                if folder not in gmail_web.FOLDERS: raise RequestError(400,'Unknown folder')
+                account_id = data.get('account_id')
+                if account_id is not None and (not isinstance(account_id,int) or isinstance(account_id,bool)): raise RequestError(400,'Invalid account')
+                q = data.get('q','')
+                if not isinstance(q,str) or len(q) > 200: raise RequestError(400,'Invalid search')
+                with self._db() as db:
+                    if account_id is not None and account_id not in [a['id'] for a in gmail_web.accounts(db,session['id'])]: raise RequestError(404,'Unknown Gmail account')
+                    search = mailsearch.parse(q,unread=data.get('unread') is True,attachments=data.get('attachments') is True)
+                    ids = gmail_web.unread_ids(db,session['id'],folder,search if mailsearch.condition(search)[0] else None,account_id)
+                    user = prefs.effective(db,session['id'],self.gmail_config)
+                    return self._json(200,gmail_web.mark_all_read(db,self.gmail_config,session['id'],ids,write=user['gmail_write_read']))
             parts_w = path.strip('/').split('/')
             if len(parts_w) == 6 and parts_w[:4] == ['api','connectors','gmail','messages'] and parts_w[5] == 'read' and self.command == 'POST':
                 if not isinstance(data.get('read'),bool): raise RequestError(400,'"read" must be true or false')
@@ -425,8 +438,9 @@ class Handler(BaseHTTPRequestHandler):
                 account_id = int(wanted) if wanted else None
                 listing = gmail_web.grouped_inbox(db,session['id'],folder,view,search if searching else None,account_id)
                 counts = gmail_web.folder_counts(db,session['id'],account_id)
+                unread_here = len(gmail_web.unread_ids(db,session['id'],folder,search if searching else None,account_id))
                 stamp = gmail_web.last_sync(db,session['id'],account_id)
-            return self._json(200,dict(listing,folder=folder,view=view,last_sync=stamp,counts=counts,read_only=True,searching=searching))
+            return self._json(200,dict(listing,folder=folder,view=view,last_sync=stamp,counts=counts,unread_in_view=unread_here,read_only=True,searching=searching))
         if path == '/api/ai/status':
             with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
             return self._json(200,dict(ai.status(self.gmail_config),enabled=user['ai_enabled'],provider=ai.provider_of(user)))
