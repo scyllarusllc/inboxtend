@@ -1,4 +1,4 @@
-"""SQLite store for reviewed local tasks. No email bodies or credentials are stored."""
+"""SQLite store for reviewed local tasks and cached Gmail messages and attachments. Gmail credentials are stored encrypted, never in plaintext."""
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -60,6 +60,31 @@ def connection(path=DEFAULT_DB):
         db.execute('CREATE INDEX IF NOT EXISTS user_sessions_expiry ON user_sessions(expires_at)')
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_oauth_pending (state_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, session_hash TEXT NOT NULL, verifier TEXT NOT NULL, expires_at INTEGER NOT NULL)''')
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_connections (user_id INTEGER PRIMARY KEY, refresh_token BLOB NOT NULL, connected_at INTEGER NOT NULL)''')
+        if 'last_sync' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_connections)')}:
+            db.execute('ALTER TABLE gmail_connections ADD COLUMN last_sync INTEGER')
+        # Local copy of Gmail messages (headers, bodies, attachments), per app user.
+        db.execute('''CREATE TABLE IF NOT EXISTS gmail_messages (
+            user_id INTEGER NOT NULL, message_id TEXT NOT NULL, thread_id TEXT NOT NULL DEFAULT '',
+            from_addr TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', date_header TEXT NOT NULL DEFAULT '',
+            snippet TEXT NOT NULL DEFAULT '', internal_date INTEGER NOT NULL DEFAULT 0,
+            in_inbox INTEGER NOT NULL DEFAULT 1, fetched_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, message_id))''')
+        message_columns = {r['name'] for r in db.execute('PRAGMA table_info(gmail_messages)')}
+        for name, definition in {
+            'to_addr': "TEXT NOT NULL DEFAULT ''", 'cc_addr': "TEXT NOT NULL DEFAULT ''",
+            'label_ids': "TEXT NOT NULL DEFAULT '[]'", 'headers_json': "TEXT NOT NULL DEFAULT '[]'",
+            'body_text': "TEXT NOT NULL DEFAULT ''", 'body_html': "TEXT NOT NULL DEFAULT ''",
+            'size_estimate': 'INTEGER NOT NULL DEFAULT 0', 'has_full': 'INTEGER NOT NULL DEFAULT 0',
+            'in_sent': 'INTEGER NOT NULL DEFAULT 0',
+        }.items():
+            if name not in message_columns:
+                db.execute(f'ALTER TABLE gmail_messages ADD COLUMN {name} {definition}')
+        db.execute('''CREATE TABLE IF NOT EXISTS gmail_attachments (
+            id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, message_id TEXT NOT NULL,
+            part_id TEXT NOT NULL DEFAULT '', filename TEXT NOT NULL, mime_type TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL DEFAULT 0, content BLOB, skipped_reason TEXT NOT NULL DEFAULT '')''')
+        db.execute('CREATE INDEX IF NOT EXISTS gmail_attachments_message ON gmail_attachments(user_id,message_id)')
+        db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_inbox ON gmail_messages(user_id,in_inbox,internal_date DESC)')
     db.execute('PRAGMA foreign_keys=ON')
     return db
 

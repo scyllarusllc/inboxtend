@@ -13,3 +13,5 @@ button.action,.task-proposal button.action{display:inline-flex;align-items:cente
 @media(max-width:760px){.public-page{padding-top:42px}.public-hero{margin-bottom:42px}.public-grid{grid-template-columns:1fr;margin-bottom:36px}.public-grid .panel{min-height:0}.login-shell{min-height:calc(100vh - 180px)}.primary-nav button{padding:7px 9px}}
 
 .primary-nav a[aria-current=page]{background:var(--accent-soft);color:var(--accent-dark)}
+.message-body{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;font:inherit;font-size:.9rem;line-height:1.55;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+.panel-heading{align-items:center}.folder-tabs{display:inline-flex;gap:4px}.folder-tabs button{border:1px solid var(--line);background:var(--surface);color:#475569;border-radius:8px;padding:5px 11px;font-size:.82rem;font-weight:600;cursor:pointer}.folder-tabs button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent-dark);border-color:#c7d2fe}

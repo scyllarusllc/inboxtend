@@ -8,7 +8,7 @@ from html import escape
 from contextlib import contextmanager, closing
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, quote
 import gmail_web
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
@@ -191,7 +191,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._redirect('/login')
             raise RequestError(401,'Sign in required')
         if not write and path == '/api/connectors/gmail/callback':
-            from urllib.parse import parse_qs
             query = parse_qs(urlparse(self.path).query)
             if 'error' in query:
                 return self._redirect('/user/inbox?gmail=declined')
@@ -216,6 +215,12 @@ class Handler(BaseHTTPRequestHandler):
                         url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')))
                 except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
                 return self._json(200,{'authorization_url':url})
+            if path == '/api/connectors/gmail/sync' and self.command == 'POST':
+                with self._db() as db:
+                    if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
+                if not gmail_web.configured(self.gmail_config): raise RequestError(503,'Gmail is not configured')
+                # Runs in the background: a full sync outlasts proxy timeouts. Poll /status for progress.
+                return self._json(202,{'sync':gmail_web.start_sync(self.db_path,self.gmail_config,session['id'])})
             if path == '/api/connectors/gmail/disconnect' and self.command == 'POST':
                 with self._db() as db: gmail_web.disconnect(db,session['id'])
                 return self._json(200,{'connected':False})
@@ -248,17 +253,40 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(200,{'deleted':True})
             raise RequestError(404,'Not found')
         if path == '/api/connectors/gmail/status':
-            with self._db() as db: connected = gmail_web.status(db,session['id'])
-            return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected})
-        if path == '/api/connectors/gmail/messages':
-            try:
-                with self._db() as db: rows = gmail_web.inbox(db,self.gmail_config,session['id'])
-            except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
-            except gmail_web.GmailReadError as exc: raise RequestError(424,str(exc)) from None  # 4xx: Cloudflare replaces origin 502/504 with an HTML page
-            return self._json(200,{'messages':rows,'mode':'gmail','read_only':True})
+            with self._db() as db:
+                connected = gmail_web.status(db,session['id'])
+                stamp = gmail_web.last_sync(db,session['id']) if connected else None
+                stored = gmail_web.stored_count(db,session['id']) if connected else 0
+                counts = gmail_web.folder_counts(db,session['id']) if connected else {'inbox':0,'sent':0}
+            return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,
+                                   'last_sync':stamp,'stored':stored,'counts':counts,'sync':gmail_web.sync_progress(session['id'])})
+        if path == '/api/connectors/gmail/messages':  # Local copy only; POST /sync talks to Gmail.
+            folder = parse_qs(urlparse(self.path).query).get('folder',['inbox'])[0]
+            if folder not in gmail_web.FOLDERS: raise RequestError(400,'Unknown folder')
+            with self._db() as db:
+                if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
+                rows,stamp = gmail_web.cached_inbox(db,session['id'],folder),gmail_web.last_sync(db,session['id'])
+            return self._json(200,{'messages':rows,'folder':folder,'last_sync':stamp,'read_only':True})
         if path == '/api/session':
             return self._json(200,{'csrf_token':session['csrf_token'],'user':{'username':session['username'],'role':session['role']}})
         parts = path.strip('/').split('/')
+        if parts[:4]==['api','connectors','gmail','messages'] and len(parts) in (5,7,8):
+            if len(parts)==5:
+                return self._json(200,{'message':self._gmail_message(session,parts[4])})
+            if parts[5]=='attachments' and parts[6].isdigit() and len(parts) in (7,8):
+                with self._db() as db: row = gmail_web.attachment(db,session['id'],parts[4],int(parts[6]))
+                if row is None: raise RequestError(404,'Attachment not found')
+                if row['content'] is None: raise RequestError(404,'Attachment content was not stored ('+(row['skipped_reason'] or 'unavailable')+')')
+                content = bytes(row['content'])
+                if len(parts)==8 and parts[7]=='preview':
+                    if not (row['mime_type'] in ('text/plain','text/csv') or row['filename'].lower().endswith(('.txt','.csv'))):
+                        raise RequestError(415,'Preview is available for text and CSV files only')
+                    return self._json(200,{'name':row['filename'],'mime_type':row['mime_type'],'trusted':False,
+                                           'content':content[:65536].decode('utf-8','replace'),'truncated':len(content)>65536})
+                if len(parts)==7:  # Always a download: never rendered inline and never trusted for its declared type.
+                    safe = ''.join(c if c.isalnum() or c in '._-' else '_' for c in row['filename'])[:100] or 'attachment'
+                    disposition = f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(row['filename'])}"
+                    return self._send(200,content,'application/octet-stream',(('Content-Disposition',disposition),))
         if len(parts)==6 and parts[:4]==['api','connectors','gmail','messages'] and parts[5]=='proposal':
             return self._json(200,proposal(self._gmail_message(session,parts[4])))
         if path == '/api/tasks/summary':

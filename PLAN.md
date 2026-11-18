@@ -16,7 +16,8 @@ Updated 2026-11-18. Internal validation on a Scyllarus subdomain is the near-ter
 
 - [x] Gmail connections and task queries are scoped to the signed-in app user. The service still has one bootstrapped administrator; legacy task uniqueness needs migration before multiuser rollout.
 - [x] Web OAuth with session-bound state and PKCE, encrypted refresh token storage, and explicit connect/reconnect/disconnect. The Desktop prototype remains separate.
-- [ ] Gmail pagination, incremental history sync, retry/backoff, account-scoped deduplication and deleted/moved-message reconciliation. The existing connector only reads IDs and metadata.
+- [x] Full mail mirrored into SQLite (`gmail_messages`, `gmail_attachments`): complete headers, text/HTML bodies, labels and size-capped attachments; background sync with progress, resumable, paginated up to a configured limit; reading is local; disconnect deletes the copy. Open: Gmail history-API incremental sync, sent mail/threads, at-rest encryption of the mail tables, retention policy.
+- [ ] Gmail pagination, history-API incremental sync, retry/backoff, account-scoped deduplication and deleted/moved-message reconciliation. The existing connector only reads IDs and metadata.
 - [ ] Privacy review, encrypted backups, retention policy and operational monitoring before ingesting real correspondence.
 - [ ] Optional AI extraction behind configuration, with cited evidence, uncertainty labels and no provider secrets in code.
 - [ ] Reminder delivery design; no background reminders are currently scheduled.

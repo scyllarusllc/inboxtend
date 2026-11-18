@@ -44,7 +44,8 @@ const paths = {
   history:[['path',{d:'M3 12a9 9 0 1 0 3-6.7L3 8'}],['path',{d:'M3 3v5h5'}],['path',{d:'M12 7v5l4 2'}]],
   check:[['path',{d:'M20 6 9 17l-5-5'}]],
   plus:[['path',{d:'M12 5v14'}],['path',{d:'M5 12h14'}]],
-  mail:[['rect',{x:2,y:4,width:20,height:16,rx:2}],['path',{d:'m22 7-10 6L2 7'}]]
+  mail:[['rect',{x:2,y:4,width:20,height:16,rx:2}],['path',{d:'m22 7-10 6L2 7'}]],
+  paperclip:[['path',{d:'M13.5 6.5 7 13a3 3 0 0 0 4.24 4.24l7.07-7.07a5 5 0 0 0-7.07-7.07l-7.78 7.78a7 7 0 0 0 9.9 9.9L20 14'}]]
 };
 function icon(name) {
   const ns='http://www.w3.org/2000/svg';

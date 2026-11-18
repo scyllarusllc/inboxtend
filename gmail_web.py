@@ -4,7 +4,10 @@ import base64
 import hashlib
 import json
 import secrets
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import closing
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -12,7 +15,8 @@ try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except ImportError:  # Everything except Gmail works without the optional dependency.
     AESGCM = None
-from connectors.gmail_readonly import SCOPES, GmailReadError, list_message_ids, get_message_metadata
+from connectors.gmail_readonly import SCOPES, GmailReadError, list_message_ids, get_message_full, get_attachment
+from tasks import connection
 
 AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 TOKEN = 'https://oauth2.googleapis.com/token'
@@ -112,6 +116,8 @@ def disconnect(db,user_id):
     with db:
         db.execute('DELETE FROM gmail_oauth_pending WHERE user_id=?',(user_id,))
         db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))
+        db.execute('DELETE FROM gmail_attachments WHERE user_id=?',(user_id,))  # Disconnecting also removes the local copy
+        db.execute('DELETE FROM gmail_messages WHERE user_id=?',(user_id,))
 
 def _access_token(db,config,user_id,*,opener=urlopen):
     row = db.execute('SELECT refresh_token FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
@@ -130,21 +136,193 @@ def _access_token(db,config,user_id,*,opener=urlopen):
         raise GmailConnectionError('Google did not return read-only access')
     return result['access_token']
 
-def _summary(item):
-    headers = item['headers']
-    return {'id':item['id'],'thread_id':item['thread_id'],
-            'from':headers.get('from',''),'subject':headers.get('subject',''),
-            'date':headers.get('date',''),'snippet':item['snippet']}
+DEFAULTS = {'INBOX_TEND_SYNC_QUERY':'in:inbox','INBOX_TEND_SYNC_SENT_QUERY':'in:sent','INBOX_TEND_SYNC_MAX_MESSAGES':200,
+            'INBOX_TEND_ATTACHMENT_MAX_BYTES':10 * 1024 * 1024}
 
-def inbox(db,config,user_id,*,opener=urlopen):
+def _int_setting(config,key,lo,hi):
+    try: value = int(config.get(key,DEFAULTS[key]))
+    except (TypeError,ValueError): value = DEFAULTS[key]
+    return max(lo,min(hi,value))
+
+def sync_settings(config):
+    query = str(config.get('INBOX_TEND_SYNC_QUERY') or DEFAULTS['INBOX_TEND_SYNC_QUERY'])[:1024]
+    sent_query = str(config.get('INBOX_TEND_SYNC_SENT_QUERY') or DEFAULTS['INBOX_TEND_SYNC_SENT_QUERY'])[:1024]
+    return {'query':query,'sent_query':sent_query,'max_messages':_int_setting(config,'INBOX_TEND_SYNC_MAX_MESSAGES',1,5000),
+            'attachment_max':_int_setting(config,'INBOX_TEND_ATTACHMENT_MAX_BYTES',0,100 * 1024 * 1024)}
+
+def _row(r):
+    return {'id':r['message_id'],'thread_id':r['thread_id'],'from':r['from_addr'],'to':r['to_addr'],
+            'subject':r['subject'],'date':r['date_header'],'snippet':r['snippet'],
+            'direction':'sent' if '"SENT"' in (r['label_ids'] or '') else 'received'}
+
+def _fetch(token,message_id,attachment_max):
+    """Network only (runs in worker threads): the message plus the attachments small enough to keep."""
+    item = get_message_full(token,message_id)
+    for a in item['attachments']:
+        content, reason = a.pop('data'), ''
+        if content is None and a.get('attachment_id'):
+            if a['size'] > attachment_max: reason = 'larger than the size limit'
+            else:
+                try: content = get_attachment(token,message_id,a['attachment_id'],max_bytes=attachment_max)
+                except (GmailReadError,ValueError): reason = 'download failed'
+        elif content is None: reason = 'no content'
+        if content is not None and len(content) > attachment_max: content, reason = None, 'larger than the size limit'
+        a['content'], a['skipped_reason'] = content, reason
+    return item
+
+def _store(db,user_id,item,in_inbox=0):  # Folder flags are set on insert only; run_sync's reconcile owns them afterwards.
+    h = item['headers']
+    db.execute('''INSERT INTO gmail_messages
+        (user_id,message_id,thread_id,from_addr,subject,date_header,snippet,internal_date,in_inbox,fetched_at,
+         to_addr,cc_addr,label_ids,headers_json,body_text,body_html,size_estimate,has_full)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+        ON CONFLICT(user_id,message_id) DO UPDATE SET thread_id=excluded.thread_id,from_addr=excluded.from_addr,
+          subject=excluded.subject,date_header=excluded.date_header,snippet=excluded.snippet,
+          internal_date=excluded.internal_date,fetched_at=excluded.fetched_at,
+          to_addr=excluded.to_addr,cc_addr=excluded.cc_addr,label_ids=excluded.label_ids,
+          headers_json=excluded.headers_json,body_text=excluded.body_text,body_html=excluded.body_html,
+          size_estimate=excluded.size_estimate,has_full=1''',
+        (user_id,item['id'],item.get('thread_id') or '',h.get('from',''),h.get('subject',''),h.get('date',''),
+         item.get('snippet',''),item.get('internal_date',0),in_inbox,int(time.time()),
+         h.get('to',''),h.get('cc',''),json.dumps(item.get('label_ids',[])),json.dumps(item.get('all_headers',[])),
+         item.get('body_text',''),item.get('body_html',''),item.get('size_estimate',0)))
+    db.execute('DELETE FROM gmail_attachments WHERE user_id=? AND message_id=?',(user_id,item['id']))
+    for a in item.get('attachments',[]):
+        db.execute('INSERT INTO gmail_attachments(user_id,message_id,part_id,filename,mime_type,size_bytes,content,skipped_reason) '
+                   'VALUES (?,?,?,?,?,?,?,?)',(user_id,item['id'],a['part_id'],a['filename'],a['mime_type'],
+                   len(a['content']) if a['content'] is not None else a['size'],a['content'],a['skipped_reason']))
+
+def last_sync(db,user_id):
+    row = db.execute('SELECT last_sync FROM gmail_connections WHERE user_id=?',(user_id,)).fetchone()
+    return row['last_sync'] if row else None
+
+FOLDERS = {'inbox':'in_inbox','sent':'in_sent'}
+
+def cached_inbox(db,user_id,folder='inbox'):
+    """Folder rows from the local SQLite copy; makes no Gmail request."""
+    column = FOLDERS[folder]
+    rows = db.execute('SELECT m.*,(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
+                      f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1 ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,))
+    return [dict(_row(r),attachment_count=r['n_att']) for r in rows]
+
+def folder_counts(db,user_id):
+    row = db.execute('SELECT COALESCE(SUM(in_inbox),0),COALESCE(SUM(in_sent),0) FROM gmail_messages WHERE user_id=?',(user_id,)).fetchone()
+    return {'inbox':row[0],'sent':row[1]}
+
+def stored_count(db,user_id):
+    return db.execute('SELECT COUNT(*) FROM gmail_messages WHERE user_id=? AND has_full=1',(user_id,)).fetchone()[0]
+
+def _listing(token,query,limit):
+    ids, page = [], None
+    while len(ids) < limit:
+        result = list_message_ids(token,max_results=min(100,limit - len(ids)),query=query,page_token=page)
+        ids += result['message_ids']
+        page = result['next_page_token']
+        if not page or not result['message_ids']: break
+    return ids[:limit]
+
+def _reconcile(db,user_id,column,ids):
+    """Flag listed messages as in the folder; stored ones newer than the oldest listed message but absent
+    from the listing have left it (archived, deleted, moved) and are unflagged but kept."""
+    if not ids:
+        db.execute(f'UPDATE gmail_messages SET {column}=0 WHERE user_id=?',(user_id,)); return
+    marks = ','.join('?' * len(ids))
+    db.execute(f'UPDATE gmail_messages SET {column}=1 WHERE user_id=? AND message_id IN ({marks})',(user_id,*ids))
+    floor = db.execute(f'SELECT MIN(internal_date) FROM gmail_messages WHERE user_id=? AND message_id IN ({marks})',
+                       (user_id,*ids)).fetchone()[0] or 0
+    db.execute(f'UPDATE gmail_messages SET {column}=0 WHERE user_id=? AND {column}=1 AND internal_date>=? '
+               f'AND message_id NOT IN ({marks})',(user_id,floor,*ids))
+
+def run_sync(db,config,user_id,*,report=lambda **kw: None,opener=urlopen):
+    """Download every inbox and sent message not stored in full yet (bodies and attachments), then reconcile
+    the folder flags. Each message is committed as it arrives, so an interrupted sync resumes where it stopped."""
+    settings = sync_settings(config)
     token = _access_token(db,config,user_id,opener=opener)
-    ids = list_message_ids(token,max_results=20,query='in:inbox')
-    return [_summary(get_message_metadata(token,message_id)) for message_id in ids['message_ids']]
+    inbox_ids = _listing(token,settings['query'],settings['max_messages'])
+    sent_ids = _listing(token,settings['sent_query'],settings['max_messages'])
+    have_full = {r[0] for r in db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND has_full=1',(user_id,))}
+    todo = [i for i in dict.fromkeys(inbox_ids + sent_ids) if i not in have_full]
+    done = failed = 0
+    first_error = None
+    report(total=len(todo),done=0,failed=0)
+    if todo:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_fetch,token,i,settings['attachment_max']):i for i in todo}
+            for future in as_completed(futures):
+                try:
+                    item = future.result()
+                    with db: _store(db,user_id,item)
+                    done += 1
+                except (GmailReadError,ValueError) as exc:
+                    failed += 1; first_error = first_error or str(exc)
+                report(done=done,failed=failed)
+    if todo and not done:
+        raise GmailReadError(first_error or 'No messages could be downloaded')
+    with db:
+        _reconcile(db,user_id,'in_inbox',inbox_ids)
+        _reconcile(db,user_id,'in_sent',sent_ids)
+        db.execute('UPDATE gmail_connections SET last_sync=? WHERE user_id=?',(int(time.time()),user_id))
+    if failed:
+        report(error=f'{failed} message(s) could not be downloaded; press Refresh to retry.')
+
+# Progress of the background sync, per app user (in memory; a restart simply ends a running sync).
+_PROGRESS, _LOCK = {}, threading.Lock()
+
+def sync_progress(user_id):
+    with _LOCK:
+        return dict(_PROGRESS.get(user_id) or {'running':False,'total':0,'done':0,'failed':0,'error':None})
+
+def _update(user_id,**fields):
+    with _LOCK:
+        _PROGRESS.setdefault(user_id,{'running':False,'total':0,'done':0,'failed':0,'error':None}).update(fields)
+
+def _background(db_path,config,user_id):
+    problem = None
+    try:
+        with closing(connection(db_path)) as db:
+            run_sync(db,config,user_id,report=lambda **kw: _update(user_id,**kw))
+    except (GmailConnectionError,GmailReadError) as exc: problem = str(exc)
+    except Exception: problem = 'Sync failed unexpectedly'
+    _update(user_id,running=False,**({'error':problem} if problem else {}))
+
+def start_sync(db_path,config,user_id):
+    """Start a sync thread unless one is already running for this user. Returns the current progress."""
+    with _LOCK:
+        current = _PROGRESS.get(user_id)
+        if current and current['running']: return dict(current)
+        _PROGRESS[user_id] = {'running':True,'total':0,'done':0,'failed':0,'error':None}
+    threading.Thread(target=_background,args=(db_path,config,user_id),daemon=True,name=f'gmail-sync-{user_id}').start()
+    return sync_progress(user_id)
 
 def message(db,config,user_id,message_id,*,opener=urlopen):
-    """Fetch one message's headers and snippet for the signed-in user (never trusts client-supplied content)."""
+    """One complete message from the local copy; Gmail is contacted only if it is missing or stored without its body."""
+    if not isinstance(message_id,str) or not message_id:
+        raise GmailReadError('Invalid message ID')
+    row = db.execute('SELECT * FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,message_id)).fetchone()
+    if row and row['has_full']: return _detail(db,user_id,row)
     token = _access_token(db,config,user_id,opener=opener)
-    try:
-        return _summary(get_message_metadata(token,message_id))
-    except ValueError:
-        raise GmailReadError('Invalid message ID') from None
+    try: item = _fetch(token,message_id,sync_settings(config)['attachment_max'])
+    except ValueError: raise GmailReadError('Invalid message ID') from None
+    with db: _store(db,user_id,item)
+    return _detail(db,user_id,db.execute('SELECT * FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,item['id'])).fetchone())
+
+def _detail(db,user_id,row):
+    detail = _row(row)
+    detail.update({'to':row['to_addr'],'cc':row['cc_addr'],'labels':json.loads(row['label_ids'] or '[]'),
+                   'body_text':row['body_text'],'has_html':bool(row['body_html']),'size_estimate':row['size_estimate'],
+                   'headers':json.loads(row['headers_json'] or '[]'),
+                   'attachments':[{'id':a['id'],'name':a['filename'],'mime_type':a['mime_type'],'size_bytes':a['size_bytes'],
+                                   'stored':bool(a['has_content']),'skipped_reason':a['skipped_reason']}
+                                  for a in db.execute('SELECT id,filename,mime_type,size_bytes,skipped_reason,content IS NOT NULL AS has_content FROM gmail_attachments '
+                                                      'WHERE user_id=? AND message_id=? ORDER BY id',(user_id,row['message_id']))]})
+    if row['thread_id']:
+        detail['thread'] = [dict(_row(t),) for t in db.execute(
+            'SELECT * FROM gmail_messages WHERE user_id=? AND thread_id=? AND has_full=1 ORDER BY internal_date, message_id',
+            (user_id,row['thread_id']))]
+    else:
+        detail['thread'] = []
+    return detail
+
+def attachment(db,user_id,message_id,attachment_id):
+    return db.execute('SELECT * FROM gmail_attachments WHERE user_id=? AND message_id=? AND id=?',
+                      (user_id,message_id,attachment_id)).fetchone()
