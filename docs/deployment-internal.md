@@ -1,5 +1,13 @@
 # Internal subdomain status and deployment plan
 
+## 2026-11-18 Gmail Web OAuth deployment
+
+The reviewed application is staged at `/srv/inboxtend/current` and runs with `make dev PORT=8765` as the dedicated `inboxtend` user. This remains a manually managed process; no application systemd service was installed. Code is owned by root and readable by the service group. The private `.env` and SQLite database are owned by `inboxtend` with mode `600`; the data directory has mode `700`. A predeployment SQLite Backup API copy and private rollback instructions are under `/srv/inboxtend/backups` and `/srv/inboxtend/rollback/RESTART.txt`.
+
+Caddy continues to proxy only this host to `127.0.0.1:8765`. Its Inbox Tend rule preserves the browser `Origin` while rewriting the upstream `Host`; the app accepts the configured HTTPS origin for writes. No Caddy access log directive is enabled. The proxy configuration was validated and reloaded after changing only this site's Origin rule.
+
+The full staged suite passed under the service account. Public HTTPS checks showed unauthenticated Gmail APIs return `401`; a temporary signed-in session saw Gmail configured but disconnected; cross-origin writes returned `403`, same-origin writes with CSRF returned `200`, and missing-CSRF writes returned `403`. The temporary session was revoked. No Google consent or real-mail read occurred. The operator must still personally approve the exact Gmail read-only scope on Google's consent screen before the mailbox connects.
+
 Target: `https://inboxtend.scyllar.us`. On 2026-11-18, Cloudflare was set to Full (strict) by the operator and this VM's Caddy was configured on 80/443 with a proxy to `127.0.0.1:8765`. HTTP redirects to HTTPS. The app serves public `/` and `/login` pages and requires its own session for `/user/dashboard` and data APIs. The initial admin username and password hash are in the Git-ignored, root-only `.env` file; the `users` table stores a password hash. The app is started manually with `make dev` by the operator, so availability depends on that process. It is still a fictional single-user demo, not a real-mail service.
 
 ## 2026-11-18 routing check

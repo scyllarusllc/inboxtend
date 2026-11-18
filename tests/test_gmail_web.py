@@ -106,6 +106,18 @@ class GmailWebTests(unittest.TestCase):
                 handler._route(write=method=='POST')
             self.assertEqual(error.exception.status,401)
 
+    def test_proxy_preserves_public_origin_for_csrf_check(self):
+        handler = Handler.__new__(Handler)
+        handler.gmail_config = CONFIG
+        handler.headers = Message()
+        handler.headers['Host'] = '127.0.0.1:8765'
+        handler.headers['Origin'] = 'https://inboxtend.scyllar.us'
+        handler._same_origin()
+        handler.headers.replace_header('Origin','https://evil.example')
+        with self.assertRaises(RequestError) as error:
+            handler._same_origin()
+        self.assertEqual(error.exception.status,403)
+
     def test_task_queries_are_user_scoped(self):
         message={'id':'demo-one','thread_id':'thread-one','provider':'demo'}
         fields={'title':'Private task','description':'Private note','priority':'low'}

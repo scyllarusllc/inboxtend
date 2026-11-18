@@ -175,8 +175,13 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             raise RequestError(403,'Invalid Host')
         origin = self.headers.get('Origin')
-        expected = 'http://' + self.headers['Host']
-        if origin and origin != expected:
+        allowed = {'http://' + self.headers['Host']}
+        redirect = self.gmail_config.get('INBOX_TEND_GOOGLE_REDIRECT_URI','')
+        if redirect:
+            public = urlparse(redirect)
+            if public.scheme == 'https' and public.netloc:
+                allowed.add('https://' + public.netloc)
+        if origin and origin not in allowed:
             raise RequestError(403,'Cross-origin write blocked')
         if self.headers.get('Sec-Fetch-Site') == 'cross-site':
             raise RequestError(403,'Cross-site write blocked')
