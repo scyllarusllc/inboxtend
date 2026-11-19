@@ -245,6 +245,13 @@ function renderTasks() {
       try{
         const result=await request('/api/tasks/'+task.id+'/events');
         const ordered=el('ol');
+        const mockStates={
+          submitting:'Mock dispatch requested',
+          queued_mock:'Mock task queued — not executed',
+          cancelled:'Mock cancellation confirmed',
+          dispatch_error:'Mock dispatch uncertain',
+          recovery_needed:'Mock job missing — recovery needed'
+        };
         for(const event of result.events){
           let changes=event.changes;
           if(typeof changes==='string'){
@@ -252,10 +259,21 @@ function renderTasks() {
           }
           const timestamp=new Date(event.created_at);
           const when=Number.isNaN(timestamp.getTime())?event.created_at:timestamp.toLocaleString();
-          const line=el('li',event.action+' · '+when);
-          line.append(el('div',typeof changes==='string'?changes:JSON.stringify(changes),'meta'));
+          const isMock=event.action==='agent_status_updated' && changes &&
+            typeof changes==='object' && !Array.isArray(changes);
+          const title=isMock
+            ? (mockStates[changes.status] || 'AgentSteers mock status updated')
+            : event.action.replaceAll('_',' ');
+          const line=el('li',title+' · '+when);
+          if(isMock){
+            if(changes.task_id)line.append(el('div','Mock job ID: '+changes.task_id,'meta'));
+            line.append(el('div','Simulation only; no real AI worker execution is implied.','meta'));
+          } else if(changes!==null && changes!==undefined) {
+            line.append(el('div',typeof changes==='string'?changes:JSON.stringify(changes),'meta'));
+          }
           ordered.append(line);
         }
+        if(!result.events.length)ordered.append(el('li','No saved activity yet.'));
         placeholder.replaceWith(ordered);history.dataset.loaded='true';
       }catch(error){placeholder.textContent='Could not load history: '+error.message;}
     });
