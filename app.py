@@ -449,6 +449,15 @@ class Handler(BaseHTTPRequestHandler):
                             return self._json(200,{'draft':ai.draft_reply(self.gmail_config,message,files,guidance,user),'sent':False,'template':False,'ai':True})
                 except ai.AIBusy as exc: raise RequestError(429,str(exc)) from None
                 except ai.AIError as exc: raise RequestError(424,str(exc)) from None
+            if path == '/api/agentsteers/probe' and self.command == 'POST':
+                # Authenticated same-origin request with CSRF, read-only remote ping.
+                try:
+                    info = agentsteers_bridge.probe()
+                except agentsteers_bridge.BridgeError as exc:
+                    return self._json(200,{'bridge':{
+                        'state':'connection_failed','can_dispatch':False,
+                        'message':'AgentSteers mock connection unavailable: '+str(exc)[:120]}})
+                return self._json(200,{'bridge':info})
             if path == '/api/auth/logout' and self.command == 'POST':
                 self.auth_manager.revoke(cookie_token(self.headers.get('Cookie')))
                 return self._json(200,{'signed_out':True},
