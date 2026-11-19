@@ -54,6 +54,8 @@ def connection(path=DEFAULT_DB):
         'revision': 'INTEGER NOT NULL DEFAULT 1',
         'assigned_agent': "TEXT NOT NULL DEFAULT ''",
         'agent_status': "TEXT NOT NULL DEFAULT 'unassigned'",
+        'agentsteers_job_id': "TEXT NOT NULL DEFAULT ''",
+        'agentsteers_result': "TEXT NOT NULL DEFAULT ''",
         'user_id': 'INTEGER NOT NULL DEFAULT 1',
     }
     with db:
@@ -323,6 +325,59 @@ def update_task(db, task_id, fields, user_id=1):
         db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES (?,?,?,?)',
                    (task_id,'updated',json.dumps(changes),now))
     return get_task(db,task_id,user_id=user_id)
+
+
+def reserve_agentsteers_dispatch(db, task_id, revision, user_id=1):
+    """Atomically reserve explicit dispatch; never allow a second submission."""
+    now = _now()
+    with db:
+        row = db.execute("SELECT * FROM tasks WHERE id=? AND user_id=?", (task_id, user_id)).fetchone()
+        if row is None:
+            return None
+        if row["revision"] != revision:
+            raise ConflictError("Task changed; reload before dispatching")
+        if row["review_state"] != "reviewed" or row["status"] == "done":
+            raise ValueError("Only reviewed, unfinished tasks may be dispatched")
+        if row["agentsteers_job_id"] or row["agent_status"] == "submitting":
+            raise ConflictError("Task already dispatched or being submitted")
+        db.execute("""UPDATE tasks SET assigned_agent='AgentSteers Mock',
+            agent_status='submitting', agentsteers_result='', revision=revision+1,
+            updated_at=? WHERE id=? AND user_id=?""", (now, task_id, user_id))
+        db.execute("INSERT INTO task_events(task_id,action,changes,created_at) VALUES (?,?,?,?)",
+                   (task_id, "agent_dispatch_requested",
+                    json.dumps({"mode": "mock", "approved": True}), now))
+    return get_task(db, task_id, user_id=user_id)
+
+
+def record_agentsteers_update(db, task_id, user_id, status, job_id=None, result=None):
+    """Persist only a known mock task status/result, scoped to the task owner."""
+    allowed = {"queued_mock", "cancelled", "submitting", "dispatch_error"}
+    if status not in allowed:
+        raise ValueError("Unknown mock agent status")
+    if job_id is not None and (not isinstance(job_id, str) or len(job_id) != 32 or
+                               any(c not in "0123456789abcdef" for c in job_id)):
+        raise ValueError("Invalid agent task identifier")
+    now = _now()
+    with db:
+        row = db.execute("SELECT * FROM tasks WHERE id=? AND user_id=?", (task_id, user_id)).fetchone()
+        if row is None:
+            return None
+        # Never let another task replace an already recorded remote job.
+        if job_id and row["agentsteers_job_id"] and row["agentsteers_job_id"] != job_id:
+            raise ConflictError("Conflicting agent task identifier")
+        if job_id and row["agent_status"] not in ("submitting", "queued_mock", "cancelled"):
+            raise ConflictError("Task was not approved for dispatch")
+        if not job_id and status == "dispatch_error" and row["agent_status"] != "submitting":
+            raise ConflictError("Task is not being dispatched")
+        text_result = json.dumps(result or {}, ensure_ascii=False)[:4000]
+        db.execute("""UPDATE tasks SET agent_status=?, agentsteers_job_id=?,
+            agentsteers_result=?, revision=revision+1, updated_at=?
+            WHERE id=? AND user_id=?""",
+            (status, job_id or row["agentsteers_job_id"], text_result, now, task_id, user_id))
+        db.execute("INSERT INTO task_events(task_id,action,changes,created_at) VALUES (?,?,?,?)",
+                   (task_id, "agent_status_updated",
+                    json.dumps({"status": status, "task_id": job_id or row["agentsteers_job_id"]}), now))
+    return get_task(db, task_id, user_id=user_id)
 
 
 def events(db, task_id, user_id=1):
