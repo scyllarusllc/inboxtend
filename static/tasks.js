@@ -9,6 +9,8 @@ let agentSteersReadiness={state:'checking',can_dispatch:false,message:'Checking 
 const pendingAgentDispatches=new Set();
 let agentSteersVerifiedThisPage=false;
 let agentSteersQueue=null;
+let agentSteersQueueCheckedAt=null;
+let agentSteersQueueError=null;
 let syncInFlight=false;
 let nextSyncOffset=0;
 // Shared controls used in both the task list and expanded task details.
@@ -44,6 +46,7 @@ function makeAgentSteersControls(task) {
         await request('/api/tasks/'+task.id+'/agentsteers-dispatch','POST',
                       {revision:task.revision,confirm:'DISPATCH MOCK'});
         notify('Mock task submitted to AgentSteers. No code or email was executed.');
+        await loadMockQueueSummary();
         await refreshTasks();
       } catch(error) { notify(error.message,true); dispatch.disabled=false; }
       finally { pendingAgentDispatches.delete(task.id); }
@@ -72,6 +75,7 @@ function makeAgentSteersControls(task) {
           await request('/api/tasks/'+task.id+'/agentsteers-cancel','POST',
                         {revision:task.revision,confirm:'CANCEL MOCK'});
           notify('AgentSteers mock task cancellation confirmed.');
+          await loadMockQueueSummary();
           await refreshTasks();
         } catch(error) {
           notify(error.message+' — refresh the AgentSteers status to reconcile.',true);
@@ -132,6 +136,21 @@ function makeEditForm(task) {
   });
   return form;
 }
+async function loadMockQueueSummary() {
+  // A missing or failed read is never represented as a live zero count.
+  agentSteersQueue=null;
+  agentSteersQueueCheckedAt=null;
+  agentSteersQueueError=null;
+  if(!agentSteersVerifiedThisPage)return;
+  try {
+    const response=await request('/api/agentsteers/queue-summary','POST',{});
+    agentSteersQueue=response.queue;
+    agentSteersQueueCheckedAt=new Date();
+  } catch(_) {
+    agentSteersQueueError='Remote mock queue unavailable. Recheck the connection.';
+  }
+}
+
 function renderTasks() {
   taskList.replaceChildren();
   const readiness=el('p','AgentSteers mock: '+agentSteersReadiness.message,'meta');
@@ -139,10 +158,11 @@ function renderTasks() {
   taskList.append(readiness);
   if(agentSteersVerifiedThisPage) {
     const queue=el('p',agentSteersQueue
-      ? 'Remote mock queue · Total: '+agentSteersQueue.total+
+      ? 'Remote mock queue snapshot · Total: '+agentSteersQueue.total+
         ' · Queued: '+agentSteersQueue.queued_mock+
-        ' · Cancelled: '+agentSteersQueue.cancelled
-      : 'Remote mock queue counts not loaded. Check the AgentSteers connection.',
+        ' · Cancelled: '+agentSteersQueue.cancelled+
+        ' · Checked: '+agentSteersQueueCheckedAt.toLocaleTimeString()
+      : (agentSteersQueueError || 'Remote mock queue not yet checked.'),
       'meta');
     taskList.append(queue);
   }
@@ -165,20 +185,15 @@ function renderTasks() {
         const data=await request('/api/agentsteers/probe','POST',{});
         agentSteersReadiness=data.bridge;
         agentSteersVerifiedThisPage=data.bridge.state==='connected_mock';
-        agentSteersQueue=null;
-        if(agentSteersVerifiedThisPage) {
-          try {
-            const summary=await request('/api/agentsteers/queue-summary','POST',{});
-            agentSteersQueue=summary.queue;
-          } catch(error) {
-            notify('Connected, but mock queue summary is unavailable: '+error.message,true);
-          }
-        }
-        notify(agentSteersReadiness.message,!agentSteersVerifiedThisPage);
+        await loadMockQueueSummary();
+        notify(agentSteersQueueError || agentSteersReadiness.message,
+               Boolean(agentSteersQueueError) || !agentSteersVerifiedThisPage);
         renderTasks();
       } catch(error) {
         agentSteersVerifiedThisPage=false;
         agentSteersQueue=null;
+        agentSteersQueueCheckedAt=null;
+        agentSteersQueueError='Connection lost; remote queue snapshot is unavailable.';
         agentSteersReadiness={state:'connection_failed',can_dispatch:false,
           message:'Connection check failed: '+error.message};
         notify(agentSteersReadiness.message,true);
@@ -317,6 +332,8 @@ async function refreshTasks() {
     } else if(agentSteersReadiness.state!=='configured_unverified') {
       agentSteersVerifiedThisPage=false;
       agentSteersQueue=null;
+      agentSteersQueueCheckedAt=null;
+      agentSteersQueueError=null;
     }
     const summary=overview.summary;
     taskSummary.replaceChildren();
@@ -347,18 +364,15 @@ async function syncOneMockJob() {
   try {
     await request('/api/tasks/'+job.id+'/agentsteers-refresh','POST',{});
     await refreshTasks();
-    try {
-      const summary=await request('/api/agentsteers/queue-summary','POST',{});
-      agentSteersQueue=summary.queue;
-      renderTasks();
-    } catch(_) {
-      agentSteersQueue=null;
-      renderTasks();
-    }
+    await loadMockQueueSummary();
+    renderTasks();
   } catch(_) {
     // A dropped connection is not a completed task. Keep the last saved state;
     // manual refresh and the connection check remain available.
     agentSteersVerifiedThisPage=false;
+    agentSteersQueue=null;
+    agentSteersQueueCheckedAt=null;
+    agentSteersQueueError='Connection lost; remote queue snapshot is unavailable.';
     agentSteersReadiness={state:'connection_failed',can_dispatch:false,
       message:'AgentSteers status sync stopped after a connection error. Recheck connection.'};
     renderTasks();
