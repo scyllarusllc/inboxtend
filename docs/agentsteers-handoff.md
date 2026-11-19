@@ -14,6 +14,16 @@ When the bridge is not ready, both dispatch controls are hidden. When configured
 
 A failed or uncertain dispatch is intentionally **not retried automatically**. If a mock remote accepted the task but the network response was lost, resubmitting could create a duplicate. Resolve and reconcile that state deliberately.
 
+## Tasks page: configuration and demo entry
+
+The Tasks list shows a **mock bridge status** message and a link to this guide. States are **disabled**, **needs_configuration**, **invalid_configuration**, and **configured_unverified**. The status only reflects local configuration; it does not claim remote connectivity.
+
+When locally configured, select **Check AgentSteers connection** to make an authenticated **read-only MCP ping**. Only a successful ping produces **connected_mock** in the current browser page; this does not prove worker or Codex execution. On connection failure, the page disables dispatch until the operator resolves the problem and the connection check succeeds.
+
+The existing **make demo** command rebuilds a *separate, disposable* local SQLite demo database. In **Tasks**, look for **Review student registration form issue (mock handoff)** with the **Fictional demo task** label. The demo task is deliberately tagged `source_provider=demo`; no genuine Gmail or production task is created. The example does not automatically dispatch or invoke any remote service. **Never run the destructive demo seed against a real user database.**
+
+If connectivity has been checked, the page may poll one `queued_mock` job per minute while the page is visible. A restart of the AgentSteers in-memory mock server can invalidate the job ID; a missing job is *not* evidence of task completion.
+
 ## User flow
 
 1. Use an existing *reviewed* task saved from a Gmail message (or a task already in the database).
