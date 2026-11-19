@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="/static/vendor/fontawesome/css/regular.min.css">
   <link rel="stylesheet" href="/static/vendor/flag-icons/css/flag-icons.min.css">
   <link rel="stylesheet" href="/static/styles.css">
-<script src="/static/common.js" defer></script><script src="/static/inbox.js" defer></script>
+<script src="/static/common.js" defer></script><script src="/static/inbox.js" defer></script><script src="/static/vendor/chartjs/chart.umd.min.js" defer></script><script src="/static/stats.js" defer></script>
 </head>
 <body id="top">
   <a class="skip-link" href="#main">Skip to main content</a>
@@ -23,19 +23,20 @@
     </div>
   </header>
   <main id="main" class="page-shell">
-    <section class="page-intro" aria-labelledby="page-title">
-      <div>
-        <p class="eyebrow">Your workspace</p>
-        <h1 id="page-title">Inbox</h1>
-        <p class="intro-copy">Open a message from your Gmail inbox, review the suggested task, and save it to your task list.</p>
+    <section class="stats-hero" aria-labelledby="page-title">
+      <h1 id="page-title" class="sr-only">Inbox</h1>
+      <div id="stat-tiles" class="stat-tiles" hidden></div>
+      <div id="stat-charts" class="stat-charts" hidden>
+        <figure class="panel chart-card chart-wide"><figcaption>Mail per day <span class="meta">last 30 days · press a bar to see that day</span><span class="chart-key"><i class="key-received"></i>Received<i class="key-sent"></i>Sent</span></figcaption><div class="chart-box chart-tall"><canvas id="chart-days-canvas" role="img" aria-label="Messages received and sent per day over the last 30 days"></canvas></div></figure>
+        <figure class="panel chart-card"><figcaption>Who writes most <span class="meta">last 30 days · press a name</span></figcaption><div id="chart-senders-box" class="chart-box"><canvas id="chart-senders" role="img" aria-label="Senders with the most messages in the last 30 days"></canvas></div><p id="chart-senders-empty" class="meta" hidden>No mail received in this period.</p></figure>
+        <figure id="chart-topics-card" class="panel chart-card" hidden><figcaption>What it is about <span class="meta">last 30 days · press a topic</span></figcaption><div id="chart-topics-box" class="chart-box"><canvas id="chart-topics" role="img" aria-label="Topics of the messages in the last 30 days"></canvas></div></figure>
       </div>
-      <div class="callout" role="note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><div><strong>Review before action</strong><span>Gmail access is read-only unless you allow read/unread changes in Settings. Tasks stay on this computer and replies are never sent.</span></div></div>
     </section>
 
     <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
 
     <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
-      <div class="section-heading"><div><p class="eyebrow">Review</p><h2 id="inbox-heading">Gmail</h2></div><span class="section-hint">Saved to SQLite · connection and access are managed in <a href="/user/settings">Settings</a></span></div>
+      <h2 id="inbox-heading" class="sr-only">Gmail</h2>
       <div class="panel mb-5 flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0 flex-1">
           <p id="gmail-status" role="status" class="text-sm text-slate-800">Checking Gmail connection…</p>

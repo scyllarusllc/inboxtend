@@ -18,6 +18,7 @@ import mailsearch
 import flags
 import topics
 import settings as prefs
+import mailstats
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
@@ -27,14 +28,14 @@ NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tas
 PAGES = {
     'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', (), 'home', False),
     'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', ('/static/login.js',), None, False),
-    'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js'), 'inbox', True),
+    'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js','/static/vendor/chartjs/chart.umd.min.js','/static/stats.js'), 'inbox', True),
     'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/tasks.js'), 'tasks', True),
     'settings': ('Settings · Inbox Tend', 'Timezone, display, mail sync and account settings.', ('/static/common.js','/static/settings.js'), 'settings', True),
     'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), None, False),
 }
-VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.svg':'image/svg+xml'}
+VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.js':'text/javascript','.svg':'image/svg+xml'}
 SCREEN_TYPES = {'.jpg':'image/jpeg','.png':'image/png'}   # Screenshots of the demo data, shown on the public home page
-STATIC_FILES = {'/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript',
+STATIC_FILES = {'/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/stats.js':'text/javascript',
                 '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript'}
 
 def _nav_link(href, label, icon, current):
@@ -362,7 +363,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(q,str) or len(q) > 200: raise RequestError(400,'Invalid search')
                 with self._db() as db:
                     if account_id is not None and account_id not in [a['id'] for a in gmail_web.accounts(db,session['id'])]: raise RequestError(404,'Unknown Gmail account')
-                    search = mailsearch.parse(q,unread=data.get('unread') is True,attachments=data.get('attachments') is True)
+                    search = mailsearch.parse(q,unread=data.get('unread') is True,attachments=data.get('attachments') is True,tz=prefs.effective(db,session['id'],self.gmail_config)['timezone'])
                     ids = gmail_web.unread_ids(db,session['id'],folder,search if mailsearch.condition(search)[0] else None,account_id)
                     user = prefs.effective(db,session['id'],self.gmail_config)
                     return self._json(200,gmail_web.mark_all_read(db,self.gmail_config,session['id'],ids,write=user['gmail_write_read']))
@@ -467,6 +468,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/auth/google/links':
             with self._db() as db: found = google_login.links(db,session['id'])
             return self._json(200,{'configured':google_login.configured(self.gmail_config),'links':found,'redirect_uri':google_login.redirect_uri(self.gmail_config)})
+        if path == '/api/connectors/gmail/stats':
+            raw = parse_qs(urlparse(self.path).query).get('account',[''])[0]
+            account_id = int(raw) if raw.isdigit() else None
+            with self._db() as db:
+                if account_id is not None and account_id not in [a['id'] for a in gmail_web.accounts(db,session['id'])]: raise RequestError(404,'Unknown Gmail account')
+                tz = prefs.effective(db,session['id'],self.gmail_config)['timezone']
+                return self._json(200,mailstats.compute(db,session['id'],tz,account_id))
         if path == '/api/connectors/gmail/status':
             with self._db() as db:
                 connected = gmail_web.status(db,session['id'])
@@ -488,7 +496,7 @@ class Handler(BaseHTTPRequestHandler):
             if view not in gmail_web.VIEWS: raise RequestError(400,'Unknown view')
             with self._db() as db:
                 if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
-                search = mailsearch.parse(query.get('q',[''])[0],unread=query.get('unread',[''])[0] == '1',attachments=query.get('attachments',[''])[0] == '1')
+                search = mailsearch.parse(query.get('q',[''])[0],unread=query.get('unread',[''])[0] == '1',attachments=query.get('attachments',[''])[0] == '1',tz=prefs.effective(db,session['id'],self.gmail_config)['timezone'])
                 searching = bool(mailsearch.condition(search)[0])
                 wanted = query.get('account',[''])[0]
                 if wanted and (not wanted.isdigit() or int(wanted) not in [a['id'] for a in gmail_web.accounts(db,session['id'])]): raise RequestError(404,'Unknown Gmail account')

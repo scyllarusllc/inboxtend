@@ -213,7 +213,7 @@ async function selectMessage(id) {
   if (attachments) detail.append(attachments);
   if (currentGroup && currentGroup.kind === 'person' && currentGroup.messages.length > 1) {
     const all = el('section', undefined, 'conversation-thread');
-    all.append(el('h4', 'All messages with ' + currentGroup.title + ' · ' + currentGroup.messages.length));
+    all.append(groupHeading('All messages with ' + currentGroup.title + ' · ' + currentGroup.messages.length, currentGroup.messages));
     for (const t of currentGroup.messages) {
       const item = el('button', undefined, 'message');
       item.type = 'button';
@@ -229,7 +229,7 @@ async function selectMessage(id) {
   }
   if (full.thread.length > 1 && !(currentGroup && currentGroup.kind === 'person')) {
     const thread = el('section', undefined, 'conversation-thread');
-    thread.append(el('h4', 'Conversation · ' + full.thread.length + ' message(s)'));
+    thread.append(groupHeading('Conversation · ' + full.thread.length + ' message(s)', full.thread));
     for (const t of full.thread) {
       const item = el('button', undefined, 'message');
       item.type = 'button';
@@ -325,6 +325,19 @@ function aiControls(id, isSent) {
 
 // ---- search and filters
 const searchBox = document.getElementById('mail-search');
+// Used by the charts: show the mail behind a bar (a day, a sender or a topic).
+window.inboxSearch = (query, wantFolder = 'inbox') => {
+  if (folder !== wantFolder) {   // Same as pressing the folder tab, without its own reload.
+    folder = wantFolder;
+    folderInbox.setAttribute('aria-pressed', String(folder === 'inbox'));
+    folderSent.setAttribute('aria-pressed', String(folder === 'sent'));
+    selectedId = null; currentGroup = null; showViewState();
+    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+  }
+  listLimit = PAGE;
+  searchBox.value = query; searchText = query; clearTimeout(searchTimer); reloadList();
+  document.getElementById('messages-heading').scrollIntoView({behavior: 'smooth', block: 'start'});
+};
 let searchTimer = null;
 async function reloadList() {
   const mine = ++listRun;
@@ -469,13 +482,27 @@ markAllButton.addEventListener('click', async () => {
   } catch (error) { notify('Could not mark messages as read: ' + error.message, true); }
   markAllButton.disabled = false;
 });
-// The small tick on a conversation or person row: marks only that row's unread messages as read.
+// The heading above a conversation or a person's messages ("All messages with Mercury · 3"), with a button that marks
+// only those messages as read.
+function groupHeading(text, items) {
+  const head = el('div', undefined, 'thread-head');
+  head.append(el('h4', text));
+  if (folder === 'inbox' && items.some(t => readState.get(t.id) ?? t.unread)) {
+    const mark = el('button', undefined, 'thread-read');
+    mark.type = 'button';
+    mark.append(icon('check-double'), document.createTextNode(' Mark all as read'));
+    mark.addEventListener('click', () => markGroupRead(items.filter(t => readState.get(t.id) ?? t.unread).map(t => t.id), mark));
+    head.append(mark);
+  }
+  return head;
+}
 async function markGroupRead(ids, mark) {
   mark.disabled = true;
   try {
     const result = await request('/api/connectors/gmail/messages/read-all', 'POST', {ids});
     if (result.gmail_error) notify('Marked as read here, but Gmail was not fully updated: ' + result.gmail_error, true);
     else notify(result.marked + ' message(s) marked as read' + (result.gmail_changed ? ' (also in Gmail).' : '.'));
+    mark.hidden = true;
     await refreshGmail();
   } catch (error) { mark.disabled = false; notify('Could not mark messages as read: ' + error.message, true); }
 }
@@ -558,11 +585,10 @@ function renderList(data) {
       const wrap = el('div', undefined, 'row-wrap');
       wrap.append(button);
       const unreadIds = g.messages.filter(m => m.unread).map(m => m.id);
-      if (folder === 'inbox' && unreadIds.length) {
+      if (folder === 'inbox' && unreadIds.length) {   // The tick marks only this row's unread messages as read.
         const mark = el('button', undefined, 'row-read');
         mark.type = 'button';
-        const what = g.kind === 'person' ? 'this person' : 'this conversation';
-        mark.title = 'Mark ' + unreadIds.length + ' unread message(s) from ' + what + ' as read';
+        mark.title = 'Mark ' + unreadIds.length + ' unread message(s) from ' + (g.kind === 'person' ? 'this person' : 'this conversation') + ' as read';
         mark.setAttribute('aria-label', mark.title);
         mark.append(icon('check-double'));
         mark.addEventListener('click', () => markGroupRead(unreadIds, mark));
@@ -643,7 +669,7 @@ async function refreshGmail(startSync = false) {
       (!guess.running && guess.error ? ' Sender details: ' + guess.error : '') +
       (labels.running ? ' Labelling topics… ' + labels.done + ' of ' + labels.total + ' messages.' : '') +
       (!labels.running && labels.error ? ' Topic icons: ' + labels.error : '');
-    if (!busy) return;
+    if (!busy) { if (window.refreshStats) window.refreshStats(); return; }
     await new Promise(resolve => setTimeout(resolve, 2000));
     if (run !== refreshRun) return;
   }

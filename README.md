@@ -14,9 +14,10 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 
   ![Two connected Gmail accounts in Settings](static/screens/accounts.jpg)
 - **Local copy of your mail.** Inbox and sent mail with full headers, text and HTML bodies, labels and attachments, saved in SQLite. Browsing never calls Gmail; new mail is fetched automatically (every 5 minutes by default; change or turn off under Settings → Mail sync) or on **Refresh inbox**. Gmail access is read-only unless you opt in (Settings → Gmail access) to marking mail read or unread in Gmail.
+- **Charts at the top of the Inbox.** Unread and weekly totals, mail received and sent per day (30 days), who writes most, and (with topic icons on) what the mail is about, drawn with Chart.js (bundled, no CDN) from your SQLite copy, following the account filter. Hover for numbers; press a day, a sender or a topic to see that mail (`on:2026-11-17`, `from:`, `topic:`).
 - **Mark all as read.** One button in the Inbox marks every unread message in the current list as read (search, filters and the account choice count). It is always saved in Inbox Tend, and also in Gmail, in one batch request per account, for accounts that allow changing read/unread.
 - **Sign in with Google** (optional). Besides the password, people can sign in with a Google account that is linked to their user (Settings → Account). Nobody is registered this way, and the Gmail reading permission is a separate grant. See [docs/gmail-web.md](docs/gmail-web.md).
-- **Search like Gmail**, locally and instantly: words, `from:`, `to:`, `subject:"…"`, `is:unread`, `has:attachment`, `topic:money`.
+- **Search like Gmail**, locally and instantly: words, `from:`, `to:`, `subject:"…"`, `is:unread`, `has:attachment`, `topic:money`, `on:2026-11-17` (one day).
 - **Three views:** conversations, single messages, or people (one row per correspondent). Rows are grouped Today, Yesterday and Earlier, with unread in bold and how long ago each message arrived.
 - **Sender details** (opt-in, AI guess once per sender, saved):
 
