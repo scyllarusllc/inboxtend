@@ -38,7 +38,7 @@ async function request(path, method = 'GET', body) {
 // Icons are Font Awesome Free (self-hosted, see THIRD_PARTY_LICENSES.md): a name here maps to its class.
 const ICONS = {
   search: 'fa-solid fa-magnifying-glass', refresh: 'fa-solid fa-rotate', pencil: 'fa-regular fa-pen-to-square',
-  history: 'fa-solid fa-clock-rotate-left', check: 'fa-solid fa-check', plus: 'fa-solid fa-plus',
+  history: 'fa-solid fa-clock-rotate-left', check: 'fa-solid fa-check', 'check-double': 'fa-solid fa-check-double', plus: 'fa-solid fa-plus',
   mail: 'fa-regular fa-envelope', paperclip: 'fa-solid fa-paperclip', download: 'fa-solid fa-download',
   eye: 'fa-regular fa-eye', language: 'fa-solid fa-language', sparkles: 'fa-solid fa-wand-magic-sparkles',
   reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark'

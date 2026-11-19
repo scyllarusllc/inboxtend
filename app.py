@@ -347,6 +347,13 @@ class Handler(BaseHTTPRequestHandler):
                 if result == 'invalid': raise RequestError(403,'Current password is incorrect')
                 return self._json(200,{'changed':True})
             if path == '/api/connectors/gmail/messages/read-all' and self.command == 'POST':   # Everything unread that the list currently shows
+                if 'ids' in data:   # One conversation or person: its own messages, whatever else is in the list
+                    chosen = data['ids']
+                    if not isinstance(chosen,list) or not 0 < len(chosen) <= 1000 or not all(isinstance(i,str) and 0 < len(i) <= 200 for i in chosen): raise RequestError(400,'Invalid messages')
+                    with self._db() as db:
+                        ids = gmail_web.unread_among(db,session['id'],chosen)
+                        user = prefs.effective(db,session['id'],self.gmail_config)
+                        return self._json(200,gmail_web.mark_all_read(db,self.gmail_config,session['id'],ids,write=user['gmail_write_read']))
                 folder = data.get('folder','inbox')
                 if folder not in gmail_web.FOLDERS: raise RequestError(400,'Unknown folder')
                 account_id = data.get('account_id')
@@ -577,5 +584,6 @@ if __name__=='__main__':
     Handler.gmail_config=config
     Handler.auth_manager=AuthManager(DEFAULT_DB,username=config.get('INBOX_TEND_ADMIN_USERNAME',''),
                                      password_hash=config.get('INBOX_TEND_ADMIN_PASSWORD_HASH',''))
+    gmail_web.start_auto_sync(DEFAULT_DB,config)
     print(f'Inbox Tend: http://{host}:{port}')
     ThreadingHTTPServer((host,port),Handler).serve_forever()

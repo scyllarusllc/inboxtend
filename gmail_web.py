@@ -288,6 +288,13 @@ def unread_ids(db,user_id,folder='inbox',search=None,account_id=None):
     """Stored ids of the unread messages in a folder that match the search and account filter."""
     return [r['id'] for r in cached_inbox(db,user_id,folder,search,account_id) if r['unread']]
 
+def unread_among(db,user_id,ids):
+    """Of the given stored ids, the ones that are this user's messages and still unread."""
+    ids = list(dict.fromkeys(ids))
+    marks = ','.join('?' * len(ids))
+    return [r['message_id'] for r in db.execute(f'SELECT message_id,label_ids,read_override FROM gmail_messages WHERE user_id=? AND message_id IN ({marks})',(user_id,*ids))
+            if '"UNREAD"' in (r['label_ids'] or '') and not r['read_override']]
+
 def mark_all_read(db,config,user_id,ids,*,write=False,opener=urlopen):
     """Mark many messages read: always in Inbox Tend, and with `write` also in Gmail for the messages whose own account
     has the gmail.modify grant (one batch request per account). A failed Gmail update keeps the local change and is
@@ -634,6 +641,34 @@ def start_sync(db_path,config,user_id,account_id=None):
         ids = [account_id] if account_id is not None else [a['id'] for a in accounts(db,user_id)]
     threading.Thread(target=_background,args=(db_path,config,user_id,ids or [None]),daemon=True,name=f'gmail-sync-{user_id}').start()
     return sync_progress(user_id)
+
+_AUTO_LAST = {}
+
+def _auto_loop(db_path,config):
+    """Every 30 s: sync each connected user whose own "Fetch new mail every N minutes" setting has elapsed."""
+    import time
+    while True:
+        time.sleep(30)
+        try:
+            if cooldown_remaining() > 0: continue
+            with closing(connection(db_path)) as db:
+                due = []
+                for user_id in [r[0] for r in db.execute('SELECT DISTINCT user_id FROM gmail_connections')]:
+                    minutes = prefs.effective(db,user_id,config)['auto_sync_minutes']
+                    if minutes and time.time() - _AUTO_LAST.get(user_id,0) >= minutes*60: due.append(user_id)
+            for user_id in due:
+                _AUTO_LAST[user_id] = time.time()   # One attempt per interval, even when it fails (a revoked token must not be retried every tick).
+                start_sync(db_path,config,user_id)
+        except Exception: pass
+
+def start_auto_sync(db_path,config):
+    """Start the background thread that refreshes connected users' mail on a timer (per-user setting)."""
+    import time
+    with closing(connection(db_path)) as db:
+        for r in db.execute('SELECT user_id,MAX(last_sync) FROM gmail_connections GROUP BY user_id'):
+            minutes = prefs.effective(db,r[0],config)['auto_sync_minutes'] or 5
+            _AUTO_LAST[r[0]] = max(r[1] or 0,time.time() - minutes*60 + 60)   # First run about a minute after start unless synced recently.
+    threading.Thread(target=_auto_loop,args=(db_path,config),daemon=True,name='gmail-auto-sync').start()
 
 def message(db,config,user_id,message_id,*,opener=urlopen):
     """One complete message from the local copy; Gmail is contacted only if it is missing or stored without its body."""

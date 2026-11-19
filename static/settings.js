@@ -48,6 +48,7 @@ function readForm() {
     sync_sent: form.sync_sent.checked,
     mark_read_on_open: form.mark_read_on_open.checked,
     gmail_write_read: form.gmail_write_read.checked,
+    auto_sync_minutes: Number(form.auto_sync_minutes.value),
     sync_max_messages: Number(form.sync_max_messages.value),
     attachment_max_mb: Number(form.attachment_max_mb.value),
     ai_enabled: form.ai_enabled.checked,

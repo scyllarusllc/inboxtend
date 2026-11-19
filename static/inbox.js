@@ -469,6 +469,16 @@ markAllButton.addEventListener('click', async () => {
   } catch (error) { notify('Could not mark messages as read: ' + error.message, true); }
   markAllButton.disabled = false;
 });
+// The small tick on a conversation or person row: marks only that row's unread messages as read.
+async function markGroupRead(ids, mark) {
+  mark.disabled = true;
+  try {
+    const result = await request('/api/connectors/gmail/messages/read-all', 'POST', {ids});
+    if (result.gmail_error) notify('Marked as read here, but Gmail was not fully updated: ' + result.gmail_error, true);
+    else notify(result.marked + ' message(s) marked as read' + (result.gmail_changed ? ' (also in Gmail).' : '.'));
+    await refreshGmail();
+  } catch (error) { mark.disabled = false; notify('Could not mark messages as read: ' + error.message, true); }
+}
 function renderList(data) {
   const previous = selectedId;
   list.replaceChildren();
@@ -545,7 +555,20 @@ function renderList(data) {
       if (filtersActive() && g.matches && g.count > 1) button.append(el('div', g.matches + ' of ' + g.count + ' messages match', 'meta'));
       if (g.attachment_count) button.append(attachmentLabel(g.attachment_count));
       button.addEventListener('click', () => { currentGroup = g; selectMessage(g.last.id); });
-      list.append(button);
+      const wrap = el('div', undefined, 'row-wrap');
+      wrap.append(button);
+      const unreadIds = g.messages.filter(m => m.unread).map(m => m.id);
+      if (folder === 'inbox' && unreadIds.length) {
+        const mark = el('button', undefined, 'row-read');
+        mark.type = 'button';
+        const what = g.kind === 'person' ? 'this person' : 'this conversation';
+        mark.title = 'Mark ' + unreadIds.length + ' unread message(s) from ' + what + ' as read';
+        mark.setAttribute('aria-label', mark.title);
+        mark.append(icon('check-double'));
+        mark.addEventListener('click', () => markGroupRead(unreadIds, mark));
+        wrap.append(mark);
+      }
+      list.append(wrap);
     }
   }
   if (items.length > shown.length) {
@@ -658,5 +681,16 @@ async function init() {
     document.getElementById('inbox-grid').classList.add('has-translation');
   }
   try { await refreshGmail(); } catch (error) { gmailStatus.textContent = error.message; list.textContent = ''; }
+  // The server syncs on a timer. While this page is open and visible, look once a minute and redraw only if mail was synced.
+  let seen = null;
+  setInterval(async () => {
+    if (document.hidden) return;
+    try {
+      const state = await request('/api/connectors/gmail/status');
+      const mark = state.connected ? String(state.last_sync) : null;
+      if (seen === null) { seen = mark; return; }
+      if (mark !== seen && !state.sync.running) { seen = mark; await refreshGmail(); }
+    } catch (error) { /* try again next minute */ }
+  }, 60000);
 }
 init();

@@ -22,6 +22,7 @@ DEFAULTS = {
     'mark_read_on_open': True,      # Opening a message marks it read.
     'gmail_write_read': False,      # Also apply read/unread to Gmail (needs the gmail.modify grant; set when it is granted).
     'sync_max_messages': 200,       # Per folder.
+    'auto_sync_minutes': 5,         # Fetch new mail automatically this often (0 = only on Refresh).
     'attachment_max_mb': 10,        # Larger attachments are recorded as metadata only.
     # Optional AI assistant (Codex CLI). Off by default: nothing leaves this server until the user turns it on
     # AND presses an AI button.
@@ -42,7 +43,7 @@ DEFAULTS = {
     # Enabling it means each new message's subject, sender and first characters are sent to that provider.
     'topics_enabled': False,
 }
-_INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'ai_timeout': (10, 1800)}
+_INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'auto_sync_minutes': (0, 1440), 'ai_timeout': (10, 1800)}
 _BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled', 'flags_enabled', 'topics_enabled')
 
 
@@ -108,6 +109,10 @@ def effective(db, user_id, config=None) -> dict:
     values = dict(DEFAULTS)
     try:
         values['sync_max_messages'] = _clean('sync_max_messages', int(config['INBOX_TEND_SYNC_MAX_MESSAGES']))
+    except (KeyError, ValueError, TypeError):
+        pass
+    try:
+        values['auto_sync_minutes'] = _clean('auto_sync_minutes', int(config['INBOX_TEND_AUTO_SYNC_MINUTES']))
     except (KeyError, ValueError, TypeError):
         pass
     try:
