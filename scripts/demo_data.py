@@ -100,6 +100,17 @@ def build(path: Path) -> None:
             'Your invoice for November is attached. Amount due: $1,240.00. Payment is due within 14 days by card or bank transfer.\n\nThank you for your business.',
             offset=0, unread=True, attachments=(PDF, CSV), topics=('money',), acct=2)
 
+        # Fictional example for the Inbox Tend -> AgentSteers mock handoff.
+        # The example is local-only and never comes from a real mailbox.
+        demo_site_id = add(
+            'Student registration page needs attention',
+            'Campus Web Team <webteam@campus.example>',
+            now - 2400,
+            'Hello Jordan,\\n\\nPlease investigate why the student registration form sometimes fails. '
+            'Prepare a list of proposed changes, but do not modify or publish the live website.\\n\\n'
+            'Thanks,\\nCampus Web Team',
+            offset=-5, unread=True, topics=('job', 'tech'))
+
         # ---- yesterday
         add('Staff Engineer opportunity at Contoso', 'Sarah Lee <sarah@talentco.io>', midnight - 3 * 3600,
             'Hi Jordan, I came across your profile and think you would be a great fit for a Staff Engineer role at Contoso (remote, $180k-$210k). '
@@ -183,6 +194,12 @@ def build(path: Path) -> None:
                             'due_timezone': 'America/New_York'}, 1)
         if status != 'new':
             update_task(db, task['id'], {'revision': task['revision'], 'status': status}, 1)
+    create_task(db,
+                {'id': demo_site_id, 'provider': 'gmail', 'thread_id': ''},
+                {'title': 'Review student registration form issue (mock handoff)',
+                 'description': 'Investigate the reported registration form failures and propose changes. Do not publish or edit the live site.',
+                 'priority': 'medium', 'owner': 'Jordan', 'due_date': None, 'due_time': None,
+                 'due_timezone': 'America/New_York'}, 1)
     db.close()
 
 
