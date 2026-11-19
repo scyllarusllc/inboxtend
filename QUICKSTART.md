@@ -3,7 +3,7 @@
 Python 3.10+ and the standard library run the app. Connecting Gmail requires `cryptography` (`python3 -m pip install -r requirements.txt`) and Google Web OAuth credentials (`INBOX_TEND_GOOGLE_*` and `INBOX_TEND_TOKEN_KEY` in `.env`); see [docs/gmail-web.md](docs/gmail-web.md).
 
 ```bash
-make dev                 # 127.0.0.1:8765
+make dev                 # prepares .venv/dependencies, then starts 127.0.0.1:8765
 make dev PORT=8766       # choose another local port
 ```
 

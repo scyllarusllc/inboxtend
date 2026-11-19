@@ -1,11 +1,13 @@
 PORT ?= 8765
-PYTHON ?= python3
+PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 CADDY ?= caddy
 
 .PHONY: dev caddy-dev test build-pages css css-watch css-check vendor demo
 
 dev:
-	INBOX_TEND_PORT=$(PORT) $(PYTHON) app.py
+	python3 scripts/bootstrap_dev.py
+	.venv/bin/python scripts/free_dev_port.py $(PORT)
+	INBOX_TEND_PORT=$(PORT) .venv/bin/python app.py
 
 caddy-dev:
 	INBOX_TEND_PORT=$(PORT) $(CADDY) run --config deploy/Caddyfile.local

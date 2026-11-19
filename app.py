@@ -709,5 +709,6 @@ if __name__=='__main__':
     Handler.auth_manager=AuthManager(DEFAULT_DB,username=config.get('INBOX_TEND_ADMIN_USERNAME',''),
                                      password_hash=config.get('INBOX_TEND_ADMIN_PASSWORD_HASH',''))
     gmail_web.start_auto_sync(DEFAULT_DB,config)
-    print(f'Inbox Tend: http://{host}:{port}')
-    ThreadingHTTPServer((host,port),Handler).serve_forever()
+    with ThreadingHTTPServer((host,port),Handler) as server:
+        print(f'Inbox Tend: http://{host}:{port}')
+        server.serve_forever()
