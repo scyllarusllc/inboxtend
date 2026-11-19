@@ -20,8 +20,9 @@ import topics
 import settings as prefs
 import mailstats
 import local_translation
+import agentsteers_bridge
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
-from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
+from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
 ROOT = Path(__file__).resolve().parent
 NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'))
@@ -465,6 +466,42 @@ class Handler(BaseHTTPRequestHandler):
                     task = create_task(db,message,data,session['id'])
                 return self._json(201,{'task':task})
             parts = path.strip('/').split('/')
+            if len(parts)==4 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3]=='agentsteers-dispatch' and self.command == 'POST':
+                # Authenticated session + same-origin + CSRF checked above; explicit confirmation in request.
+                if data.get('confirm') != 'DISPATCH MOCK':
+                    raise RequestError(400,'Explicit mock dispatch confirmation required')
+                if not isinstance(data.get('revision'),int) or isinstance(data.get('revision'),bool):
+                    raise RequestError(400,'A valid task revision is required')
+                if not agentsteers_bridge.configured() or os.environ.get('INBOX_TEND_AGENTSTEERS_BRIDGE_ENABLED') != '1':
+                    raise RequestError(503,'AgentSteers mock bridge is not configured')
+                task_id = int(parts[2])
+                with self._db() as db:
+                    task = reserve_agentsteers_dispatch(db,task_id,data['revision'],session['id'])
+                if task is None: raise RequestError(404,'Task not found')
+                try:
+                    outcome = agentsteers_bridge.submit(task)
+                    with self._db() as db:
+                        task = record_agentsteers_update(db,task_id,session['id'],
+                            outcome['status'],outcome['task_id'],{"message":"Mock task submitted; no actual code was executed."})
+                except (agentsteers_bridge.BridgeError,KeyError,ValueError) as exc:
+                    with self._db() as db:
+                        record_agentsteers_update(db,task_id,session['id'],'dispatch_error',
+                            result={"message":"Mock dispatch failed or result uncertain; consult AgentSteers before retrying."})
+                    raise RequestError(503,'AgentSteers mock dispatch did not complete: '+str(exc)[:160]) from None
+                return self._json(200,{'task':task,'simulated':True})
+            if len(parts)==4 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3]=='agentsteers-refresh' and self.command == 'POST':
+                task_id=int(parts[2])
+                with self._db() as db: task=get_task(db,task_id,user_id=session['id'])
+                if not task: raise RequestError(404,'Task not found')
+                if not task['agentsteers_job_id']: raise RequestError(409,'Task has not been dispatched')
+                try:
+                    info=agentsteers_bridge.status(task['agentsteers_job_id'])
+                    with self._db() as db:
+                        updated=record_agentsteers_update(db,task_id,session['id'],info['status'],
+                            info['task_id'],info.get('result'))
+                except (agentsteers_bridge.BridgeError,KeyError,ValueError) as exc:
+                    raise RequestError(503,'AgentSteers status unavailable: '+str(exc)[:160]) from None
+                return self._json(200,{'task':updated,'simulated':True})
             if len(parts)==3 and parts[:2]==['api','tasks'] and parts[2].isdigit():
                 task_id = int(parts[2])
                 if self.command == 'PATCH':
