@@ -117,6 +117,16 @@ def probe():
             "message": "Authenticated AgentSteers mock MCP endpoint responded. This does not verify Codex execution."}
 
 
+def queue_summary():
+    """Read actor-scoped simulated job counts; no execution or mailbox data."""
+    outcome = _call("get_queue_summary", {})
+    if (outcome.get("mode") != "mock_only" or
+        any(type(outcome.get(key)) is not int or outcome[key] < 0
+            for key in ("total", "queued_mock", "cancelled")) or
+        outcome["total"] != outcome["queued_mock"] + outcome["cancelled"]):
+        raise BridgeError("Invalid AgentSteers mock queue summary")
+    return {key: outcome[key] for key in ("total", "queued_mock", "cancelled")}
+
 def submit(task):
     _, _, repo = _settings()
     title = (task.get("title") or "").strip()
