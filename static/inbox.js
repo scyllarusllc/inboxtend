@@ -27,13 +27,12 @@ function clearTranslation() {
   translationBox.replaceChildren('Choose a message to see its translation.');
   translationCaption.textContent = '';
 }
-// The third column. Translations are saved on the server, so reopening a message never calls the AI again;
-// only the Retranslate button forces a new one.
+// The third column uses offline language packs; saved translations are reused on reopening.
 async function showTranslation(id, force = false) {
   const language = userSettings.translate_language;
   translationCaption.textContent = language;
   if (!language) { translationBox.replaceChildren(el('p', 'Choose the language to translate into on the Settings page.', 'meta')); return; }
-  translationBox.replaceChildren(el('p', 'Translating into ' + language + '… the first time can take up to ' + userSettings.ai_timeout + ' seconds; it is saved for next time.', 'meta'));
+  translationBox.replaceChildren(el('p', 'Translating locally… the result will be saved for next time.', 'meta'));
   let result;
   try { result = (await request('/api/translate', 'POST', {id, force})).translation; }
   catch (error) {
@@ -204,9 +203,11 @@ const retiringRows = new WeakSet();
 function retireRow(row, groupId) {
   if (retiringRows.has(row)) return;
   retiringRows.add(row);
+  row.classList.add('read-leaving');
   const attempt = () => {
     const group = groups.find(g => g.id === groupId);
     if (!row.isConnected || !group || group.unread_count || currentGroup?.id === groupId || view !== 'people' || !onlyUnread) {
+      row.classList.remove('read-leaving');
       retiringRows.delete(row);
       return;
     }
@@ -215,19 +216,10 @@ function retireRow(row, groupId) {
       list.addEventListener('pointerleave', () => setTimeout(attempt, 300), {once: true});
       return;
     }
-    row.classList.add('read-leaving');
-    setTimeout(() => {
-      const latest = groups.find(g => g.id === groupId);
-      if (!row.isConnected || !latest || latest.unread_count || currentGroup?.id === groupId || list.matches(':hover')) {
-        row.classList.remove('read-leaving');
-        setTimeout(attempt, 300);
-        return;
-      }
-      row.remove();
-      groups = groups.filter(g => g.id !== groupId);
-      messages = groups.flatMap(g => g.messages);
-      retiringRows.delete(row);
-    }, 180);
+    row.remove();
+    groups = groups.filter(g => g.id !== groupId);
+    messages = groups.flatMap(g => g.messages);
+    retiringRows.delete(row);
   };
   setTimeout(attempt, 700);
 }

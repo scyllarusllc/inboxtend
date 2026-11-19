@@ -79,31 +79,23 @@ claude -p --output-format json --json-schema '<schema>' --tools "" --no-session-
 | Output language | empty | Language of titles, descriptions, notes and drafts; empty follows the email |
 | Timeout | 60 s | 10–1800 s |
 | Also send small text/CSV attachments | off | Up to 3 files, 8,000 characters each |
-| Translate messages I open | off | Shows a translation in a third Inbox column; sends every opened message |
-| Translate into | empty | Your preferred language, e.g. `English`, `Chinese (Simplified)` |
+| Translate messages I open | off | Shows an offline translation in a third Inbox column |
+| Translate into | empty | Choose an installed target language |
 | Show topic icons | off | Label each new message with what it is about; sends the other party, subject and first 400 characters to the provider |
 | Show sender details | off | Guess country, city, company, role, language, relationship and style of each new sender once; sends sender details to the provider |
 
 ## Translation
 
-**Settings → Translation** adds an opt-in third column on the Inbox page, to the right of the message, with a
-translation of the open message into your preferred language (subject and text; attachments are not translated).
-It uses the provider, model and timeout chosen under *AI assistant* but has its own switch, so it works without the
-AI buttons being enabled.
+**Settings → Translation** adds an opt-in third column with an offline translation of the opened message's subject
+and text. It runs with installed Argos language packs on the server, independently of the AI assistant. Attachments
+are not translated. See [offline translation setup](../README.md#offline-translation-setup).
 
-- **Different consent from the buttons.** With translation on, *every message you open* is sent to the provider
-  automatically, because that is what showing a translation means. Leave it off if that is not acceptable.
-- **Each message is translated once per language.** The result is stored in the `message_translations` table of
-  the SQLite database, keyed by user, message and target language (case-insensitive). Opening the message again,
-  another day or after a restart, reads the database and makes **no AI call and spends no tokens**. A message that
-  is already in your language is recorded as such, also without further calls. Only the **Retranslate** button,
-  or changing the target language, causes a new call.
-- Translations queue per user: if you click through messages quickly they are processed one after another (up to
-  the timeout), and a request for a message that was just translated is answered from the saved result.
-- Translations are removed when you disconnect Gmail (together with the stored messages), and they are covered by the
-  database backups.
-- Same safety rules as above: the message is untrusted text, the answer is validated, and the translation is
-  shown as plain text only.
+- The source language is detected locally; the target is chosen from installed languages. A missing translation
+  direction gives a clear error. Language packages are downloaded by the operator during setup, never on mail open.
+- Each translation is saved in SQLite by user, message and target language. Reopening a message uses the saved result;
+  **Retranslate** runs the local translator again. Previously saved AI translations are still readable.
+- Translations queue per user, are deleted when their Gmail account is disconnected, and are covered by database backups.
+- Mail text is not sent to an AI provider for translation. The result is displayed as plain text alongside the original.
 
 ## Sender details: flags and person cards
 

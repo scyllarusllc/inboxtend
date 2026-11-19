@@ -27,7 +27,7 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 - **Topic icons** (opt-in): up to two of 17 topics per message (money, job, love, friends and family, travel, shopping, meetings, security, health, legal, education, tech, social, news, events, food, promotions). One AI request per 20 messages, saved. Press a topic to list everything about it.
 
   ![Messages filtered by topic:money](static/screens/topics.jpg)
-- **Translation** (opt-in): the opened message in your language in a third column, saved so it is translated once.
+- **Offline translation** (opt-in): Argos language packs translate the opened message on your server. The result appears beside the original and is saved in SQLite; translation does not call an AI provider. Install only the language directions you need (see below).
 - **Tasks:** review a suggested task, edit it, save it with owner, priority, deadline and status, with an audit history. Reply drafts are prepared for you and never sent.
 
   ![Tasks](static/screens/tasks.jpg)
@@ -37,6 +37,17 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
   <img src="static/screens/phone.jpg" alt="The inbox on a phone" width="260">
 
 Without the AI switches, suggestions are plain rules (subject becomes title, snippet the description) and nothing leaves your server.
+
+## Offline translation setup
+
+Install the Python dependencies, then download only the Argos translation directions you need. For example, English mail into Chinese and Spanish mail into English:
+
+```sh
+python -m pip install -r requirements.txt
+python scripts/install_translation_packs.py en_zh es_en
+```
+
+Each direction is a separate package. The current Argos package directory lists English → Chinese at about 67 MB and Spanish → English at about 64 MB compressed; installed size and RAM use are higher. Packages are downloaded during setup, not when a message opens. Keep the packages on the server across deploys; by default Argos uses its own user data directory, or set `ARGOS_PACKAGES_DIR` to a persistent path. Then choose an installed target language under **Settings → Translation**. Missing source-to-target routes return a clear error. Translation results remain in the existing SQLite cache; old AI translations remain readable until retranslated. See [Argos language packages](https://data.argosopentech.com/argospm/v1/) and [Argos settings](https://github.com/argosopentech/argos-translate/blob/master/docs/source/settings.rst).
 
 ## Try it in a minute, no Gmail needed
 

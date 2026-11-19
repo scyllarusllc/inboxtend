@@ -7,6 +7,7 @@ INBOX_TEND_ATTACHMENT_MAX_BYTES), so existing installs behave exactly as before.
 from __future__ import annotations
 import json
 import re
+from local_translation import language_code, TranslationError
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -32,8 +33,7 @@ DEFAULTS = {
     'ai_language': '',              # Empty = write in the language of the email.
     'ai_timeout': 60,               # Seconds (10-1800). A proxy in front may cut slower requests.
     'ai_attachments': False,        # Also send small text/CSV attachments with the email.
-    # Translation of the open message into the user's language, shown beside the message. Uses the AI provider
-    # and model above. Enabling it means every message the user opens is sent to that provider.
+    # Offline translation of opened messages using installed Argos language packs.
     'translate_enabled': False,
     'translate_language': '',
     # Country flags next to correspondents, guessed once per sender by the AI provider and cached. Enabling it means
@@ -82,7 +82,12 @@ def _clean(key, value):
         if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}|', value.strip()):
             raise ValueError('Invalid model name')
         return value.strip()
-    if key in ('ai_language', 'translate_language'):
+    if key == 'translate_language':
+        if not isinstance(value, str): raise ValueError('Invalid translation language')
+        if not value.strip(): return ''
+        try: return language_code(value)
+        except TranslationError as exc: raise ValueError(str(exc)) from None
+    if key == 'ai_language':
         if not isinstance(value, str) or len(value.strip()) > 40 or any(ord(c) < 32 or ord(c) == 127 for c in value):
             raise ValueError('Language must be at most 40 characters')
         return value.strip()

@@ -72,6 +72,13 @@ async function init() {
   }
   try {
     const result = await request('/api/settings');
+    const languageSelect = prefsForm.elements.translate_language;
+    const packStatus = document.getElementById('translation-packs-status');
+    try {
+      const packs = (await request('/api/translation/languages')).languages;
+      languageSelect.append(...packs.map(pack => new Option(pack.name, pack.code)));
+      packStatus.textContent = packs.length ? 'Only installed target languages are listed. The source language also needs an installed translation route.' : 'No language packs installed. Ask the server operator to install them.';
+    } catch (error) { packStatus.textContent = 'Could not check installed language packs: ' + error.message; }
     fillForm(result.settings);
     savedModel = result.settings.ai_model || '';
     document.getElementById('account-name').textContent = result.username;
@@ -201,10 +208,12 @@ async function init() {
     catch (error) { aiResult.textContent = ' ' + error.message; }
     aiTest.disabled = false;
   });
-  const browserLanguage = () => {
-    try { return new Intl.DisplayNames(['en'], {type: 'language'}).of(navigator.language || 'en') || 'English'; } catch (_) { return 'English'; }
-  };
-  document.getElementById('use-browser-language').addEventListener('click', () => { prefsForm.elements.translate_language.value = browserLanguage(); });
+  document.getElementById('use-browser-language').addEventListener('click', () => {
+    const code = (navigator.language || 'en').toLowerCase().startsWith('zh-tw') ? 'zt' : (navigator.language || 'en').split('-')[0].toLowerCase();
+    const select = prefsForm.elements.translate_language;
+    if ([...select.options].some(option => option.value === code)) select.value = code;
+    else notify('No offline language pack is installed for this browser language.', true);
+  });
   document.getElementById('use-browser-timezone').addEventListener('click', () => {
     prefsForm.elements.timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
   });

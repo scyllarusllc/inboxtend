@@ -29,7 +29,7 @@ make test
 
 The page bodies live in `static/pages/` (home, login, inbox, tasks, privacy); `static/layout.html` supplies their shared header, navigation and footer. After editing either, run `make build-pages` to refresh the full-page compatibility files used by older running processes. The current server composes the layout directly.
 
-Gmail is contacted only when you connect and when you press **Refresh inbox** (new messages only); there is no automatic background sync, reminders or sending. The optional AI assistant (off by default, see [docs/ai-assistant.md](docs/ai-assistant.md)) contacts the chosen provider (OpenAI or Anthropic) only when you press an AI button on a message, or, if you switched on **Translation**, when you open a message that has not been translated yet (results are saved in SQLite and never translated twice). Review [docs/deployment-internal.md](docs/deployment-internal.md) before connecting a mailbox that holds client correspondence.
+Gmail is contacted only when you connect and when you press **Refresh inbox** (new messages only); there is no automatic background sync, reminders or sending. The optional AI assistant (off by default, see [docs/ai-assistant.md](docs/ai-assistant.md)) contacts the chosen provider (OpenAI or Anthropic) only when you press an AI button on a message. **Translation** uses installed Argos language packs locally on the server and saves results in SQLite; see [offline translation setup](README.md#offline-translation-setup). Review [docs/deployment-internal.md](docs/deployment-internal.md) before connecting a mailbox that holds client correspondence.
 
 ## Look around first
 

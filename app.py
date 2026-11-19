@@ -19,6 +19,7 @@ import flags
 import topics
 import settings as prefs
 import mailstats
+import local_translation
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError
 
@@ -404,21 +405,25 @@ class Handler(BaseHTTPRequestHandler):
                 message = self._gmail_message(session,data.get('id'))
                 force = data.get('force') is True
                 def answer(found,cached):
-                    return self._json(200,{'translation':dict(found,cached=cached,provider=ai.PROVIDERS.get(found['provider'],{}).get('name',found['provider']))})
-                with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
+                    return self._json(200,{'translation':dict(found,cached=cached,provider='Argos Translate' if found['provider']=='argos' else ai.PROVIDERS.get(found['provider'],{}).get('name',found['provider']))})
+                with self._db() as db:
+                    found = gmail_web.get_translation(db,session['id'],message['id'],language)
+                    if not found and not force: found = gmail_web.get_translation(db,session['id'],message['id'],local_translation.LANGUAGES[language])
                 if found and not force: return answer(found,True)
+                if language not in {item['code'] for item in local_translation.installed_targets()}:
+                    raise RequestError(424,'The target language pack is not installed on this server. Ask the operator to install it in Settings.')
                 try:
-                    with ai.translation_guard(session['id'],user['ai_timeout']):
+                    with ai.translation_guard(session['id'],60):
                         with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
                         if found and not force:  # Reaching the lock with a stored result means another request finished while this one queued.
                             return answer(found,True)
-                        result = ai.translate(self.gmail_config,message,language,user)
-                        provider = ai.provider_of(user)
-                        with self._db() as db: gmail_web.save_translation(db,session['id'],message['id'],language,result,provider,user['ai_model'] or 'provider default')
+                        result = local_translation.translate_message(message,language)
+                        with self._db() as db: gmail_web.save_translation(db,session['id'],message['id'],language,result,'argos','installed language pack')
                         with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
                         return answer(found,False)
                 except ai.AIBusy as exc: raise RequestError(429,str(exc)) from None
                 except ai.AIError as exc: raise RequestError(424,str(exc)) from None
+                except local_translation.TranslationError as exc: raise RequestError(424,str(exc)) from None
             if path.startswith('/api/ai/') and self.command == 'POST':
                 try:
                     with ai.guard(session['id']):
@@ -475,6 +480,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/auth/google/links':
             with self._db() as db: found = google_login.links(db,session['id'])
             return self._json(200,{'configured':google_login.configured(self.gmail_config),'links':found,'redirect_uri':google_login.redirect_uri(self.gmail_config)})
+        if path == '/api/translation/languages':
+            return self._json(200,{'languages':local_translation.installed_targets()})
         if path == '/api/connectors/gmail/stats':
             raw = parse_qs(urlparse(self.path).query).get('account',[''])[0]
             account_id = int(raw) if raw.isdigit() else None

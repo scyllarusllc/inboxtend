@@ -109,7 +109,7 @@
               </label>
               <label>Timeout (seconds)
                 <input name="ai_timeout" type="number" min="10" max="1800" step="1" required>
-                <span class="meta">10–1800 seconds. A proxy in front of this server (Cloudflare cuts requests at about 100 s) may end slower requests early; translations are still saved on the server, so reloading the message then shows them.</span>
+                <span class="meta">10–1800 seconds. This controls AI requests; offline translation uses installed language packs separately.</span>
               </label>
               <label class="check"><input name="ai_attachments" type="checkbox"><span class="font-medium text-slate-800">Also send small text/CSV attachments</span><span class="meta">Up to 3 files, 8,000 characters each.</span></label>
             </div>
@@ -119,19 +119,12 @@
 
           <section id="translation-settings" class="panel settings-section scroll-mt-24" aria-labelledby="translate-heading">
             <h2 id="translate-heading"><i class="fa-solid fa-language" aria-hidden="true"></i>Translation</h2>
-            <p>Shows a translation of the open message in a third column on the Inbox page. It uses the provider and model chosen under <em>AI assistant</em> above. <strong>Off by default.</strong> When on, <strong>every message you open</strong> is sent to that provider (OpenAI for Codex, Anthropic for Claude) to be translated, without a button press. Each translation is saved in this server&rsquo;s database, so a message is translated only once per language and reopening it costs nothing. Attachments are not translated.</p>
+            <p>Shows a translation of the open message in a third column. Translation runs locally on this server with installed Argos language packs; mail text is not sent to an AI provider for translation. <strong>Off by default.</strong> Results are saved in SQLite. Attachments are not translated.</p>
             <div class="task-form">
               <label class="check"><input name="translate_enabled" type="checkbox"><span class="font-medium text-slate-800">Translate messages I open</span></label>
               <label>Translate into
-                <input name="translate_language" type="text" list="language-list" maxlength="40" autocomplete="off" placeholder="e.g. English or Chinese (Simplified)">
-                <datalist id="language-list">
-                  <option value="English"></option><option value="Chinese (Simplified)"></option><option value="Chinese (Traditional)"></option>
-                  <option value="Spanish"></option><option value="French"></option><option value="German"></option><option value="Portuguese"></option>
-                  <option value="Italian"></option><option value="Japanese"></option><option value="Korean"></option><option value="Russian"></option>
-                  <option value="Arabic"></option><option value="Hindi"></option><option value="Indonesian"></option><option value="Vietnamese"></option>
-                  <option value="Turkish"></option><option value="Dutch"></option><option value="Polish"></option><option value="Thai"></option>
-                </datalist>
-                <span class="meta">Your preferred language. <button id="use-browser-language" type="button" class="link-button">Use this browser&rsquo;s language</button></span>
+                <select name="translate_language"><option value="">Choose an installed language</option></select>
+                <span class="meta"><span id="translation-packs-status">Checking installed language packs…</span> <button id="use-browser-language" type="button" class="link-button">Use this browser&rsquo;s language</button></span>
               </label>
             </div>
           </section>
