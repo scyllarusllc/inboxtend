@@ -7,6 +7,9 @@ const taskRefresh = document.getElementById('task-refresh');
 let cachedTasks = [];
 let agentSteersReadiness={state:'checking',can_dispatch:false,message:'Checking AgentSteers mock configuration…'};
 const pendingAgentDispatches=new Set();
+let agentSteersVerifiedThisPage=false;
+let syncInFlight=false;
+let nextSyncOffset=0;
 // Shared controls used in both the task list and expanded task details.
 // Every dispatch requires a fresh user confirmation and server-side authorization.
 function makeAgentSteersControls(task) {
@@ -108,6 +111,28 @@ function renderTasks() {
   const readiness=el('p','AgentSteers mock: '+agentSteersReadiness.message,'meta');
   readiness.dataset.bridgeState=agentSteersReadiness.state;
   taskList.append(readiness);
+  if(agentSteersReadiness.state==='configured_unverified' ||
+     agentSteersReadiness.state==='connected_mock' ||
+     agentSteersReadiness.state==='connection_failed') {
+    const probe=iconButton('refresh','Check AgentSteers connection');
+    probe.addEventListener('click',async()=>{
+      probe.disabled=true;
+      try {
+        const data=await request('/api/agentsteers/probe','POST',{});
+        agentSteersReadiness=data.bridge;
+        agentSteersVerifiedThisPage=data.bridge.state==='connected_mock';
+        notify(agentSteersReadiness.message,!agentSteersVerifiedThisPage);
+        renderTasks();
+      } catch(error) {
+        agentSteersVerifiedThisPage=false;
+        agentSteersReadiness={state:'connection_failed',can_dispatch:false,
+          message:'Connection check failed: '+error.message};
+        notify(agentSteersReadiness.message,true);
+        renderTasks();
+      }
+    });
+    taskList.append(probe);
+  }
   const term=taskSearch.value.trim().toLowerCase();
   const filter=taskFilter.value;
   const matching=cachedTasks.filter(task=>{
@@ -209,6 +234,12 @@ async function refreshTasks() {
     ]);
     cachedTasks=rows.tasks;
     agentSteersReadiness=bridge.bridge;
+    if(agentSteersReadiness.state==='configured_unverified' && agentSteersVerifiedThisPage) {
+      agentSteersReadiness={state:'connected_mock',can_dispatch:true,
+        message:'Authenticated mock MCP connection verified in this browser session. No real worker is enabled.'};
+    } else if(agentSteersReadiness.state!=='configured_unverified') {
+      agentSteersVerifiedThisPage=false;
+    }
     const summary=overview.summary;
     taskSummary.replaceChildren();
     for(const [label,count] of [
@@ -226,6 +257,30 @@ async function refreshTasks() {
   }catch(error){notify('Could not load tasks: '+error.message,true);}
 }
 
+// Only poll mock jobs while this page is open, visible, and a user has
+// successfully checked connectivity. One job per minute to limit load.
+async function syncOneMockJob() {
+  if(syncInFlight || !agentSteersVerifiedThisPage || document.visibilityState!=='visible')return;
+  const jobs=cachedTasks.filter(task=>task.agentsteers_job_id && task.agent_status==='queued_mock');
+  if(!jobs.length)return;
+  const job=jobs[nextSyncOffset % jobs.length];
+  nextSyncOffset++;
+  syncInFlight=true;
+  try {
+    await request('/api/tasks/'+job.id+'/agentsteers-refresh','POST',{});
+    await refreshTasks();
+  } catch(_) {
+    // A dropped connection is not a completed task. Keep the last saved state;
+    // manual refresh and the connection check remain available.
+    agentSteersVerifiedThisPage=false;
+    agentSteersReadiness={state:'connection_failed',can_dispatch:false,
+      message:'AgentSteers status sync stopped after a connection error. Recheck connection.'};
+    renderTasks();
+  } finally {
+    syncInFlight=false;
+  }
+}
+
 async function init() {
   taskSearch.addEventListener('input',renderTasks);
   taskFilter.addEventListener('change',renderTasks);
@@ -237,5 +292,6 @@ async function init() {
   const hint=document.getElementById('tz-hint');
   if(hint)hint.textContent='New deadlines default to '+userSettings.timezone+' · due soon = within '+userSettings.due_soon_hours+' h';
   await refreshTasks();
+  window.setInterval(syncOneMockJob,60000);
 }
 init();
