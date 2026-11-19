@@ -35,6 +35,14 @@ If connectivity has been checked, the page may poll one `queued_mock` job per mi
 
 **AgentSteers server operator guide:** [mock MCP server preparation](https://github.com/scyllarusllc/agentsteers/blob/main/docs/inboxtend-mock-server-preparation.md). It covers private persistent SQLite, an uninstalled non-root service template, HTTPS proxy review and rollback. No server deployment is implied.
 
+## Cancel a queued mock task
+
+After manually verifying the mock MCP connection, both the task-list card and the expanded task details show **Cancel AgentSteers mock task** for a remote job with state `queued_mock`. The action requires another browser confirmation and an authenticated, CSRF-protected server request containing the current Inbox Tend task revision. The server calls the existing AgentSteers MCP `cancel_task` tool using the remote task ID and records `cancelled` only after a confirmed response.
+
+Cancelling the AgentSteers mock job **does not delete, close, or cancel the original Inbox Tend task**. A cancelled job cannot be re-dispatched from the same task record. When cancellation fails or its outcome is uncertain, the UI instructs the user to refresh status rather than assuming success. The shared controls automatically appear in both locations.
+
+**Limitation:** cancelling a `queued_mock` job only updates simulated task state; no real code process exists to terminate.
+
 ## Private server configuration
 
 Bridge is **disabled by default**. The server operator must explicitly configure, outside version control:
