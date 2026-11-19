@@ -18,6 +18,11 @@ function makeAgentSteersControls(task) {
     ? 'AgentSteers simulation: '+task.agent_status+' · Job '+task.agentsteers_job_id
     : 'AgentSteers simulation: '+(task.agent_status || 'not dispatched');
   agentBox.append(el('p',mockStatus,'meta'));
+  if(task.agent_status==='recovery_needed') {
+    agentBox.append(el('p',
+      'Recovery needed: the remote mock job cannot be found. Check the private task store and server identity before attempting any new dispatch.',
+      'meta'));
+  }
   if(task.agentsteers_result) {
     try {
       const result=JSON.parse(task.agentsteers_result);
@@ -44,7 +49,8 @@ function makeAgentSteersControls(task) {
     });
     agentBox.append(dispatch);
   } else if(task.agentsteers_job_id) {
-    const refresh=iconButton('refresh','Refresh AgentSteers mock status');
+    const refresh=iconButton('refresh',task.agent_status==='recovery_needed'
+      ? 'Recheck missing AgentSteers job' : 'Refresh AgentSteers mock status');
     refresh.addEventListener('click',async()=>{
       refresh.disabled=true;
       try {
