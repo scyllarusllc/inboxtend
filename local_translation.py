@@ -12,6 +12,7 @@ LANGUAGES = {
 ALIASES = {name.casefold(): code for code, name in LANGUAGES.items()}
 ALIASES.update({'chinese':'zh', 'simplified chinese':'zh', 'traditional chinese':'zt',
                 'portuguese (brazilian)':'pt'})
+MAX_TRANSLATION_CHARS = 5_000  # Local model inference grows with message length.
 
 
 class TranslationError(Exception):
@@ -125,13 +126,15 @@ def translate_message(message: dict, target: str) -> dict:
     target = language_code(target)
     _, argos = _argos()
     subject = (message.get('subject') or '')[:500]
-    body = (message.get('body_text') or message.get('snippet') or '')[:40_000]
+    full_body = message.get('body_text') or message.get('snippet') or ''
+    body = full_body[:MAX_TRANSLATION_CHARS]
+    truncated = len(full_body) > MAX_TRANSLATION_CHARS
     sample = (body or subject).strip()
     if not sample:
         raise TranslationError('This message has no text to translate.')
     source = _source(sample)
     if source == target:
-        return {'subject':subject, 'body':body, 'source_language':LANGUAGES.get(source, source), 'already_in_language':True}
+        return {'subject':subject, 'body':full_body, 'source_language':LANGUAGES.get(source, source), 'already_in_language':True}
     installed = argos.get_installed_languages()
     from_lang = next((lang for lang in installed if lang.code == source), None)
     to_lang = next((lang for lang in installed if lang.code == target), None)
@@ -142,5 +145,7 @@ def translate_message(message: dict, target: str) -> dict:
         translated_body = argos.translate(body, source, target) if body else ''
     except Exception as exc:
         raise TranslationError('Offline translation failed. Check the installed language packs.') from exc
-    return {'subject':translated_subject[:500], 'body':translated_body[:40_000],
+    if truncated:
+        translated_body += '\n\n[Only the first 5,000 characters were translated to keep local translation responsive. Read the original message for the rest.]'
+    return {'subject':translated_subject[:500], 'body':translated_body,
             'source_language':LANGUAGES.get(source, source), 'already_in_language':False}

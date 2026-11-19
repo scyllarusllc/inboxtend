@@ -27,7 +27,7 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 - **Topic icons** (opt-in): up to two of 17 topics per message (money, job, love, friends and family, travel, shopping, meetings, security, health, legal, education, tech, social, news, events, food, promotions). One AI request per 20 messages, saved. Press a topic to list everything about it.
 
   ![Messages filtered by topic:money](static/screens/topics.jpg)
-- **Offline translation** (opt-in): Argos language packs translate the opened message on your server. The result appears beside the original and is saved in SQLite; translation does not call an AI provider. Install only the language directions you need (see below).
+- **Offline translation** (opt-in): Argos language packs translate the opened message on your server. The result appears beside the original and is saved in SQLite; translation does not call an AI provider. To keep local translation responsive, only the first 5,000 characters of a long message are translated; the original remains available. Install only the language directions you need (see below).
 - **Tasks:** review a suggested task, edit it, save it with owner, priority, deadline and status, with an audit history. Reply drafts are prepared for you and never sent.
 - **AgentSteers mock handoff (opt-in, disabled by default):** reviewed tasks can be sent from either the task list or expanded task details to a separately configured mock-only MCP service, with explicit confirmation and status display. No real Codex, GitHub write, or email send is performed. A fictional registration-page task is included in `make demo`. [Setup and limitations](docs/agentsteers-handoff.md).
 
