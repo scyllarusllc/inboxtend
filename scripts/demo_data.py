@@ -195,7 +195,7 @@ def build(path: Path) -> None:
         if status != 'new':
             update_task(db, task['id'], {'revision': task['revision'], 'status': status}, 1)
     create_task(db,
-                {'id': demo_site_id, 'provider': 'gmail', 'thread_id': ''},
+                {'id': demo_site_id, 'provider': 'demo', 'thread_id': ''},
                 {'title': 'Review student registration form issue (mock handoff)',
                  'description': 'Investigate the reported registration form failures and propose changes. Do not publish or edit the live site.',
                  'priority': 'medium', 'owner': 'Jordan', 'due_date': None, 'due_time': None,
