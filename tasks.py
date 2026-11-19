@@ -351,7 +351,7 @@ def reserve_agentsteers_dispatch(db, task_id, revision, user_id=1):
 
 def record_agentsteers_update(db, task_id, user_id, status, job_id=None, result=None):
     """Persist only a known mock task status/result, scoped to the task owner."""
-    allowed = {"queued_mock", "cancelled", "submitting", "dispatch_error"}
+    allowed = {"queued_mock", "cancelled", "submitting", "dispatch_error", "recovery_needed"}
     if status not in allowed:
         raise ValueError("Unknown mock agent status")
     if job_id is not None and (not isinstance(job_id, str) or len(job_id) != 32 or
@@ -365,7 +365,7 @@ def record_agentsteers_update(db, task_id, user_id, status, job_id=None, result=
         # Never let another task replace an already recorded remote job.
         if job_id and row["agentsteers_job_id"] and row["agentsteers_job_id"] != job_id:
             raise ConflictError("Conflicting agent task identifier")
-        if job_id and row["agent_status"] not in ("submitting", "queued_mock", "cancelled"):
+        if job_id and row["agent_status"] not in ("submitting", "queued_mock", "cancelled", "recovery_needed"):
             raise ConflictError("Task was not approved for dispatch")
         if not job_id and status == "dispatch_error" and row["agent_status"] != "submitting":
             raise ConflictError("Task is not being dispatched")
