@@ -338,7 +338,7 @@ def reserve_agentsteers_dispatch(db, task_id, revision, user_id=1):
             raise ConflictError("Task changed; reload before dispatching")
         if row["review_state"] != "reviewed" or row["status"] == "done":
             raise ValueError("Only reviewed, unfinished tasks may be dispatched")
-        if row["agentsteers_job_id"] or row["agent_status"] == "submitting":
+        if row["agentsteers_job_id"] or row["agent_status"] in ("submitting", "dispatch_error"):
             raise ConflictError("Task already dispatched or being submitted")
         db.execute("""UPDATE tasks SET assigned_agent='AgentSteers Mock',
             agent_status='submitting', agentsteers_result='', revision=revision+1,
@@ -370,6 +370,10 @@ def record_agentsteers_update(db, task_id, user_id, status, job_id=None, result=
         if not job_id and status == "dispatch_error" and row["agent_status"] != "submitting":
             raise ConflictError("Task is not being dispatched")
         text_result = json.dumps(result or {}, ensure_ascii=False)[:4000]
+        if (row["agent_status"] == status and
+            row["agentsteers_job_id"] == (job_id or row["agentsteers_job_id"]) and
+            row["agentsteers_result"] == text_result):
+            return decorate(row, due_soon_hours=_soon(db, user_id))
         db.execute("""UPDATE tasks SET agent_status=?, agentsteers_job_id=?,
             agentsteers_result=?, revision=revision+1, updated_at=?
             WHERE id=? AND user_id=?""",
