@@ -27,7 +27,7 @@ function makeAgentSteersControls(task) {
   }
   if(!task.agentsteers_job_id && task.agent_status!=='submitting' &&
      task.agent_status!=='dispatch_error' && task.status!=='done' &&
-     agentSteersReadiness.can_dispatch) {
+     agentSteersReadiness.can_dispatch && agentSteersVerifiedThisPage) {
     const dispatch=iconButton('check','Send to AgentSteers (mock only)');
     dispatch.addEventListener('click',async()=>{
       const prompt='Send reviewed task "'+task.title+'" to AgentSteers for a MOCK run?\n\nOnly the task title and description will be shared. No email, attachment, GitHub change, or shell command will be executed.';
