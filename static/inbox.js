@@ -160,21 +160,109 @@ function showTotals(state) {
     'Synced here: ' + part('Inbox', state.counts.inbox, remote.inbox) + ' · ' + part('Sent', state.counts.sent, remote.sent) + '.' +
     (behind ? ' Each folder keeps its ' + n(state.sync_limit) + ' most recent messages; raise “Messages per folder” in Settings to sync more.' : ' Everything in these folders is synced.');
 }
+let shownCounts = null;
 function showCounts(counts) {
+  shownCounts = {...counts};
   folderInbox.textContent = 'Inbox (' + counts.inbox + (counts.unread ? ' · ' + counts.unread + ' unread' : '') + ')';
   folderSent.textContent = 'Sent (' + counts.sent + ')';
 }
-// Marks a message read/unread in Inbox Tend (never in Gmail) and updates the lists without reloading them.
-async function setRead(id, markRead) {
-  const result = await request('/api/connectors/gmail/messages/' + encodeURIComponent(id) + '/read', 'POST', {read: markRead});
-  if (result.gmail_error) notify('Saved here, but Gmail was not updated: ' + result.gmail_error, true);
-  readState.set(id, result.unread);
-  paintRead();
-  for (const m of messages) if (m.id === id) m.unread = result.unread;
+const pendingRead = new Map();
+const readVersion = new Map();
+function updateReadLocally(id, unread) {
+  const previous = readState.get(id);
+  readState.set(id, unread);
+  for (const m of messages) if (m.id === id) m.unread = unread;
   for (const g of groups) g.unread_count = g.messages.filter(m => m.unread).length;
-  request('/api/connectors/gmail/status').then(state => { const own = accountFilter ? (state.accounts || []).find(a => String(a.id) === accountFilter) : null; showCounts(own ? own.counts : state.counts); }).catch(() => {});
-  renderList(groups.length ? {groups} : {messages});
-  return result.unread;
+  if (previous !== undefined && previous !== unread && lastData?.unread_in_view != null) {
+    lastData.unread_in_view = Math.max(0, lastData.unread_in_view + (unread ? 1 : -1));
+    showMarkAll(lastData);
+  }
+  if (previous !== undefined && previous !== unread && shownCounts) showCounts({...shownCounts, unread: Math.max(0, shownCounts.unread + (unread ? 1 : -1))});
+  paintRead();
+  if (view !== 'people' || !groups.length) { renderList(groups.length ? {groups} : {messages}); return; }
+  const group = groups.find(g => g.messages.some(m => m.id === id));
+  if (!group) return;
+  const row = [...list.querySelectorAll('.row-wrap')].find(w => w.querySelector('.message')?.dataset.id === group.id);
+  if (!row) return;
+  const button = row.querySelector('.message');
+  button.classList.toggle('unread', group.unread_count > 0);
+  const badge = button.querySelector('.count-badge');
+  if (badge) {
+    badge.textContent = group.unread_count ? group.unread_count + '/' + group.count : String(group.count);
+    badge.classList.toggle('unread-badge', group.unread_count > 0);
+    badge.title = group.unread_count ? group.unread_count + ' unread of ' + group.count + ' messages' : group.count + ' messages';
+  }
+  const mark = row.querySelector('.row-read');
+  if (mark) {
+    mark.hidden = group.unread_count === 0;
+    mark.title = 'Mark ' + group.unread_count + ' unread message(s) from this person as read';
+    mark.setAttribute('aria-label', mark.title);
+  }
+  if (onlyUnread && !group.unread_count && currentGroup?.id !== group.id && !pendingRead.has(id)) retireRow(row, group.id);
+}
+const retiringRows = new WeakSet();
+function retireRow(row, groupId) {
+  if (retiringRows.has(row)) return;
+  retiringRows.add(row);
+  const attempt = () => {
+    const group = groups.find(g => g.id === groupId);
+    if (!row.isConnected || !group || group.unread_count || currentGroup?.id === groupId || view !== 'people' || !onlyUnread) {
+      retiringRows.delete(row);
+      return;
+    }
+    // Keep the layout steady while the pointer is over the list; otherwise the next row jumps under it.
+    if (list.matches(':hover')) {
+      list.addEventListener('pointerleave', () => setTimeout(attempt, 300), {once: true});
+      return;
+    }
+    row.classList.add('read-leaving');
+    setTimeout(() => {
+      const latest = groups.find(g => g.id === groupId);
+      if (!row.isConnected || !latest || latest.unread_count || currentGroup?.id === groupId || list.matches(':hover')) {
+        row.classList.remove('read-leaving');
+        setTimeout(attempt, 300);
+        return;
+      }
+      row.remove();
+      groups = groups.filter(g => g.id !== groupId);
+      messages = groups.flatMap(g => g.messages);
+      retiringRows.delete(row);
+    }, 180);
+  };
+  setTimeout(attempt, 700);
+}
+function settleReadUi(id) {
+  if (view !== 'people' || !onlyUnread) return;
+  const group = groups.find(g => g.messages.some(m => m.id === id));
+  if (!group || group.unread_count || currentGroup?.id === group.id) return;
+  const row = [...list.querySelectorAll('.row-wrap')].find(w => w.querySelector('.message')?.dataset.id === group.id);
+  if (row) retireRow(row, group.id);
+}
+// Update the current row immediately; a failed save restores its previous state.
+async function setRead(id, markRead) {
+  if (pendingRead.has(id)) return pendingRead.get(id);
+  const before = readState.get(id) ?? messages.find(m => m.id === id)?.unread ?? !markRead;
+  const version = (readVersion.get(id) || 0) + 1;
+  readVersion.set(id, version);
+  pendingRead.set(id, !markRead);
+  updateReadLocally(id, !markRead);
+  try {
+    const result = await request('/api/connectors/gmail/messages/' + encodeURIComponent(id) + '/read', 'POST', {read: markRead});
+    if (result.gmail_error) notify('Saved here, but Gmail was not updated: ' + result.gmail_error, true);
+    if (readVersion.get(id) === version) {
+      pendingRead.delete(id);
+      updateReadLocally(id, result.unread);
+      settleReadUi(id);
+    }
+    request('/api/connectors/gmail/status').then(state => { const own = accountFilter ? (state.accounts || []).find(a => String(a.id) === accountFilter) : null; showCounts(own ? own.counts : state.counts); }).catch(() => {});
+    return result.unread;
+  } catch (error) {
+    if (readVersion.get(id) === version) {
+      pendingRead.delete(id);
+      updateReadLocally(id, before);
+    }
+    throw error;
+  }
 }
 async function selectMessage(id) {
   selectedId = id;
@@ -281,10 +369,8 @@ async function selectMessage(id) {
   detail.append(bar);
   if (note) detail.append(note);
   // Opening a message marks it read. Shown as read at once; put back if the request fails.
-  if (full.unread && userSettings.mark_read_on_open && full.direction !== 'sent') {
-    readState.set(id, false);
-    setRead(id, true).catch(() => { readState.set(id, true); paintRead(); });
-  }
+  if (full.unread && userSettings.mark_read_on_open && full.direction !== 'sent')
+    setRead(id, true).catch(error => notify('Could not mark the message as read: ' + error.message, true));
   paintRead();
   if (userSettings.ai_enabled) detail.append(aiControls(id, full.direction === 'sent'));
 }
@@ -499,13 +585,21 @@ function groupHeading(text, items) {
 }
 async function markGroupRead(ids, mark) {
   mark.disabled = true;
+  mark.hidden = true;
+  const before = new Map(ids.map(id => [id, readState.get(id) ?? messages.find(m => m.id === id)?.unread ?? true]));
+  for (const id of ids) { pendingRead.set(id, false); updateReadLocally(id, false); }
   try {
     const result = await request('/api/connectors/gmail/messages/read-all', 'POST', {ids});
     if (result.gmail_error) notify('Marked as read here, but Gmail was not fully updated: ' + result.gmail_error, true);
     else notify(result.marked + ' message(s) marked as read' + (result.gmail_changed ? ' (also in Gmail).' : '.'));
-    mark.hidden = true;
-    await refreshGmail();
-  } catch (error) { mark.disabled = false; notify('Could not mark messages as read: ' + error.message, true); }
+    for (const id of ids) { pendingRead.delete(id); settleReadUi(id); }
+    request('/api/connectors/gmail/status').then(state => { const own = accountFilter ? (state.accounts || []).find(a => String(a.id) === accountFilter) : null; showCounts(own ? own.counts : state.counts); }).catch(() => {});
+  } catch (error) {
+    for (const [id, unread] of before) { pendingRead.delete(id); updateReadLocally(id, unread); }
+    mark.hidden = false;
+    mark.disabled = false;
+    notify('Could not mark messages as read: ' + error.message, true);
+  }
 }
 // New mail while the page is open: remember which messages the list has shown for this folder and account, and make the
 // ones that were not there before slide in. A changed folder, account or search starts over without any animation.
@@ -533,8 +627,14 @@ function renderList(data) {
   const previous = selectedId;
   list.replaceChildren();
   groups = data.groups || [];
+  if (data.groups && view === 'people' && onlyUnread && currentGroup && selectedId && !groups.some(g => g.id === currentGroup.id))
+    groups = [...groups, currentGroup].sort((a, b) => b.last.internal_date - a.last.internal_date);
   messages = data.groups ? groups.flatMap(g => g.messages) : data.messages;
-  for (const m of messages) readState.set(m.id, m.unread);
+  for (const m of messages) {
+    if (pendingRead.has(m.id)) m.unread = pendingRead.get(m.id);
+    readState.set(m.id, m.unread);
+  }
+  for (const g of groups) g.unread_count = g.messages.filter(m => m.unread).length;
   paintRead();
   if (!messages.some(m => m.id === previous)) {
     selectedId = null; currentGroup = null;
@@ -607,7 +707,15 @@ function renderList(data) {
       if (card) button.append(el('div', card, 'person-line'));
       if (filtersActive() && g.matches && g.count > 1) button.append(el('div', g.matches + ' of ' + g.count + ' messages match', 'meta'));
       if (g.attachment_count) button.append(attachmentLabel(g.attachment_count));
-      button.addEventListener('click', () => { currentGroup = g; selectMessage(g.last.id); });
+      button.addEventListener('click', () => {
+        const old = currentGroup;
+        currentGroup = g;
+        selectMessage(g.last.id);
+        if (view === 'people' && onlyUnread && old && old.id !== g.id && !old.unread_count) {
+          const previousRow = [...list.querySelectorAll('.row-wrap')].find(w => w.querySelector('.message')?.dataset.id === old.id);
+          if (previousRow) retireRow(previousRow, old.id);
+        }
+      });
       const wrap = el('div', undefined, 'row-wrap');
       wrap.append(button);
       const unreadIds = g.messages.filter(m => m.unread).map(m => m.id);
