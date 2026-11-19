@@ -51,9 +51,10 @@ def nav_html(active, signed_in):
     return (links + _nav_link('/user/settings', 'Settings', 'gear', active == 'settings') +
             '<button id="logout" type="button"><i class="fa-solid fa-right-from-bracket fa-fw" aria-hidden="true"></i><span>Sign out</span></button>')
 
-def render_page(name):
+def render_page(name, session=False):
     """Compose trusted static page content with one shared header and footer."""
     title, description, scripts, active, signed_in = PAGES[name]
+    inside = signed_in or session   # Someone who is signed in lands in their inbox from the logo; the public site moves to the footer.
     layout = (ROOT/'static'/'layout.html').read_text()
     content = (ROOT/'static'/'pages'/f'{name}.html').read_text()
     replacements = {
@@ -61,6 +62,9 @@ def render_page(name):
         '{{DESCRIPTION}}': escape(description, quote=True),
         '{{SCRIPT}}': ''.join(f'<script src="{src}" defer></script>' for src in scripts),
         '{{NAV}}': nav_html(active, signed_in),
+        '{{BRAND_HREF}}': '/user/inbox' if inside else '/',
+        '{{BRAND_LABEL}}': 'Inbox Tend: open my inbox' if inside else 'Inbox Tend home',
+        '{{FOOTER_SITE}}': '<a href="/" class="underline">Official website</a> · ' if inside and name != 'home' else '',
         '{{CONTENT}}': content,
     }
     for marker, value in replacements.items():
@@ -229,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok(): raise RequestError(403,'Invalid Host')
         if not write:
             if path == '/':
-                return self._send(200,render_page('home'),'text/html; charset=utf-8')
+                return self._send(200,render_page('home',bool(self._session())),'text/html; charset=utf-8')
             if path == '/login':
                 if self._session(): return self._redirect('/user/inbox')
                 return self._send(200,render_page('login'),'text/html; charset=utf-8')
@@ -252,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/LICENSE':   # AGPL: the license text is offered to everyone who uses the service
                 return self._send(200,(ROOT/'LICENSE').read_bytes(),'text/plain; charset=utf-8')
             if path == '/privacy':
-                return self._send(200,render_page('privacy'),'text/html; charset=utf-8')
+                return self._send(200,render_page('privacy',bool(self._session())),'text/html; charset=utf-8')
             if path == '/api/health': return self._json(200,{'status':'ok'})
         if not write and path == '/api/auth/providers':   # Public: lets the login page show only what works
             return self._json(200,{'google':bool(self.auth_manager) and google_login.configured(self.gmail_config)})

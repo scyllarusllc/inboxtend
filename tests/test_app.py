@@ -102,7 +102,11 @@ class AppTests(unittest.TestCase):
             self.assertIn('aria-label="Main navigation"',page)
             pages.append(page)
         footers=[page.split('<footer class="site-footer">',1)[1].split('</footer>',1)[0] for page in pages]
-        self.assertEqual(len(set(footers)),1)
+        # Signed in, the logo opens the inbox and the public site moves to the footer; otherwise the footer is the same everywhere.
+        site='<a href="/" class="underline">Official website</a> · '
+        self.assertEqual(len({footer.replace(site,'') for footer in footers}),1)
+        self.assertTrue(all(site in footer for footer,path in zip(footers,paths) if path.startswith('/user/')))
+        self.assertFalse(any(site in footer for footer,path in zip(footers,paths) if not path.startswith('/user/')))
         import re
         for page in pages:
             nav=page.split('aria-label="Main navigation">',1)[1].split('</nav>',1)[0]
@@ -110,7 +114,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(links[:2],[('/user/inbox','Inbox'),('/user/tasks','Tasks')])  # No Home link (the logo goes home) and no Privacy link (it is in the footer).
             self.assertNotIn('/privacy',nav)
             self.assertNotIn('>Home<',nav)
-            self.assertIn('href="/" aria-label="Inbox Tend home"',page)
+            self.assertIn('class="brand" href="/user/inbox"' if 'id="logout"' in page else 'class="brand" href="/"',page)   # Signed in: the logo opens the inbox.
         self.assertIn('href="/user/inbox" aria-current="page"',pages[3])
         self.assertIn('href="/user/tasks" aria-current="page"',pages[4])
         self.assertIn('id="logout"',pages[3]);self.assertIn('id="logout"',pages[4])
