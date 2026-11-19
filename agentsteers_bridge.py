@@ -44,6 +44,23 @@ def _settings():
     return raw_url, token, repo
 
 
+def readiness():
+    """Describe local configuration without probing the remote host or leaking secrets."""
+    if os.environ.get("INBOX_TEND_AGENTSTEERS_BRIDGE_ENABLED") != "1":
+        return {"state": "disabled", "can_dispatch": False,
+                "message": "AgentSteers mock dispatch is disabled by the server operator."}
+    if not configured():
+        return {"state": "needs_configuration", "can_dispatch": False,
+                "message": "AgentSteers mock connection settings are incomplete."}
+    try:
+        _settings()
+    except BridgeError:
+        return {"state": "invalid_configuration", "can_dispatch": False,
+                "message": "AgentSteers mock connection settings are invalid."}
+    return {"state": "configured_unverified", "can_dispatch": True,
+            "message": "Mock bridge is configured. Remote connectivity has not been verified."}
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise BridgeError("AgentSteers redirects are not allowed")
