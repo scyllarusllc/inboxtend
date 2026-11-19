@@ -5,6 +5,53 @@ const taskSearch = document.getElementById('task-search');
 const taskFilter = document.getElementById('task-filter');
 const taskRefresh = document.getElementById('task-refresh');
 let cachedTasks = [];
+// Shared controls used in both the task list and expanded task details.
+// Every dispatch requires a fresh user confirmation and server-side authorization.
+function makeAgentSteersControls(task) {
+  const agentBox=el('div',undefined,'task-agentsteers');
+  const mockStatus=task.agentsteers_job_id
+    ? 'AgentSteers simulation: '+task.agent_status+' · Job '+task.agentsteers_job_id
+    : 'AgentSteers simulation: '+(task.agent_status || 'not dispatched');
+  agentBox.append(el('p',mockStatus,'meta'));
+  if(task.agentsteers_result) {
+    try {
+      const result=JSON.parse(task.agentsteers_result);
+      if(result.message)agentBox.append(el('p',result.message,'meta'));
+      else if(result.result && result.result.message)agentBox.append(el('p',result.result.message,'meta'));
+    } catch (_) { /* Invalid legacy result: omit display only. */ }
+  }
+  if(!task.agentsteers_job_id && task.agent_status!=='submitting' &&
+     task.agent_status!=='dispatch_error' && task.status!=='done') {
+    const dispatch=iconButton('check','Send to AgentSteers (mock only)');
+    dispatch.addEventListener('click',async()=>{
+      const prompt='Send reviewed task "'+task.title+'" to AgentSteers for a MOCK run?\\n\\nOnly the task title and description will be shared. No email, attachment, GitHub change, or shell command will be executed.';
+      if(!window.confirm(prompt))return;
+      dispatch.disabled=true;
+      try {
+        await request('/api/tasks/'+task.id+'/agentsteers-dispatch','POST',
+                      {revision:task.revision,confirm:'DISPATCH MOCK'});
+        notify('Mock task submitted to AgentSteers. No code or email was executed.');
+        await refreshTasks();
+      } catch(error) { notify(error.message,true); dispatch.disabled=false; }
+    });
+    agentBox.append(dispatch);
+  } else if(task.agentsteers_job_id) {
+    const refresh=iconButton('refresh','Refresh AgentSteers mock status');
+    refresh.addEventListener('click',async()=>{
+      refresh.disabled=true;
+      try {
+        await request('/api/tasks/'+task.id+'/agentsteers-refresh','POST',{});
+        notify('AgentSteers mock status refreshed.');
+        await refreshTasks();
+      } catch(error) { notify(error.message,true); refresh.disabled=false; }
+    });
+    agentBox.append(refresh);
+  } else if(task.agent_status==='dispatch_error') {
+    agentBox.append(el('p','Dispatch status is uncertain. Check the AgentSteers service before submitting another task.','meta'));
+  }
+  return agentBox;
+}
+
 function makeEditForm(task) {
   const form=el('form',undefined,'task-form');
   const title=field(form,'Title','title',task.title); title.required=true; title.maxLength=200;
@@ -111,7 +158,11 @@ function renderTasks() {
     const editSummary=document.createElement('summary');editSummary.append(icon('pencil'),document.createTextNode(' Edit task'));
     editor.append(editSummary);
     editor.addEventListener('toggle',()=>{
-      if(editor.open && editor.children.length===1)editor.append(makeEditForm(task));
+      if(editor.open && editor.children.length===1) {
+        editor.append(makeEditForm(task));
+        const heading=el('h4','AgentSteers mock handoff');
+        editor.append(heading,makeAgentSteersControls(task));
+      }
     });
     const history=el('details');
     const historySummary=document.createElement('summary');historySummary.append(icon('history'),document.createTextNode(' Activity history'));
@@ -136,46 +187,7 @@ function renderTasks() {
         placeholder.replaceWith(ordered);history.dataset.loaded='true';
       }catch(error){placeholder.textContent='Could not load history: '+error.message;}
     });
-    // Explicitly user-initiated, mock-only AgentSteers dispatch; never automatic.
-    const agentBox=el('div',undefined,'task-agentsteers');
-    const mockStatus=task.agentsteers_job_id
-      ? 'AgentSteers simulation: '+task.agent_status+' · Job '+task.agentsteers_job_id
-      : 'AgentSteers simulation: '+(task.agent_status || 'not dispatched');
-    agentBox.append(el('p',mockStatus,'meta'));
-    if(task.agentsteers_result){
-      try{
-        const result=JSON.parse(task.agentsteers_result);
-        if(result.message)agentBox.append(el('p',result.message,'meta'));
-        else if(result.result && result.result.message)agentBox.append(el('p',result.result.message,'meta'));
-      }catch(_){/* Legacy result may be malformed; ignore display only. */}
-    }
-    if(!task.agentsteers_job_id && task.agent_status!=='submitting' && task.status!=='done'){
-      const dispatch=iconButton('check','Send to AgentSteers (mock only)');
-      dispatch.addEventListener('click',async()=>{
-        const prompt='Send reviewed task "'+task.title+'" to AgentSteers for a MOCK run?\n\nOnly the task title and description will be shared. No email, attachment, GitHub change, or shell command will be executed.';
-        if(!window.confirm(prompt))return;
-        dispatch.disabled=true;
-        try{
-          await request('/api/tasks/'+task.id+'/agentsteers-dispatch','POST',
-                        {revision:task.revision,confirm:'DISPATCH MOCK'});
-          notify('Mock task submitted to AgentSteers. No code or email was executed.');
-          await refreshTasks();
-        }catch(error){notify(error.message,true);dispatch.disabled=false;}
-      });
-      agentBox.append(dispatch);
-    } else if(task.agentsteers_job_id) {
-      const refresh=iconButton('refresh','Refresh AgentSteers mock status');
-      refresh.addEventListener('click',async()=>{
-        refresh.disabled=true;
-        try{
-          await request('/api/tasks/'+task.id+'/agentsteers-refresh','POST',{});
-          notify('AgentSteers mock status refreshed.');
-          await refreshTasks();
-        }catch(error){notify(error.message,true);refresh.disabled=false;}
-      });
-      agentBox.append(refresh);
-    }
-    actions.append(agentBox);
+    actions.append(makeAgentSteersControls(task));
     item.append(actions,editor,history);
     taskList.append(item);
   }
