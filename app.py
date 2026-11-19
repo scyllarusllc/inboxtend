@@ -591,6 +591,9 @@ class Handler(BaseHTTPRequestHandler):
             message = self._gmail_message(session,parts[4])
             with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
             return self._json(200,proposal(message,user))
+        if path == '/api/agentsteers/status':
+            # Only reached after login; never disclose private tokens or endpoint URLs.
+            return self._json(200,{'bridge':agentsteers_bridge.readiness()})
         if path == '/api/tasks/summary':
             with self._db() as db:
                 summary = task_summary(db,user_id=session['id'])
