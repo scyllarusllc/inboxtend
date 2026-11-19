@@ -449,6 +449,14 @@ class Handler(BaseHTTPRequestHandler):
                             return self._json(200,{'draft':ai.draft_reply(self.gmail_config,message,files,guidance,user),'sent':False,'template':False,'ai':True})
                 except ai.AIBusy as exc: raise RequestError(429,str(exc)) from None
                 except ai.AIError as exc: raise RequestError(424,str(exc)) from None
+            if path == '/api/agentsteers/queue-summary' and self.command == 'POST':
+                # Authenticated same-origin, CSRF-checked read-only remote call.
+                # Never expose raw remote errors, credentials, or any job metadata.
+                try:
+                    counts = agentsteers_bridge.queue_summary()
+                except agentsteers_bridge.BridgeError:
+                    raise RequestError(503,'AgentSteers mock queue summary unavailable') from None
+                return self._json(200,{'queue':counts,'mode':'mock_only'})
             if path == '/api/agentsteers/probe' and self.command == 'POST':
                 # Authenticated same-origin request with CSRF, read-only remote ping.
                 try:
