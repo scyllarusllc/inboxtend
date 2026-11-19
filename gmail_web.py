@@ -293,7 +293,7 @@ def unread_among(db,user_id,ids):
     ids = list(dict.fromkeys(ids))
     marks = ','.join('?' * len(ids))
     return [r['message_id'] for r in db.execute(f'SELECT message_id,label_ids,read_override FROM gmail_messages WHERE user_id=? AND message_id IN ({marks})',(user_id,*ids))
-            if '"UNREAD"' in (r['label_ids'] or '') and not r['read_override']]
+            if _is_unread(r)]
 
 def mark_all_read(db,config,user_id,ids,*,write=False,opener=urlopen):
     """Mark many messages read: always in Inbox Tend, and with `write` also in Gmail for the messages whose own account
