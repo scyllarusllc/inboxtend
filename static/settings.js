@@ -59,6 +59,7 @@ function readForm() {
     ai_attachments: form.ai_attachments.checked,
     translate_enabled: form.translate_enabled.checked,
     translate_language: form.translate_language.value.trim(),
+    translate_max_chars: Number(form.translate_max_chars.value),
     flags_enabled: form.flags_enabled.checked,
     topics_enabled: form.topics_enabled.checked
   };
@@ -89,8 +90,14 @@ async function init() {
     sourceSelect.value = 'en'; targetSelect.value = 'zh';
     installButton.disabled = true;
     let pollPacks = null;
+    const showTiming = recent => {
+      document.getElementById('translation-timing').textContent = recent
+        ? `Last translation (${recent.input_chars.toLocaleString()} characters): ${recent.total_seconds}s total · mail ${recent.fetch_seconds}s · queue ${recent.queue_seconds}s · model ${recent.model_seconds}s.`
+        : 'No translation measured since this server started.';
+    };
     const showPacks = async () => {
       const packs = await request('/api/translation/packs');
+      showTiming(packs.recent);
       const selected = languageSelect.value || result.settings.translate_language || '';
       languageSelect.replaceChildren(new Option('Choose an installed language', ''), ...[...new Set(packs.installed.map(pair => pair.target))].map(code => {
         const language = packs.catalog.find(item => item.code === code);
@@ -128,6 +135,9 @@ async function init() {
         await showPacks();
       } catch (error) { installStatus.textContent = error.message; installButton.disabled = false; }
     });
+    document.getElementById('refresh-translation-timing').addEventListener('click', () => showPacks().catch(error => {
+      document.getElementById('translation-timing').textContent = 'Could not load timing: ' + error.message;
+    }));
     fillForm(result.settings);
     savedModel = result.settings.ai_model || '';
     document.getElementById('account-name').textContent = result.username;

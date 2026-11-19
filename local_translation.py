@@ -122,13 +122,13 @@ def _source(text: str) -> str:
     return {'zh-cn':'zh', 'zh-tw':'zt'}.get(code, code)
 
 
-def translate_message(message: dict, target: str) -> dict:
+def translate_message(message: dict, target: str, max_chars: int = MAX_TRANSLATION_CHARS) -> dict:
     target = language_code(target)
     _, argos = _argos()
     subject = (message.get('subject') or '')[:500]
     full_body = message.get('body_text') or message.get('snippet') or ''
-    body = full_body[:MAX_TRANSLATION_CHARS]
-    truncated = len(full_body) > MAX_TRANSLATION_CHARS
+    body = full_body[:max_chars]
+    truncated = len(full_body) > max_chars
     sample = (body or subject).strip()
     if not sample:
         raise TranslationError('This message has no text to translate.')
@@ -146,6 +146,6 @@ def translate_message(message: dict, target: str) -> dict:
     except Exception as exc:
         raise TranslationError('Offline translation failed. Check the installed language packs.') from exc
     if truncated:
-        translated_body += '\n\n[Only the first 5,000 characters were translated to keep local translation responsive. Read the original message for the rest.]'
+        translated_body += f'\n\n[Only the first {max_chars:,} characters were translated to keep local translation responsive. Read the original message for the rest.]'
     return {'subject':translated_subject[:500], 'body':translated_body,
             'source_language':LANGUAGES.get(source, source), 'already_in_language':False}

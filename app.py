@@ -5,6 +5,7 @@ import os
 import secrets
 import time
 import sqlite3
+import threading
 import traceback
 from html import escape
 from contextlib import contextmanager, closing
@@ -25,6 +26,8 @@ from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
 ROOT = Path(__file__).resolve().parent
+_TRANSLATION_TIMINGS = {}
+_TRANSLATION_TIMINGS_LOCK = threading.Lock()
 NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'))
 # name -> (title, description, scripts, active nav item, signed in)
 PAGES = {
@@ -404,11 +407,13 @@ class Handler(BaseHTTPRequestHandler):
                 except local_translation.TranslationError as exc: raise RequestError(400,str(exc)) from None
                 return self._json(202,{'installation':state})
             if path == '/api/translate' and self.command == 'POST':
+                started = time.perf_counter()
                 with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
                 if not user['translate_enabled']: raise RequestError(403,'Translation is turned off in Settings')
                 language = user['translate_language'].strip()
                 if not language: raise RequestError(400,'Choose the language to translate into in Settings')
                 message = self._gmail_message(session,data.get('id'))
+                fetched = time.perf_counter()
                 force = data.get('force') is True
                 def answer(found,cached):
                     return self._json(200,{'translation':dict(found,cached=cached,provider='Argos Translate' if found['provider']=='argos' else ai.PROVIDERS.get(found['provider'],{}).get('name',found['provider']))})
@@ -420,12 +425,20 @@ class Handler(BaseHTTPRequestHandler):
                     raise RequestError(424,'The target language pack is not installed on this server. Install it in Settings → Translation.')
                 try:
                     with ai.translation_guard(session['id'],60):
+                        queued = time.perf_counter()
                         with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
                         if found and not force:  # Reaching the lock with a stored result means another request finished while this one queued.
                             return answer(found,True)
-                        result = local_translation.translate_message(message,language)
+                        result = local_translation.translate_message(message,language,user['translate_max_chars'])
+                        translated = time.perf_counter()
                         with self._db() as db: gmail_web.save_translation(db,session['id'],message['id'],language,result,'argos','installed language pack')
                         with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
+                        with _TRANSLATION_TIMINGS_LOCK:
+                            _TRANSLATION_TIMINGS[session['id']] = {'fetch_seconds':round(fetched-started,2),
+                                'queue_seconds':round(queued-fetched,2), 'model_seconds':round(translated-queued,2),
+                                'total_seconds':round(time.perf_counter()-started,2),
+                                'input_chars':min(len(message.get('body_text') or message.get('snippet') or ''),user['translate_max_chars']),
+                                'at':int(time.time())}
                         return answer(found,False)
                 except ai.AIBusy as exc: raise RequestError(429,str(exc)) from None
                 except ai.AIError as exc: raise RequestError(424,str(exc)) from None
@@ -577,10 +590,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/translation/languages':
             return self._json(200,{'languages':local_translation.installed_targets()})
         if path == '/api/translation/packs':
+            with _TRANSLATION_TIMINGS_LOCK: recent = _TRANSLATION_TIMINGS.get(session['id'])
             return self._json(200,{'catalog':[{'code':code,'name':name} for code,name in local_translation.LANGUAGES.items()],
                                    'installed':local_translation.installed_pairs(),
                                    'installation':local_translation.install_status(),
-                                   'runtime_ready':local_translation.runtime_ready()})
+                                   'runtime_ready':local_translation.runtime_ready(), 'recent':recent})
         if path == '/api/connectors/gmail/stats':
             raw = parse_qs(urlparse(self.path).query).get('account',[''])[0]
             account_id = int(raw) if raw.isdigit() else None

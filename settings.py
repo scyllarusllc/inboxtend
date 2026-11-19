@@ -36,6 +36,7 @@ DEFAULTS = {
     # Offline translation of opened messages using installed Argos language packs.
     'translate_enabled': False,
     'translate_language': '',
+    'translate_max_chars': 5000,
     # Country flags next to correspondents, guessed once per sender by the AI provider and cached. Enabling it means
     # new senders' names, addresses, date offsets, subjects and a short snippet are sent to that provider.
     'flags_enabled': False,
@@ -87,6 +88,10 @@ def _clean(key, value):
         if not value.strip(): return ''
         try: return language_code(value)
         except TranslationError as exc: raise ValueError(str(exc)) from None
+    if key == 'translate_max_chars':
+        if type(value) is not int or value not in (1000, 3000, 5000):
+            raise ValueError('Choose a supported translation length')
+        return value
     if key == 'ai_language':
         if not isinstance(value, str) or len(value.strip()) > 40 or any(ord(c) < 32 or ord(c) == 127 for c in value):
             raise ValueError('Language must be at most 40 characters')

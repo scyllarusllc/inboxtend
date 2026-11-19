@@ -154,6 +154,15 @@
                 <select name="translate_language"><option value="">Choose an installed language</option></select>
                 <span class="meta"><span id="translation-packs-status">Checking installed language packs…</span> <button id="use-browser-language" type="button" class="link-button">Use this browser&rsquo;s language</button></span>
               </label>
+              <label>Translate per message
+                <select name="translate_max_chars">
+                  <option value="1000">First 1,000 characters · fastest</option>
+                  <option value="3000">First 3,000 characters · balanced</option>
+                  <option value="5000">First 5,000 characters · more content</option>
+                </select>
+                <span class="meta">Applies to new translations. Use Retranslate on an already translated message to update its saved result.</span>
+              </label>
+              <p class="meta">The installed Argos packs do not provide a smaller model option in this app. <span id="translation-timing">No translation measured since this server started.</span> <button id="refresh-translation-timing" type="button" class="link-button">Refresh timing</button></p>
             </div>
             <div class="task-form">
               <h3>Local language packs</h3>
