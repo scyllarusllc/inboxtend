@@ -5,6 +5,8 @@ const taskSearch = document.getElementById('task-search');
 const taskFilter = document.getElementById('task-filter');
 const taskRefresh = document.getElementById('task-refresh');
 let cachedTasks = [];
+let agentSteersReadiness={state:'checking',can_dispatch:false,message:'Checking AgentSteers mock configuration…'};
+const pendingAgentDispatches=new Set();
 // Shared controls used in both the task list and expanded task details.
 // Every dispatch requires a fresh user confirmation and server-side authorization.
 function makeAgentSteersControls(task) {
@@ -21,11 +23,13 @@ function makeAgentSteersControls(task) {
     } catch (_) { /* Invalid legacy result: omit display only. */ }
   }
   if(!task.agentsteers_job_id && task.agent_status!=='submitting' &&
-     task.agent_status!=='dispatch_error' && task.status!=='done') {
+     task.agent_status!=='dispatch_error' && task.status!=='done' &&
+     agentSteersReadiness.can_dispatch) {
     const dispatch=iconButton('check','Send to AgentSteers (mock only)');
     dispatch.addEventListener('click',async()=>{
-      const prompt='Send reviewed task "'+task.title+'" to AgentSteers for a MOCK run?\\n\\nOnly the task title and description will be shared. No email, attachment, GitHub change, or shell command will be executed.';
-      if(!window.confirm(prompt))return;
+      const prompt='Send reviewed task "'+task.title+'" to AgentSteers for a MOCK run?\n\nOnly the task title and description will be shared. No email, attachment, GitHub change, or shell command will be executed.';
+      if(pendingAgentDispatches.has(task.id) || !window.confirm(prompt))return;
+      pendingAgentDispatches.add(task.id);
       dispatch.disabled=true;
       try {
         await request('/api/tasks/'+task.id+'/agentsteers-dispatch','POST',
@@ -33,6 +37,7 @@ function makeAgentSteersControls(task) {
         notify('Mock task submitted to AgentSteers. No code or email was executed.');
         await refreshTasks();
       } catch(error) { notify(error.message,true); dispatch.disabled=false; }
+      finally { pendingAgentDispatches.delete(task.id); }
     });
     agentBox.append(dispatch);
   } else if(task.agentsteers_job_id) {
@@ -100,6 +105,9 @@ function makeEditForm(task) {
 }
 function renderTasks() {
   taskList.replaceChildren();
+  const readiness=el('p','AgentSteers mock: '+agentSteersReadiness.message,'meta');
+  readiness.dataset.bridgeState=agentSteersReadiness.state;
+  taskList.append(readiness);
   const term=taskSearch.value.trim().toLowerCase();
   const filter=taskFilter.value;
   const matching=cachedTasks.filter(task=>{
@@ -194,8 +202,13 @@ function renderTasks() {
 }
 async function refreshTasks() {
   try {
-    const [overview,rows]=await Promise.all([request('/api/tasks/summary'),request('/api/tasks')]);
+    const [overview,rows,bridge]=await Promise.all([
+      request('/api/tasks/summary'),
+      request('/api/tasks'),
+      request('/api/agentsteers/status').catch(()=>({bridge:{state:'unavailable',can_dispatch:false,message:'Unable to check bridge readiness; dispatch is disabled.'}}))
+    ]);
     cachedTasks=rows.tasks;
+    agentSteersReadiness=bridge.bridge;
     const summary=overview.summary;
     taskSummary.replaceChildren();
     for(const [label,count] of [
