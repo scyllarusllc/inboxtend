@@ -35,7 +35,8 @@ PAGES = {
 }
 VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.js':'text/javascript','.svg':'image/svg+xml'}
 SCREEN_TYPES = {'.jpg':'image/jpeg','.png':'image/png'}   # Screenshots of the demo data, shown on the public home page
-STATIC_FILES = {'/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/stats.js':'text/javascript',
+STATIC_FILES = {'/static/icons/favicon.svg':'image/svg+xml','/static/icons/favicon-32.png':'image/png','/static/icons/apple-touch-icon.png':'image/png',
+                '/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/stats.js':'text/javascript',
                 '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript'}
 
 def _nav_link(href, label, icon, current):
@@ -232,6 +233,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/login':
                 if self._session(): return self._redirect('/user/inbox')
                 return self._send(200,render_page('login'),'text/html; charset=utf-8')
+            if path == '/favicon.ico':   # Browsers ask for this path on their own
+                return self._send(200,(ROOT/'static/icons/favicon-32.png').read_bytes(),'image/png',(('Cache-Control','public, max-age=86400'),))
             if path in STATIC_FILES:
                 return self._send(200,(ROOT/path.lstrip('/')).read_bytes(),STATIC_FILES[path]+'; charset=utf-8')
             if path.startswith('/static/screens/'):

@@ -6,7 +6,7 @@
   const charts = document.getElementById('stat-charts');
   const INDIGO = '#6366f1', EMERALD = '#34d399', INK = '#475569', GRID = '#e2e8f0';
   const made = {};
-  let running = false, again = false;
+  let running = false, again = false, lastUnread = null;
   const num = n => Number(n).toLocaleString();
   function tile(label, value, note, query) {
     const box = el('button', undefined, 'stat-tile');
@@ -72,6 +72,8 @@
       tiles.replaceChildren(tile('Unread', data.unread, 'in the inbox', 'is:unread'), tile('Received today', data.today_received, null, 'on:' + last),
         tile('Received · 7 days', data.week_received, 'since ' + dayLabel(weekAgo)), tile('Sent · 7 days', data.week_sent));
       tiles.hidden = false; charts.hidden = false;
+      if (lastUnread !== null && data.unread > lastUnread) tiles.firstElementChild.classList.add('bump');   // New unread mail: the number pops.
+      lastUnread = data.unread;
       for (const t of [...tiles.children].slice(2)) { t.disabled = true; t.title = ''; }
       drawDays(data.days);
       document.getElementById('chart-senders-empty').hidden = data.senders.length > 0;

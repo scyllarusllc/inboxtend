@@ -343,4 +343,12 @@
   .google-button { @apply flex w-full items-center justify-center gap-2.5 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 no-underline shadow-sm hover:bg-slate-50; }
   #login-status { @apply text-sm text-rose-700 empty:hidden; }
   .login-footnote { @apply mt-5 text-xs text-slate-500; }
+  /* A message that just arrived slides in and glows once */
+  @keyframes arrive { from { opacity: 0; transform: translateY(-14px) scale(0.97); } to { opacity: 1; transform: none; } }
+  @keyframes arrive-glow { 0% { box-shadow: 0 0 0 0 rgb(99 102 241 / 0.55); } 100% { box-shadow: 0 0 0 16px rgb(99 102 241 / 0); } }
+  @keyframes arrive-badge { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.25); } }
+  .message.fresh { animation: arrive 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both, arrive-glow 1.8s ease-out; }
+  .new-pill { @apply mb-2 inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white; animation: arrive 0.4s ease-out both; }
+  .stat-tile.bump .stat-value { display: inline-block; animation: arrive-badge 0.7s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .message.fresh, .new-pill, .stat-tile.bump .stat-value { animation: none; } }
 }

@@ -506,6 +506,28 @@ async function markGroupRead(ids, mark) {
     await refreshGmail();
   } catch (error) { mark.disabled = false; notify('Could not mark messages as read: ' + error.message, true); }
 }
+// New mail while the page is open: remember which messages the list has shown for this folder and account, and make the
+// ones that were not there before slide in. A changed folder, account or search starts over without any animation.
+let knownKey = null, known = new Set();
+const recent = new Map();   // id -> when its welcome animation is over, so a quick second redraw does not cut it short
+function findFresh(all) {
+  const key = folder + '|' + accountFilter + '|' + (filtersActive() ? 'filtered' : 'all');
+  const ids = all.map(m => m.id);
+  const fresh = new Set();
+  if (key === knownKey && known.size) for (const id of ids) if (!known.has(id)) fresh.add(id);
+  if (key !== knownKey) known = new Set();
+  for (const id of ids) known.add(id);
+  knownKey = key;
+  if (fresh.size > 30) fresh.clear();   // A first sync brings in hundreds; that is not "something just arrived".
+  const now = Date.now();
+  for (const id of fresh) recent.set(id, now + 2500);
+  for (const [id, until] of recent) if (until < now) recent.delete(id);
+  if (fresh.size) {
+    const unread = all.filter(m => fresh.has(m.id) && m.unread).length;
+    notify(fresh.size + ' new message' + (fresh.size === 1 ? '' : 's') + (unread && unread !== fresh.size ? ' (' + unread + ' unread)' : ''));
+  }
+  return new Set(recent.keys());
+}
 function renderList(data) {
   const previous = selectedId;
   list.replaceChildren();
@@ -520,6 +542,7 @@ function renderList(data) {
     currentGroup = groups.find(g => g.id === currentGroup.id) || null;  // Fresh data for the open group.
   }
   lastData = data;
+  const fresh = findFresh(messages);
   showMarkAll(data);
   const items = data.groups ? groups : messages;
   const noun = view === 'threads' ? 'conversation' : view === 'people' ? 'person' : 'message';
@@ -552,6 +575,7 @@ function renderList(data) {
   if (!data.groups) {
     for (const m of shown) {
       const button = rowButton(m.id, m.id === selectedId, m.unread);
+      if (fresh.has(m.id)) button.classList.add('fresh');
       openBlock(ageOfItem(m), button);
       button.append(subjectLine(m.subject, m.topics),
         rowMeta(m, folder === 'sent' ? 'To ' + (m.to || 'unknown') : (m.from || 'Unknown sender'), m.internal_date, m.date));
@@ -562,6 +586,7 @@ function renderList(data) {
   } else {
     for (const g of shown) {
       const button = rowButton(g.id, currentGroup && g.id === currentGroup.id, g.unread_count > 0);
+      if (g.messages.some(m => fresh.has(m.id))) button.classList.add('fresh');
       openBlock(ageOfItem(g), button);
       const last = g.last;
       const top = el('div', undefined, 'group-title');
