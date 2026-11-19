@@ -68,8 +68,12 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def _call(name, arguments):
     url, token, _ = _settings()
-    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                          "params": {"name": name, "arguments": arguments}}).encode()
+    if name == "_ping":
+        request_body = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+    else:
+        request_body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                        "params": {"name": name, "arguments": arguments}}
+    payload = json.dumps(request_body).encode()
     req = urllib.request.Request(url, payload, method="POST", headers={
         "Authorization": "Bearer " + token,
         "Content-Type": "application/json",
@@ -90,6 +94,10 @@ def _call(name, arguments):
         if answer.get("jsonrpc") != "2.0" or answer.get("id") != 1:
             raise ValueError("Bad JSON-RPC response")
         result = answer["result"]
+        if name == "_ping":
+            if not isinstance(result, dict):
+                raise ValueError("Bad MCP ping response")
+            return {"ok": True}
         if not isinstance(result, dict) or not isinstance(result["content"], list):
             raise ValueError("Bad MCP response")
         outcome = json.loads(result["content"][0]["text"])
@@ -100,6 +108,13 @@ def _call(name, arguments):
     if result.get("isError") or not outcome.get("ok"):
         raise BridgeError("AgentSteers rejected task: " + str(outcome.get("error", "unknown"))[:100])
     return outcome
+
+
+def probe():
+    """Authenticated, read-only JSON-RPC ping. Does not submit a task."""
+    _call("_ping", {})
+    return {"state": "connected_mock", "can_dispatch": True,
+            "message": "Authenticated AgentSteers mock MCP endpoint responded. This does not verify Codex execution."}
 
 
 def submit(task):
