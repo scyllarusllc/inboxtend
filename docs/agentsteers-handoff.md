@@ -33,6 +33,8 @@ If connectivity has been checked, the page may poll one `queued_mock` job per mi
 5. A returned mock task ID and status are stored on the local task and shown in both views. Use **Refresh AgentSteers mock status** to read status and the simulated result.
 6. The task history records dispatch and status updates. Uncertain failures cannot automatically be retried to avoid accidental duplicate submissions.
 
+**AgentSteers server operator guide:** [mock MCP server preparation](https://github.com/scyllarusllc/agentsteers/blob/main/docs/inboxtend-mock-server-preparation.md). It covers private persistent SQLite, an uninstalled non-root service template, HTTPS proxy review and rollback. No server deployment is implied.
+
 ## Private server configuration
 
 Bridge is **disabled by default**. The server operator must explicitly configure, outside version control:
