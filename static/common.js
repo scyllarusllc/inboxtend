@@ -43,6 +43,35 @@ const ICONS = {
   eye: 'fa-regular fa-eye', language: 'fa-solid fa-language', sparkles: 'fa-solid fa-wand-magic-sparkles',
   reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark'
 };
+// Message text with web addresses made clickable. Only http(s) links, always in a new tab and without handing the page
+// to the destination (noopener) or telling it where you came from (noreferrer). The text itself stays plain text nodes.
+function linkedText(text, className) {
+  const box = el('pre', undefined, className);
+  const pattern = /https?:\/\/[^\s<>"'`]+/gi;
+  let last = 0, match;
+  while ((match = pattern.exec(text)) !== null) {
+    let url = match[0];
+    for (;;) {   // Punctuation that ends a sentence is not part of the address; a closing bracket is only if it was opened inside.
+      const end = url.slice(-1);
+      const open = {')': '(', ']': '[', '}': '{'}[end];
+      if (/[.,;:!?'"*_]/.test(end) || (open && url.split(end).length > url.split(open).length)) url = url.slice(0, -1);
+      else break;
+    }
+    let valid = false;
+    try { valid = ['http:', 'https:'].includes(new URL(url).protocol); } catch (_) { /* not an address */ }
+    if (!valid || url.length < 9) continue;
+    box.append(document.createTextNode(text.slice(last, match.index)));
+    const link = document.createElement('a');
+    link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer nofollow ugc';
+    link.title = 'Opens in a new tab: ' + url;
+    link.textContent = url;
+    box.append(link);
+    last = match.index + url.length;
+    pattern.lastIndex = last;
+  }
+  box.append(document.createTextNode(text.slice(last)));
+  return box;
+}
 function icon(name) {
   const node = document.createElement('i');
   node.className = (ICONS[name] || 'fa-solid fa-circle') + ' fa-fw';

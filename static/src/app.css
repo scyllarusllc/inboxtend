@@ -248,6 +248,7 @@
   .group-name { @apply overflow-hidden text-ellipsis whitespace-nowrap; }
   .group-snippet { @apply overflow-hidden text-ellipsis whitespace-nowrap; }
   .more-button { @apply w-full border-dashed bg-transparent text-indigo-700 shadow-none; }
+  .message-body a { @apply break-all text-indigo-700 underline decoration-indigo-300 underline-offset-2 hover:text-indigo-900 hover:decoration-indigo-600; }
   .message-body { @apply my-3 max-h-[28rem] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-relaxed text-slate-800; }
   .conversation-thread { @apply mt-5 grid gap-2; }
   .conversation-thread h4, .attachment-heading { @apply mb-1 flex items-center gap-2; }
