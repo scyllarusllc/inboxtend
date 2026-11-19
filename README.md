@@ -41,14 +41,16 @@ Without the AI switches, suggestions are plain rules (subject becomes title, sni
 
 ## Offline translation setup
 
-Install the Python dependencies, then download only the Argos translation directions you need. For example, English mail into Chinese and Spanish mail into English:
+Install the Python dependencies, then use **Settings → Translation → Local language packs** to download only the directions you need. The page shows installed packs and download status. You can also install from the command line; for example, English mail into Chinese and Spanish mail into English:
 
 ```sh
 python -m pip install -r requirements.txt
 python scripts/install_translation_packs.py en_zh es_en
 ```
 
-Each direction is a separate package. The current Argos package directory lists English → Chinese at about 67 MB and Spanish → English at about 64 MB compressed; installed size and RAM use are higher. Packages are downloaded during setup, not when a message opens. Keep the packages on the server across deploys; by default Argos uses its own user data directory, or set `ARGOS_PACKAGES_DIR` to a persistent path. Then choose an installed target language under **Settings → Translation**. Missing source-to-target routes return a clear error. Translation results remain in the existing SQLite cache; old AI translations remain readable until retranslated. See [Argos language packages](https://data.argosopentech.com/argospm/v1/) and [Argos settings](https://github.com/argosopentech/argos-translate/blob/master/docs/source/settings.rst).
+Each direction is a separate package. The current Argos package directory lists English → Chinese at about 67 MB and Spanish → English at about 64 MB compressed; installed size and RAM use are higher. Packages are downloaded when you request them in Settings or with the command above, not when a message opens. Keep the packages on the server across deploys; by default Argos uses its own user data directory, or set `ARGOS_PACKAGES_DIR` to a persistent path. Then choose an installed target language under **Settings → Translation** and save your settings. Missing source-to-target routes return a clear error. Translation results remain in the existing SQLite cache; old AI translations remain readable until retranslated. See [Argos language packages](https://data.argosopentech.com/argospm/v1/) and [Argos settings](https://github.com/argosopentech/argos-translate/blob/master/docs/source/settings.rst).
+
+If Settings shows **“The running server does not have the language-pack API yet”**, the browser has loaded a newer settings page than the running Python process. Deploy the matching `app.py` and `local_translation.py`, install `requirements.txt`, and restart Inbox Tend. Refresh the Settings page afterward.
 
 ## Try it in a minute, no Gmail needed
 

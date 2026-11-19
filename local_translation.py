@@ -1,5 +1,6 @@
 """Offline email translation using explicitly installed Argos language packs."""
 from __future__ import annotations
+import threading
 
 LANGUAGES = {
     'ar':'Arabic', 'de':'German', 'en':'English', 'es':'Spanish', 'fr':'French',
@@ -18,6 +19,8 @@ class TranslationError(Exception):
 
 
 def language_code(value: str) -> str:
+    if not isinstance(value, str):
+        raise TranslationError('Choose a valid language.')
     code = (value or '').strip().casefold()
     code = ALIASES.get(code, code)
     if code not in LANGUAGES:
@@ -33,6 +36,15 @@ def _argos():
     return package, translate
 
 
+def runtime_ready() -> bool:
+    try:
+        _argos()
+        from langdetect import detect_langs  # noqa: F401
+        return True
+    except (TranslationError, ImportError):
+        return False
+
+
 def installed_targets() -> list[dict]:
     try:
         package, _ = _argos()
@@ -40,6 +52,60 @@ def installed_targets() -> list[dict]:
         return []
     codes = {p.to_code for p in package.get_installed_packages() if getattr(p, 'type', 'translate') == 'translate'}
     return [{'code': code, 'name': LANGUAGES[code]} for code in sorted(codes) if code in LANGUAGES]
+
+
+def installed_pairs() -> list[dict]:
+    try:
+        package, _ = _argos()
+    except TranslationError:
+        return []
+    pairs = {(p.from_code, p.to_code) for p in package.get_installed_packages()
+             if getattr(p, 'type', 'translate') == 'translate' and p.from_code in LANGUAGES and p.to_code in LANGUAGES}
+    return [{'source': source, 'target': target, 'label': f'{LANGUAGES[source]} → {LANGUAGES[target]}'}
+            for source, target in sorted(pairs)]
+
+
+_INSTALL_LOCK = threading.Lock()
+_INSTALL = {'state':'idle', 'source':'', 'target':'', 'message':''}
+
+
+def install_status() -> dict:
+    with _INSTALL_LOCK:
+        return dict(_INSTALL)
+
+
+def start_install(source: str, target: str) -> dict:
+    source, target = language_code(source), language_code(target)
+    if source == target:
+        raise TranslationError('Choose two different languages.')
+    _argos()  # Fail before starting a background job when dependencies are absent.
+    with _INSTALL_LOCK:
+        if _INSTALL['state'] in ('downloading', 'installing'):
+            raise TranslationError('A language pack is already being installed. Wait for it to finish.')
+        _INSTALL.update(state='downloading', source=source, target=target, message='Checking and downloading the language pack…')
+    threading.Thread(target=_install_worker, args=(source, target), daemon=True).start()
+    return install_status()
+
+
+def _install_worker(source: str, target: str) -> None:
+    try:
+        package, translate = _argos()
+        package.update_package_index()
+        found = next((item for item in package.get_available_packages()
+                      if item.from_code == source and item.to_code == target), None)
+        if found is None:
+            raise TranslationError(f'No Argos language pack is available for {LANGUAGES[source]} → {LANGUAGES[target]}.')
+        downloaded = found.download()
+        with _INSTALL_LOCK:
+            _INSTALL.update(state='installing', message='Installing and preparing the language pack…')
+        package.install_from_path(downloaded)
+        # Prime sentence splitting during setup, never during the first email translation.
+        translate.translate('Hello. This is a test.', source, target)
+        with _INSTALL_LOCK:
+            _INSTALL.update(state='ready', message=f'{LANGUAGES[source]} → {LANGUAGES[target]} is ready.')
+    except Exception as exc:
+        with _INSTALL_LOCK:
+            _INSTALL.update(state='error', message=str(exc)[:200] or 'Could not install the language pack.')
 
 
 def _source(text: str) -> str:

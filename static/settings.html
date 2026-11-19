@@ -155,6 +155,14 @@
                 <span class="meta"><span id="translation-packs-status">Checking installed language packs…</span> <button id="use-browser-language" type="button" class="link-button">Use this browser&rsquo;s language</button></span>
               </label>
             </div>
+            <div class="task-form">
+              <h3>Local language packs</h3>
+              <p class="meta">Download a source → target pack onto this server. Each direction is separate; a pack may be around 60–120 MB. Only the directions you install are used. Downloads happen here, not when you open an email.</p>
+              <p id="installed-translation-packs" class="meta">Checking installed packs…</p>
+              <label>From <select id="translation-source" aria-label="Source language"></select></label>
+              <label>To <select id="translation-target" aria-label="Target language"></select></label>
+              <div class="settings-actions"><button id="install-translation-pack" type="button" class="action">Download language pack</button><span id="translation-install-status" class="meta" role="status" aria-live="polite"></span></div>
+            </div>
           </section>
 
           <section id="flags" class="panel settings-section scroll-mt-24" aria-labelledby="flags-heading">

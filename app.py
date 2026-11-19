@@ -398,6 +398,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/flags/reset' and self.command == 'POST':
                 with self._db() as db: flags.reset(db,session['id'])
                 return self._json(200,{'reset':True})
+            if path == '/api/translation/packs/install' and self.command == 'POST':
+                try:
+                    state = local_translation.start_install(data.get('source'),data.get('target'))
+                except local_translation.TranslationError as exc: raise RequestError(400,str(exc)) from None
+                return self._json(202,{'installation':state})
             if path == '/api/translate' and self.command == 'POST':
                 with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
                 if not user['translate_enabled']: raise RequestError(403,'Translation is turned off in Settings')
@@ -412,7 +417,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not found and not force: found = gmail_web.get_translation(db,session['id'],message['id'],local_translation.LANGUAGES[language])
                 if found and not force: return answer(found,True)
                 if language not in {item['code'] for item in local_translation.installed_targets()}:
-                    raise RequestError(424,'The target language pack is not installed on this server. Ask the operator to install it in Settings.')
+                    raise RequestError(424,'The target language pack is not installed on this server. Install it in Settings → Translation.')
                 try:
                     with ai.translation_guard(session['id'],60):
                         with self._db() as db: found = gmail_web.get_translation(db,session['id'],message['id'],language)
@@ -571,6 +576,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200,{'configured':google_login.configured(self.gmail_config),'links':found,'redirect_uri':google_login.redirect_uri(self.gmail_config)})
         if path == '/api/translation/languages':
             return self._json(200,{'languages':local_translation.installed_targets()})
+        if path == '/api/translation/packs':
+            return self._json(200,{'catalog':[{'code':code,'name':name} for code,name in local_translation.LANGUAGES.items()],
+                                   'installed':local_translation.installed_pairs(),
+                                   'installation':local_translation.install_status(),
+                                   'runtime_ready':local_translation.runtime_ready()})
         if path == '/api/connectors/gmail/stats':
             raw = parse_qs(urlparse(self.path).query).get('account',[''])[0]
             account_id = int(raw) if raw.isdigit() else None

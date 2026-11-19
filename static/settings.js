@@ -74,11 +74,60 @@ async function init() {
     const result = await request('/api/settings');
     const languageSelect = prefsForm.elements.translate_language;
     const packStatus = document.getElementById('translation-packs-status');
+    const sourceSelect = document.getElementById('translation-source');
+    const targetSelect = document.getElementById('translation-target');
+    const installButton = document.getElementById('install-translation-pack');
+    const installStatus = document.getElementById('translation-install-status');
+    const fallbackCatalog = [
+      ['ar','Arabic'],['de','German'],['en','English'],['es','Spanish'],['fr','French'],
+      ['hi','Hindi'],['id','Indonesian'],['it','Italian'],['ja','Japanese'],['ko','Korean'],
+      ['nl','Dutch'],['pl','Polish'],['pt','Portuguese'],['ru','Russian'],['th','Thai'],
+      ['tr','Turkish'],['vi','Vietnamese'],['zh','Chinese (Simplified)'],['zt','Chinese (Traditional)']
+    ];
+    sourceSelect.append(...fallbackCatalog.map(([code,name]) => new Option(name,code)));
+    targetSelect.append(...fallbackCatalog.map(([code,name]) => new Option(name,code)));
+    sourceSelect.value = 'en'; targetSelect.value = 'zh';
+    installButton.disabled = true;
+    let pollPacks = null;
+    const showPacks = async () => {
+      const packs = await request('/api/translation/packs');
+      const selected = languageSelect.value || result.settings.translate_language || '';
+      languageSelect.replaceChildren(new Option('Choose an installed language', ''), ...[...new Set(packs.installed.map(pair => pair.target))].map(code => {
+        const language = packs.catalog.find(item => item.code === code);
+        return new Option(language?.name || code, code);
+      }));
+      languageSelect.value = selected;
+      if (!languageSelect.value && selected) languageSelect.value = '';
+      packStatus.textContent = packs.installed.length ? 'Choose an installed target language. The source language also needs a translation route.' : 'No language packs installed yet.';
+      document.getElementById('installed-translation-packs').textContent = packs.installed.length ? 'Installed: ' + packs.installed.map(pair => pair.label).join(', ') : 'Installed: none';
+      installButton.disabled = !packs.runtime_ready || ['downloading', 'installing'].includes(packs.installation.state);
+      installStatus.textContent = packs.runtime_ready ? packs.installation.message : 'Install Python dependencies from requirements.txt on this server first.';
+      clearTimeout(pollPacks);
+      if (['downloading', 'installing'].includes(packs.installation.state)) pollPacks = setTimeout(() => showPacks().catch(error => { installStatus.textContent = error.message; }), 1500);
+      return packs;
+    };
     try {
-      const packs = (await request('/api/translation/languages')).languages;
-      languageSelect.append(...packs.map(pack => new Option(pack.name, pack.code)));
-      packStatus.textContent = packs.length ? 'Only installed target languages are listed. The source language also needs an installed translation route.' : 'No language packs installed. Ask the server operator to install them.';
-    } catch (error) { packStatus.textContent = 'Could not check installed language packs: ' + error.message; }
+      await showPacks();
+    } catch (error) {
+      packStatus.textContent = 'Could not check installed language packs: ' + error.message;
+      document.getElementById('installed-translation-packs').textContent = 'Installed packs unavailable';
+      installStatus.textContent = error.message === 'Not found'
+        ? 'The running server does not have the language-pack API yet. Deploy the updated app.py and restart Inbox Tend.'
+        : 'The language-pack API is unavailable: ' + error.message;
+      try {
+        const legacy = (await request('/api/translation/languages')).languages;
+        languageSelect.append(...legacy.map(item => new Option(item.name,item.code)));
+      } catch (_) { /* The older server may not have the languages API either. */ }
+    }
+    installButton.addEventListener('click', async () => {
+      if (sourceSelect.value === targetSelect.value) { installStatus.textContent = 'Choose two different languages.'; return; }
+      installButton.disabled = true;
+      installStatus.textContent = 'Starting download…';
+      try {
+        await request('/api/translation/packs/install', 'POST', {source:sourceSelect.value, target:targetSelect.value});
+        await showPacks();
+      } catch (error) { installStatus.textContent = error.message; installButton.disabled = false; }
+    });
     fillForm(result.settings);
     savedModel = result.settings.ai_model || '';
     document.getElementById('account-name').textContent = result.username;
