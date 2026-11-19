@@ -60,6 +60,25 @@ function makeAgentSteersControls(task) {
       } catch(error) { notify(error.message,true); refresh.disabled=false; }
     });
     agentBox.append(refresh);
+    if(task.agent_status==='queued_mock' && agentSteersVerifiedThisPage) {
+      const cancel=iconButton('xmark','Cancel AgentSteers mock task');
+      cancel.addEventListener('click',async()=>{
+        if(pendingAgentDispatches.has(task.id))return;
+        if(!window.confirm('Cancel the queued AgentSteers MOCK task "'+task.title+'"? This does not cancel the original Inbox Tend task.'))return;
+        pendingAgentDispatches.add(task.id);
+        cancel.disabled=true;
+        try {
+          await request('/api/tasks/'+task.id+'/agentsteers-cancel','POST',
+                        {revision:task.revision,confirm:'CANCEL MOCK'});
+          notify('AgentSteers mock task cancellation confirmed.');
+          await refreshTasks();
+        } catch(error) {
+          notify(error.message+' — refresh the AgentSteers status to reconcile.',true);
+          cancel.disabled=false;
+        } finally { pendingAgentDispatches.delete(task.id); }
+      });
+      agentBox.append(cancel);
+    }
   } else if(task.agent_status==='dispatch_error') {
     agentBox.append(el('p','Dispatch status is uncertain. Check the AgentSteers service before submitting another task.','meta'));
   }
