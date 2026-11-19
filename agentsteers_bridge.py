@@ -125,6 +125,17 @@ def submit(task):
     return _call("submit_task", {"repository": repo, "instruction": instruction})
 
 
+
+def cancel(job_id):
+    """Ask the authenticated mock MCP service to cancel an existing queued job."""
+    if not isinstance(job_id, str) or not re.fullmatch(r"[a-f0-9]{32}", job_id):
+        raise BridgeError("Invalid AgentSteers task identifier")
+    result = _call("cancel_task", {"task_id": job_id})
+    if result.get("task_id") != job_id or result.get("status") != "cancelled":
+        raise BridgeError("AgentSteers did not confirm mock cancellation")
+    return result
+
+
 def status(job_id):
     if not isinstance(job_id, str) or not re.fullmatch(r"[a-f0-9]{32}", job_id):
         raise BridgeError("Invalid AgentSteers task identifier")
