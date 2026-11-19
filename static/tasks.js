@@ -136,6 +136,46 @@ function renderTasks() {
         placeholder.replaceWith(ordered);history.dataset.loaded='true';
       }catch(error){placeholder.textContent='Could not load history: '+error.message;}
     });
+    // Explicitly user-initiated, mock-only AgentSteers dispatch; never automatic.
+    const agentBox=el('div',undefined,'task-agentsteers');
+    const mockStatus=task.agentsteers_job_id
+      ? 'AgentSteers simulation: '+task.agent_status+' · Job '+task.agentsteers_job_id
+      : 'AgentSteers simulation: '+(task.agent_status || 'not dispatched');
+    agentBox.append(el('p',mockStatus,'meta'));
+    if(task.agentsteers_result){
+      try{
+        const result=JSON.parse(task.agentsteers_result);
+        if(result.message)agentBox.append(el('p',result.message,'meta'));
+        else if(result.result && result.result.message)agentBox.append(el('p',result.result.message,'meta'));
+      }catch(_){/* Legacy result may be malformed; ignore display only. */}
+    }
+    if(!task.agentsteers_job_id && task.agent_status!=='submitting' && task.status!=='done'){
+      const dispatch=iconButton('check','Send to AgentSteers (mock only)');
+      dispatch.addEventListener('click',async()=>{
+        const prompt='Send reviewed task "'+task.title+'" to AgentSteers for a MOCK run?\n\nOnly the task title and description will be shared. No email, attachment, GitHub change, or shell command will be executed.';
+        if(!window.confirm(prompt))return;
+        dispatch.disabled=true;
+        try{
+          await request('/api/tasks/'+task.id+'/agentsteers-dispatch','POST',
+                        {revision:task.revision,confirm:'DISPATCH MOCK'});
+          notify('Mock task submitted to AgentSteers. No code or email was executed.');
+          await refreshTasks();
+        }catch(error){notify(error.message,true);dispatch.disabled=false;}
+      });
+      agentBox.append(dispatch);
+    } else if(task.agentsteers_job_id) {
+      const refresh=iconButton('refresh','Refresh AgentSteers mock status');
+      refresh.addEventListener('click',async()=>{
+        refresh.disabled=true;
+        try{
+          await request('/api/tasks/'+task.id+'/agentsteers-refresh','POST',{});
+          notify('AgentSteers mock status refreshed.');
+          await refreshTasks();
+        }catch(error){notify(error.message,true);refresh.disabled=false;}
+      });
+      agentBox.append(refresh);
+    }
+    actions.append(agentBox);
     item.append(actions,editor,history);
     taskList.append(item);
   }
