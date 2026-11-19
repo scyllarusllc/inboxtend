@@ -111,6 +111,15 @@ function renderTasks() {
   const readiness=el('p','AgentSteers mock: '+agentSteersReadiness.message,'meta');
   readiness.dataset.bridgeState=agentSteersReadiness.state;
   taskList.append(readiness);
+  // Provide a setup explanation without exposing server credentials or endpoints.
+  const setupHelp=el('p',undefined,'meta');
+  setupHelp.append(document.createTextNode('Mock mode only · '));
+  const setupLink=el('a','Connection setup and limitations');
+  setupLink.href='https://github.com/scyllarusllc/inboxtend/blob/main/docs/agentsteers-handoff.md';
+  setupLink.target='_blank';
+  setupLink.rel='noopener noreferrer';
+  setupHelp.append(setupLink);
+  taskList.append(setupHelp);
   if(agentSteersReadiness.state==='configured_unverified' ||
      agentSteersReadiness.state==='connected_mock' ||
      agentSteersReadiness.state==='connection_failed') {
@@ -154,6 +163,11 @@ function renderTasks() {
     const date=task.due_date?task.due_date+' '+(task.due_time || '23:59')+' ('+task.due_timezone+')':'No deadline';
     const head=el('div',undefined,'task-header');
     head.append(el('h3',task.title));
+    if(task.title==='Review student registration form issue (mock handoff)' &&
+       task.source_provider==='demo') {
+      const sampleTag=el('span','Fictional demo task','task-pill');
+      head.append(sampleTag);
+    }
     const labels=el('div',undefined,'task-labels');
     const statusBadge=el('span',task.status.replaceAll('_',' '),'task-pill');
     if(task.status==='done')statusBadge.dataset.tone='complete';
