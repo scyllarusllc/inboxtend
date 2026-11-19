@@ -498,6 +498,30 @@ class Handler(BaseHTTPRequestHandler):
                             result={"message":"Mock dispatch failed or result uncertain; consult AgentSteers before retrying."})
                     raise RequestError(503,'AgentSteers mock dispatch did not complete: '+str(exc)[:160]) from None
                 return self._json(200,{'task':task,'simulated':True})
+            if len(parts)==4 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3]=='agentsteers-cancel' and self.command == 'POST':
+                if data.get('confirm') != 'CANCEL MOCK':
+                    raise RequestError(400,'Explicit mock cancellation confirmation required')
+                if not isinstance(data.get('revision'),int) or isinstance(data.get('revision'),bool):
+                    raise RequestError(400,'A valid task revision is required')
+                task_id=int(parts[2])
+                with self._db() as db:
+                    task=get_task(db,task_id,user_id=session['id'])
+                if not task: raise RequestError(404,'Task not found')
+                if task['revision'] != data['revision']:
+                    raise ConflictError('Task changed; reload before cancellation')
+                if not task['agentsteers_job_id'] or task['agent_status'] not in ('queued_mock','recovery_needed'):
+                    raise RequestError(409,'No cancellable mock job')
+                try:
+                    outcome=agentsteers_bridge.cancel(task['agentsteers_job_id'])
+                    with self._db() as db:
+                        updated=record_agentsteers_update(db,task_id,session['id'],'cancelled',
+                            outcome['task_id'],
+                            {'message':'Mock task cancelled by user. No real execution occurred.'})
+                except agentsteers_bridge.BridgeError:
+                    # Remote may have accepted the cancellation before connection dropped.
+                    # Preserve the last known state and never claim success.
+                    raise RequestError(503,'Cancellation could not be confirmed. Refresh the mock job status.') from None
+                return self._json(200,{'task':updated,'simulated':True})
             if len(parts)==4 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3]=='agentsteers-refresh' and self.command == 'POST':
                 task_id=int(parts[2])
                 with self._db() as db: task=get_task(db,task_id,user_id=session['id'])
