@@ -8,6 +8,8 @@ let flagsAttempted = false, topicsAttempted = false;
 // Connected Gmail accounts (from the status) and the one the list is narrowed to ('' = all of them).
 let accounts = [], accountFilter = sessionStorage.getItem('inboxtend-account') || '';
 let searchText = '', onlyUnread = false, onlyAttachments = false, listLimit = 100, lastData = null, listRun = 0;
+const unreadPreferenceKey = 'inboxtend-inbox-unread';
+try { onlyUnread = localStorage.getItem(unreadPreferenceKey) === 'true'; } catch (_) { /* Storage may be unavailable. */ }
 const PAGE = 100;
 const filtersActive = () => searchText.trim() !== '' || onlyUnread || onlyAttachments;
 function listUrl() {
@@ -437,7 +439,7 @@ document.addEventListener('keydown', event => {   // "/" jumps to the search box
   const typing = /^(input|textarea|select)$/i.test((event.target && event.target.tagName) || '');
   if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); searchBox.focus(); }
 });
-for (const [id, set] of [['filter-unread', v => { onlyUnread = v; }], ['filter-attachments', v => { onlyAttachments = v; }]]) {
+for (const [id, set] of [['filter-unread', v => { onlyUnread = v; try { localStorage.setItem(unreadPreferenceKey, String(v)); } catch (_) { /* Keep the current session usable. */ } }], ['filter-attachments', v => { onlyAttachments = v; }]]) {
   const button = document.getElementById(id);
   button.addEventListener('click', () => {
     const on = button.getAttribute('aria-pressed') !== 'true';
@@ -827,6 +829,7 @@ async function init() {
   try { await sessionReady; } catch (error) { notify('Could not load session: ' + error.message, true); return; }
   await settingsReady;
   view = ['threads', 'messages', 'people'].includes(userSettings.inbox_view) ? userSettings.inbox_view : 'threads';
+  document.getElementById('filter-unread').setAttribute('aria-pressed', String(onlyUnread));
   showViewState();
   if (userSettings.translate_enabled) {
     translationPanel.hidden = false;
