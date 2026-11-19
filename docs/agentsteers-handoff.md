@@ -4,6 +4,16 @@ The **Tasks** screen exposes the same AgentSteers controls in two places: in the
 
 This is a **mock-only integration**. It never runs shell commands, Codex, sends mail, or modifies GitHub. No actual job completion is simulated beyond the remote mock server's status/result. The UI will show a `queued_mock` job; this is **not** a completed code task.
 
+## Readiness feedback and sample data
+
+The Tasks page calls the authenticated `GET /api/agentsteers/status` endpoint. It reports **disabled**, **needs_configuration**, **invalid_configuration**, or **configured_unverified** without exposing the token or endpoint. **Configured does not mean connected**: this endpoint intentionally makes no network call.
+
+When the bridge is not ready, both dispatch controls are hidden. When configured, both the task-list control and expanded Edit task control can dispatch the same reviewed task; a shared browser in-flight guard and an atomic server reservation reject duplicate submissions.
+
+`make demo` now seeds a completely **fictional** "Student registration page needs attention" email and an associated reviewed task. The sample is created in the demo database only. It is not fetched from Gmail and does not dispatch anything automatically.
+
+A failed or uncertain dispatch is intentionally **not retried automatically**. If a mock remote accepted the task but the network response was lost, resubmitting could create a duplicate. Resolve and reconcile that state deliberately.
+
 ## User flow
 
 1. Use an existing *reviewed* task saved from a Gmail message (or a task already in the database).
