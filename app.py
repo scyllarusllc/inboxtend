@@ -508,8 +508,19 @@ class Handler(BaseHTTPRequestHandler):
                     with self._db() as db:
                         updated=record_agentsteers_update(db,task_id,session['id'],info['status'],
                             info['task_id'],info.get('result'))
-                except (agentsteers_bridge.BridgeError,KeyError,ValueError) as exc:
+                except agentsteers_bridge.BridgeError as exc:
+                    # A confirmed remote task_not_found after an authenticated
+                    # status lookup requires manual reconciliation, not redispatch.
+                    if 'task_not_found' in str(exc):
+                        with self._db() as db:
+                            task = record_agentsteers_update(
+                                db,task_id,session['id'],'recovery_needed',
+                                task['agentsteers_job_id'],
+                                {'message':'Remote mock job not found. Check persistent store or server identity; do not submit again.'})
+                        return self._json(200,{'task':task,'simulated':True,'recovery_needed':True})
                     raise RequestError(503,'AgentSteers status unavailable: '+str(exc)[:160]) from None
+                except (KeyError,ValueError):
+                    raise RequestError(503,'AgentSteers returned an invalid mock task status') from None
                 return self._json(200,{'task':updated,'simulated':True})
             if len(parts)==3 and parts[:2]==['api','tasks'] and parts[2].isdigit():
                 task_id = int(parts[2])
