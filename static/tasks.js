@@ -8,6 +8,7 @@ let cachedTasks = [];
 let agentSteersReadiness={state:'checking',can_dispatch:false,message:'Checking AgentSteers mock configuration…'};
 const pendingAgentDispatches=new Set();
 let agentSteersVerifiedThisPage=false;
+let agentSteersQueue=null;
 let syncInFlight=false;
 let nextSyncOffset=0;
 // Shared controls used in both the task list and expanded task details.
@@ -136,6 +137,15 @@ function renderTasks() {
   const readiness=el('p','AgentSteers mock: '+agentSteersReadiness.message,'meta');
   readiness.dataset.bridgeState=agentSteersReadiness.state;
   taskList.append(readiness);
+  if(agentSteersVerifiedThisPage) {
+    const queue=el('p',agentSteersQueue
+      ? 'Remote mock queue · Total: '+agentSteersQueue.total+
+        ' · Queued: '+agentSteersQueue.queued_mock+
+        ' · Cancelled: '+agentSteersQueue.cancelled
+      : 'Remote mock queue counts not loaded. Check the AgentSteers connection.',
+      'meta');
+    taskList.append(queue);
+  }
   // Provide a setup explanation without exposing server credentials or endpoints.
   const setupHelp=el('p',undefined,'meta');
   setupHelp.append(document.createTextNode('Mock mode only · '));
@@ -155,10 +165,20 @@ function renderTasks() {
         const data=await request('/api/agentsteers/probe','POST',{});
         agentSteersReadiness=data.bridge;
         agentSteersVerifiedThisPage=data.bridge.state==='connected_mock';
+        agentSteersQueue=null;
+        if(agentSteersVerifiedThisPage) {
+          try {
+            const summary=await request('/api/agentsteers/queue-summary','POST',{});
+            agentSteersQueue=summary.queue;
+          } catch(error) {
+            notify('Connected, but mock queue summary is unavailable: '+error.message,true);
+          }
+        }
         notify(agentSteersReadiness.message,!agentSteersVerifiedThisPage);
         renderTasks();
       } catch(error) {
         agentSteersVerifiedThisPage=false;
+        agentSteersQueue=null;
         agentSteersReadiness={state:'connection_failed',can_dispatch:false,
           message:'Connection check failed: '+error.message};
         notify(agentSteersReadiness.message,true);
@@ -296,6 +316,7 @@ async function refreshTasks() {
         message:'Authenticated mock MCP connection verified in this browser session. No real worker is enabled.'};
     } else if(agentSteersReadiness.state!=='configured_unverified') {
       agentSteersVerifiedThisPage=false;
+      agentSteersQueue=null;
     }
     const summary=overview.summary;
     taskSummary.replaceChildren();
@@ -326,6 +347,14 @@ async function syncOneMockJob() {
   try {
     await request('/api/tasks/'+job.id+'/agentsteers-refresh','POST',{});
     await refreshTasks();
+    try {
+      const summary=await request('/api/agentsteers/queue-summary','POST',{});
+      agentSteersQueue=summary.queue;
+      renderTasks();
+    } catch(_) {
+      agentSteersQueue=null;
+      renderTasks();
+    }
   } catch(_) {
     // A dropped connection is not a completed task. Keep the last saved state;
     // manual refresh and the connection check remain available.
