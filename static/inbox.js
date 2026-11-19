@@ -184,6 +184,7 @@ async function selectMessage(id) {
     button.setAttribute('aria-pressed', String(button.dataset.id === (currentGroup ? currentGroup.id : id)));
   }
   draft.replaceChildren();
+  if (window.innerWidth < 1024) document.getElementById('review-heading').scrollIntoView({behavior: 'smooth', block: 'start'});   // One column: the message is below the list, so bring it into view.
   detail.replaceChildren(el('h3', m.subject || '(No subject)'),
     el('div', (m.from || 'Unknown sender') + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'), el('p', 'Loading message…'));
   let full;
