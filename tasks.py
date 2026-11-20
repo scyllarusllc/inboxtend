@@ -154,6 +154,9 @@ def connection(path=DEFAULT_DB):
         db.execute('''CREATE TABLE IF NOT EXISTS message_topics (
             user_id INTEGER NOT NULL, message_id TEXT NOT NULL, topics TEXT NOT NULL DEFAULT '',
             provider TEXT NOT NULL DEFAULT '', guessed_at INTEGER NOT NULL, PRIMARY KEY (user_id, message_id))''')  # topics: 'money,job'; '' = none fits
+        db.execute('''CREATE TABLE IF NOT EXISTS message_websites (
+            user_id INTEGER NOT NULL, message_id TEXT NOT NULL, url TEXT NOT NULL DEFAULT '',
+            provider TEXT NOT NULL DEFAULT '', guessed_at INTEGER NOT NULL, PRIMARY KEY (user_id, message_id))''')
         db.execute('''CREATE TABLE IF NOT EXISTS google_identities (
             id INTEGER PRIMARY KEY, sub TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             email TEXT NOT NULL DEFAULT '', linked_at INTEGER NOT NULL)''')   # Google accounts that may sign in as a user (by Google's stable id)

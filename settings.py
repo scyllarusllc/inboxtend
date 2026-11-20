@@ -44,9 +44,10 @@ DEFAULTS = {
     # A topic icon on every message (money, job, love, ...), guessed once per message by the AI provider and cached.
     # Enabling it means each new message's subject, sender and first characters are sent to that provider.
     'topics_enabled': False,
+    'websites_enabled': False,       # AI selects a likely official site from URLs already in a message.
 }
 _INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'auto_sync_minutes': (0, 1440), 'ai_timeout': (10, 1800)}
-_BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled', 'translate_preload', 'flags_enabled', 'topics_enabled')
+_BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled', 'translate_preload', 'flags_enabled', 'topics_enabled', 'websites_enabled')
 
 
 def valid_timezone(name) -> str:

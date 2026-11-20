@@ -83,6 +83,9 @@ claude -p --output-format json --json-schema '<schema>' --tools "" --no-session-
 | Translate into | empty | Choose an installed target language |
 | Show topic icons | off | Label each new message with what it is about; sends the other party, subject and first 400 characters to the provider |
 | Show sender details | off | Guess country, city, company, role, language, relationship and style of each new sender once; sends sender details to the provider |
+| Pre-guess message websites | off | Send sender, subject, up to 1,000 text characters and candidate domains to the provider; show a likely official site when one is selected |
+
+Message website guesses run in background batches of ten after the setting is enabled. Only HTTPS roots derived from links in the saved message or its sender's non-generic email domain can be selected. The AI cannot browse or verify ownership; the link is labelled "Likely official website" and may be wrong. Messages with no plausible candidate have no link. Results, including empty answers, are cached in `message_websites` and removed when the Gmail account is disconnected.
 
 ## Translation
 

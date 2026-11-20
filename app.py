@@ -18,6 +18,7 @@ import google_login
 import mailsearch
 import flags
 import topics
+import websites
 import settings as prefs
 import mailstats
 import local_translation
@@ -395,6 +396,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/topics/reset' and self.command == 'POST':
                 with self._db() as db: topics.reset(db,session['id'])
                 return self._json(200,{'reset':True})
+            if path == '/api/websites/guess' and self.command == 'POST':
+                with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
+                if not user['websites_enabled']: raise RequestError(403,'Website guesses are turned off in Settings')
+                return self._json(202,{'websites':websites.start(self.db_path,self.gmail_config,session['id'],user)})
             if path == '/api/flags/guess' and self.command == 'POST':
                 with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
                 if not user['flags_enabled']: raise RequestError(403,'Country flags are turned off in Settings')
@@ -614,9 +619,10 @@ class Handler(BaseHTTPRequestHandler):
                 accounts,remote = gmail_web.overview(db,self.gmail_config,session['id']) if connected else ([],None)
                 guessing = dict(flags.progress(session['id']),pending=flags.pending_count(db,session['id']) if connected else 0)
                 labelling = dict(topics.progress(session['id']),pending=topics.pending_count(db,session['id']) if connected else 0)
+                linking = dict(websites.progress(session['id']),pending=websites.pending_count(db,session['id']) if connected else 0)
                 limit = prefs.effective(db,session['id'],self.gmail_config)['sync_max_messages'] if connected else None
             return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,'accounts':accounts,
-                                   'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'remote':remote,'flags':guessing,'topics':labelling,'sync_limit':limit,'sync':gmail_web.sync_progress(session['id'])})
+                                   'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'remote':remote,'flags':guessing,'topics':labelling,'websites':linking,'sync_limit':limit,'sync':gmail_web.sync_progress(session['id'])})
         if path == '/api/connectors/gmail/messages':  # Local copy only; POST /sync talks to Gmail.
             query = parse_qs(urlparse(self.path).query)
             folder = query.get('folder',['inbox'])[0]
@@ -650,7 +656,11 @@ class Handler(BaseHTTPRequestHandler):
         parts = path.strip('/').split('/')
         if parts[:4]==['api','connectors','gmail','messages'] and len(parts) in (5,7,8):
             if len(parts)==5:
-                return self._json(200,{'message':self._gmail_message(session,parts[4])})
+                message = self._gmail_message(session,parts[4])
+                with self._db() as db:
+                    user = prefs.effective(db,session['id'],self.gmail_config)
+                    message['website'] = websites.get(db,session['id'],parts[4]) if user['websites_enabled'] else ''
+                return self._json(200,{'message':message})
             if parts[5]=='attachments' and parts[6].isdigit() and len(parts) in (7,8):
                 with self._db() as db: row = gmail_web.attachment(db,session['id'],parts[4],int(parts[6]))
                 if row is None: raise RequestError(404,'Attachment not found')

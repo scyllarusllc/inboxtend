@@ -25,6 +25,7 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 
   country flag, city, company and role, language, relationship, writing style, their local time now, and your history together. Never gender, age or similar.
 - **Topic icons** (opt-in): up to two of 17 topics per message (money, job, love, friends and family, travel, shopping, meetings, security, health, legal, education, tech, social, news, events, food, promotions). One AI request per 20 messages, saved. Press a topic to list everything about it.
+- **Message websites** (opt-in): AI preselects a likely official website from domains already in each saved message or its sender address. The Message review link opens in a new tab, is labelled as a guess, and stays hidden when there is no plausible candidate. Guesses are cached in SQLite.
 
   ![Messages filtered by topic:money](static/screens/topics.jpg)
 - **Offline translation** (opt-in): Argos language packs translate the opened message on your server. The result appears beside the original and is saved in SQLite; translation does not call an AI provider. To keep local translation responsive, only the first 5,000 characters of a long message are translated; the original remains available. Install only the language directions you need (see below).

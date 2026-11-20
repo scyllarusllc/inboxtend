@@ -190,14 +190,14 @@ def disconnect(db,user_id,account_id=None):
         if account_id is not None:
             _account(db,user_id,account_id)
             own = 'SELECT message_id FROM gmail_messages WHERE user_id=? AND account_id=?'
-            for table in ('message_topics','message_translations','gmail_attachments'):
+            for table in ('message_topics','message_websites','message_translations','gmail_attachments'):
                 db.execute(f'DELETE FROM {table} WHERE user_id=? AND message_id IN ({own})',(user_id,user_id,account_id))
             db.execute('DELETE FROM gmail_messages WHERE user_id=? AND account_id=?',(user_id,account_id))
             db.execute('DELETE FROM gmail_connections WHERE id=? AND user_id=?',(account_id,user_id))
             db.execute('DELETE FROM sender_countries WHERE user_id=? AND peer_email NOT IN (SELECT peer_email FROM gmail_messages WHERE user_id=?)',(user_id,user_id))
             if status(db,user_id): return
         db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))   # Disconnecting (the last account) also removes the local copy
-        for table in ('sender_countries','message_topics','message_translations','gmail_attachments','gmail_messages'):
+        for table in ('sender_countries','message_topics','message_websites','message_translations','gmail_attachments','gmail_messages'):
             db.execute(f'DELETE FROM {table} WHERE user_id=?',(user_id,))
 
 def _scope_matches(returned,expected):

@@ -62,7 +62,8 @@ function readForm() {
     translate_language: form.translate_language.value.trim(),
     translate_max_chars: Number(form.translate_max_chars.value),
     flags_enabled: form.flags_enabled.checked,
-    topics_enabled: form.topics_enabled.checked
+    topics_enabled: form.topics_enabled.checked,
+    websites_enabled: form.websites_enabled.checked
   };
 }
 let savedModel = '';

@@ -4,7 +4,16 @@ const detail = document.getElementById('detail');
 const draft = document.getElementById('draft');
 let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null, gmailWriteAccess = false;
 // What the list shows: search words (Gmail-style operators work), two quick filters, and how many rows are drawn.
-let flagsAttempted = false, topicsAttempted = false;
+let flagsAttempted = false, topicsAttempted = false, websitesAttempted = false;
+const websiteLink = document.getElementById('message-website-link');
+function clearWebsiteLink() { websiteLink.hidden = true; websiteLink.removeAttribute('href'); }
+function showWebsiteLink(url) {
+  clearWebsiteLink();
+  if (!url) return;
+  websiteLink.href = url;
+  websiteLink.title = 'AI guess from links or sender domain in this email; website ownership was not verified.';
+  websiteLink.hidden = false;
+}
 // Connected Gmail accounts (from the status) and the one the list is narrowed to ('' = all of them).
 let accounts = [], accountFilter = sessionStorage.getItem('inboxtend-account') || '';
 let searchText = '', onlyUnread = false, onlyAttachments = false, listLimit = 100, lastData = null, listRun = 0;
@@ -260,6 +269,7 @@ async function setRead(id, markRead) {
 }
 async function selectMessage(id) {
   selectedId = id;
+  clearWebsiteLink();
   detailRead = null;
   const m = messages.find(message => message.id === id) || {id, subject: '', from: '', date: ''};
   for (const button of list.querySelectorAll('button.message')) {
@@ -273,6 +283,7 @@ async function selectMessage(id) {
   try { full = (await request('/api/connectors/gmail/messages/' + encodeURIComponent(id))).message; }
   catch (error) { if (selectedId === id) detail.append(el('p', error.message, 'error')); return; }
   if (selectedId !== id) return;
+  showWebsiteLink(full.website);
   if (userSettings.translate_enabled) showTranslation(id);
   readState.set(full.id, full.unread);
   for (const t of full.thread) readState.set(t.id, t.unread);
@@ -413,7 +424,7 @@ window.inboxSearch = (query, wantFolder = 'inbox') => {
     folderInbox.setAttribute('aria-pressed', String(folder === 'inbox'));
     folderSent.setAttribute('aria-pressed', String(folder === 'sent'));
     selectedId = null; currentGroup = null; showViewState();
-    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
   }
   listLimit = PAGE;
   searchBox.value = query; searchText = query; clearTimeout(searchTimer); reloadList();
@@ -455,7 +466,7 @@ function chooseView(next) {
   if (view === next) return;
   view = next; currentGroup = null; selectedId = null; listLimit = PAGE;
   showViewState();
-  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
   userSettings.inbox_view = next;
   request('/api/settings', 'PATCH', {inbox_view: next}).catch(() => {});  // Remembered for next time.
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
@@ -470,7 +481,7 @@ function chooseFolder(next) {
   folderSent.setAttribute('aria-pressed', String(next === 'sent'));
   selectedId = null; currentGroup = null; listLimit = PAGE;
   showViewState();
-  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
 }
 folderInbox.addEventListener('click', () => chooseFolder('inbox'));
@@ -632,7 +643,7 @@ function renderList(data) {
   paintRead();
   if (!messages.some(m => m.id === previous)) {
     selectedId = null; currentGroup = null;
-    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
   } else if (currentGroup) {
     currentGroup = groups.find(g => g.id === currentGroup.id) || null;  // Fresh data for the open group.
   }
@@ -736,6 +747,7 @@ function renderList(data) {
 // (full messages and attachments take a while); this polls its progress and refreshes the list.
 async function refreshGmail(startSync = false) {
   const run = ++refreshRun;  // A newer refresh supersedes this one, so rows are never appended twice.
+  let websitesWereRunning = false;
   if (startSync) {
     gmailRefresh.disabled = true;
     try { await request('/api/connectors/gmail/sync', 'POST', {}); }
@@ -751,7 +763,7 @@ async function refreshGmail(startSync = false) {
       if (state.configured) gmailStatus.replaceChildren('Gmail is not connected. Connect it in ', link, ' to see your mail.');
       else gmailStatus.replaceChildren('Gmail is not configured on this server (see docs/gmail-web.md). Details in ', link, '.');
       list.replaceChildren(el('p', 'No mail yet: connect Gmail in Settings.', 'meta'));
-      detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+      detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
       messages = []; selectedId = null; gmailRefresh.disabled = false;
       return;
     }
@@ -776,10 +788,24 @@ async function refreshGmail(startSync = false) {
       try { await request('/api/topics/guess', 'POST', {}); } catch (error) { notify(error.message, true); }
       continue;
     }
-    const busy = sync.running || guess.running || labels.running;
+    const sites = state.websites || {};
+    if (!sites.running && !sites.pending) websitesAttempted = false;
+    if (websitesWereRunning && !sites.running && selectedId) {
+      const opened = selectedId;
+      request('/api/connectors/gmail/messages/' + encodeURIComponent(opened)).then(result => {
+        if (selectedId === opened) showWebsiteLink(result.message.website);
+      }).catch(() => {});
+    }
+    websitesWereRunning = Boolean(sites.running);
+    if (userSettings.websites_enabled && sites.pending > 0 && !sites.running && !websitesAttempted) {
+      websitesAttempted = true;
+      try { await request('/api/websites/guess', 'POST', {}); } catch (error) { notify(error.message, true); }
+      continue;
+    }
+    const busy = sync.running || guess.running || labels.running || sites.running;
     gmailRefresh.disabled = sync.running;
     // While a sync runs, fetch the list again only when its progress moved: a big mailbox is a big response.
-    const signature = busy ? [sync.done, sync.failed, sync.total, guess.done, labels.done].join(':') : null;
+    const signature = busy ? [sync.done, sync.failed, sync.total, guess.done, labels.done, sites.done].join(':') : null;
     if (!busy || signature !== lastSignature || !lastData) {
       const mine = ++listRun;
       const data = await request(listUrl());
@@ -796,7 +822,9 @@ async function refreshGmail(startSync = false) {
       (guess.running ? ' Guessing countries… ' + guess.done + ' of ' + guess.total + ' senders.' : '') +
       (!guess.running && guess.error ? ' Sender details: ' + guess.error : '') +
       (labels.running ? ' Labelling topics… ' + labels.done + ' of ' + labels.total + ' messages.' : '') +
-      (!labels.running && labels.error ? ' Topic icons: ' + labels.error : '');
+      (!labels.running && labels.error ? ' Topic icons: ' + labels.error : '') +
+      (sites.running ? ' Finding likely websites… ' + sites.done + ' of ' + sites.total + ' messages.' : '') +
+      (!sites.running && sites.error ? ' Website guesses: ' + sites.error : '');
     if (!busy) { if (window.refreshStats) window.refreshStats(); return; }
     await new Promise(resolve => setTimeout(resolve, 2000));
     if (run !== refreshRun) return;
@@ -818,7 +846,7 @@ accountSelect.addEventListener('change', () => {
   accountFilter = accountSelect.value;
   if (accountFilter) sessionStorage.setItem('inboxtend-account', accountFilter); else sessionStorage.removeItem('inboxtend-account');
   listLimit = PAGE; selectedId = null; currentGroup = null;
-  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation();
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
 });
 gmailRefresh.addEventListener('click', async () => {
@@ -828,6 +856,7 @@ gmailRefresh.addEventListener('click', async () => {
 async function init() {
   try { await sessionReady; } catch (error) { notify('Could not load session: ' + error.message, true); return; }
   await settingsReady;
+  if (userSettings.websites_enabled) document.getElementById('review-caption').textContent = 'AI guesses may be wrong';
   view = ['threads', 'messages', 'people'].includes(userSettings.inbox_view) ? userSettings.inbox_view : 'threads';
   document.getElementById('filter-unread').setAttribute('aria-pressed', String(onlyUnread));
   showViewState();

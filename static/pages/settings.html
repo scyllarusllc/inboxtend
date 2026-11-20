@@ -19,6 +19,7 @@
           <li><a class="nav-link" href="#translation-settings"><i class="fa-solid fa-language fa-fw" aria-hidden="true"></i><span>Translation</span></a></li>
           <li><a class="nav-link" href="#flags"><i class="fa-regular fa-flag fa-fw" aria-hidden="true"></i><span>Sender details</span></a></li>
           <li><a class="nav-link" href="#topics"><i class="fa-solid fa-tags fa-fw" aria-hidden="true"></i><span>Topic icons</span></a></li>
+          <li><a class="nav-link" href="#websites"><i class="fa-solid fa-link fa-fw" aria-hidden="true"></i><span>Message websites</span></a></li>
           <li><a class="nav-link" href="#account"><i class="fa-regular fa-user fa-fw" aria-hidden="true"></i><span>Account</span></a></li>
         </ul>
       </nav>
@@ -170,8 +171,14 @@
             <div class="settings-actions"><button id="topics-reset" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Forget all topics</span></button><span id="topics-reset-result" class="meta" role="status"></span></div>
           </section>
 
+          <section id="websites" class="panel settings-section scroll-mt-24" aria-labelledby="websites-heading">
+            <h2 id="websites-heading"><i class="fa-solid fa-link" aria-hidden="true"></i>Message websites</h2>
+            <p>Show a likely official website for the organization, product, or project discussed in a message. <strong>Off by default.</strong> When enabled, the app sends the sender, subject, up to 1,000 characters of text, and candidate domains from the saved mail to your selected AI provider in background batches. The AI can only choose a domain already found in the message or the sender&rsquo;s address; it cannot invent a URL or verify ownership. If it cannot identify a likely official site, no link is shown. Guesses are stored in SQLite. The link opens in a new tab.</p>
+            <div class="task-form"><label class="check"><input name="websites_enabled" type="checkbox"><span class="font-medium text-slate-800">Pre-guess websites for messages with AI</span></label></div>
+          </section>
+
           <div class="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-            <p class="meta">Gmail connection, mail sync, AI, translation, sender-detail and topic settings above are saved together.</p>
+            <p class="meta">Gmail connection, mail sync, AI, translation, sender-detail, topic and website settings above are saved together.</p>
             <button id="save-prefs" type="submit" class="action"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>Save settings</button>
           </div>
         </form>
