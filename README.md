@@ -19,6 +19,7 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 - **Sign in with Google** (optional). Besides the password, people can sign in with a Google account that is linked to their user (Settings → Account). Nobody is registered this way, and the Gmail reading permission is a separate grant. See [docs/gmail-web.md](docs/gmail-web.md).
 - **Search like Gmail**, locally and instantly: words, `from:`, `to:`, `subject:"…"`, `is:unread`, `has:attachment`, `topic:money`, `on:2026-11-17` (one day).
 - **Three views:** conversations, single messages, or people (one row per correspondent). Rows are grouped Today, Yesterday and Earlier, with unread in bold and how long ago each message arrived.
+- **Unread People view:** read rows wait before dismissing, then fade and smoothly close so the remaining list moves gradually. Choose the waiting time under Settings → Time and tasks; the Unread filter preference stays in the browser.
 - **Sender details** (opt-in, AI guess once per sender, saved):
 
   ![People view with flags, local time and a person card](static/screens/people.jpg)

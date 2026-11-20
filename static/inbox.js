@@ -14,6 +14,14 @@ function showWebsiteLink(url) {
   websiteLink.title = 'AI guess from links or sender domain in this email; website ownership was not verified.';
   websiteLink.hidden = false;
 }
+function directionMark(direction) {
+  const sent = direction === 'sent';
+  const label = sent ? 'Sent' : 'Received';
+  const mark = el('span', undefined, 'mail-direction');
+  mark.title = label;
+  mark.append(icon(sent ? 'sent' : 'received'), el('span', label, 'sr-only'));
+  return mark;
+}
 // Connected Gmail accounts (from the status) and the one the list is narrowed to ('' = all of them).
 let accounts = [], accountFilter = sessionStorage.getItem('inboxtend-account') || '';
 let searchText = '', onlyUnread = false, onlyAttachments = false, listLimit = 100, lastData = null, listRun = 0;
@@ -316,7 +324,7 @@ async function selectMessage(id) {
   if (owner) { const line = el('div', undefined, 'meta account-line'); line.append(accountDot(owner.id), document.createTextNode('Account ' + accountName(owner))); head.push(line); }
   if (full.cc) head.push(el('div', 'Cc ' + full.cc, 'meta'));
   head[1] = el('div', undefined, 'meta flex flex-wrap items-center gap-x-1.5 gap-y-1');
-  head[1].append(el('span', (full.direction === 'sent' ? 'Sent' : 'Received') + ' · From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date')), agoSpan(full.internal_date));
+  head[1].append(directionMark(full.direction), el('span', 'From ' + (full.from || 'unknown') + ' · ' + formatWhen(full.internal_date, full.date || 'No date')), agoSpan(full.internal_date));
   const detailFlag = flagEl(full);
   if (detailFlag) head[1].append(detailFlag, el('span', countryName(full.country)));
   if (full.direction !== 'sent') { detailRead.badge = el('span', '', 'read-badge'); head[1].append(detailRead.badge); }
@@ -335,7 +343,9 @@ async function selectMessage(id) {
       item.setAttribute('aria-pressed', String(t.id === id));
       if (t.unread) item.className += ' unread';
       detailRead.items.push({id: t.id, node: item});
-      item.append(el('div', (t.direction === 'sent' ? 'Sent · ' : 'Received · ') + (t.subject || '(No subject)')),
+      const title = el('div', undefined, 'flex items-center gap-2');
+      title.append(directionMark(t.direction), document.createTextNode(t.subject || '(No subject)'));
+      item.append(title,
         el('div', formatWhen(t.internal_date, t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
       item.addEventListener('click', () => selectMessage(t.id));
       all.append(item);
@@ -351,7 +361,9 @@ async function selectMessage(id) {
       item.setAttribute('aria-pressed', String(t.id === id));
       if (t.unread) item.className += ' unread';
       detailRead.items.push({id: t.id, node: item});
-      item.append(el('div', (t.direction === 'sent' ? 'Sent · To ' + (t.to || 'unknown') : 'Received · From ' + (t.from || 'unknown'))),
+      const title = el('div', undefined, 'flex items-center gap-2');
+      title.append(directionMark(t.direction), document.createTextNode(t.direction === 'sent' ? 'To ' + (t.to || 'unknown') : 'From ' + (t.from || 'unknown')));
+      item.append(title,
         el('div', formatWhen(t.internal_date, t.date || 'No date') + ' — ' + (t.snippet || ''), 'meta'));
       item.addEventListener('click', () => selectMessage(t.id));
       thread.append(item);

@@ -31,6 +31,8 @@
   pointer-events: none;
   transition: grid-template-rows 300ms ease, margin-bottom 300ms ease;
 }
+#messages .row-wrap.read-collapsing > .message { min-height: 0; overflow: hidden; padding-block: 0; border-width: 0; }
+.mail-direction { display: inline-flex; align-items: center; flex: none; color: #4f46e5; }
 @keyframes inbox-row-fade {
   0% { opacity: 1; }
   25% { opacity: .75; }
