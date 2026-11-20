@@ -99,6 +99,7 @@ def connection(path=DEFAULT_DB):
             db.execute("ALTER TABLE gmail_oauth_pending ADD COLUMN level TEXT NOT NULL DEFAULT 'readonly'")
         if 'next' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_oauth_pending)')}:
             db.execute("ALTER TABLE gmail_oauth_pending ADD COLUMN next TEXT NOT NULL DEFAULT 'inbox'")  # Page to return to after Google
+        db.execute('''CREATE TABLE IF NOT EXISTS imap_connections (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, email TEXT NOT NULL, host TEXT NOT NULL, username TEXT NOT NULL, password BLOB NOT NULL, connected_at INTEGER NOT NULL, last_sync INTEGER, UNIQUE(user_id,email))''')
         # Local copy of Gmail messages (headers, bodies, attachments), per app user.
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_messages (
             user_id INTEGER NOT NULL, message_id TEXT NOT NULL, thread_id TEXT NOT NULL DEFAULT '',

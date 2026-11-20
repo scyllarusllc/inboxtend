@@ -88,3 +88,9 @@ For the internal subdomain's current setup and remaining gates, see [docs/deploy
 [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later). Copyright 2026 Scyllarus LLC.
 
 You may use, study, change and share Inbox Tend, including running it for others as a hosted service. If you let other people use a modified version over a network, the AGPL requires you to offer them the source code of your version under the same license. The footer of every page links to the source for that reason; keep that link (pointing at your own source if you modified the app). The fonts, icons and CSS tooling bundled under `static/vendor/` keep their own licenses (see `THIRD_PARTY_LICENSES.md`), all compatible with the AGPL.
+
+## IMAP mail (including iCloud Mail)
+
+In **Settings → IMAP accounts**, enter your address, server, username and password. For iCloud Mail use `imap.mail.me.com` on TLS port 993 and an [Apple app-specific password](https://support.apple.com/en-us/102654). The username is normally the part before `@`; try the full address if Apple rejects it. Set `INBOX_TEND_TOKEN_KEY` in `.env` before connecting: Inbox Tend encrypts the IMAP password with the same key used for Gmail refresh tokens. Keep that key stable across restarts.
+
+IMAP sync reads the inbox and, when the server marks one, the sent folder. It stores headers, bodies and size-limited attachments in the same local SQLite cache as Gmail. Search, translation and task creation work on the imported mail. Read/unread changes in Inbox Tend stay local for IMAP accounts. The connector never sends, deletes or changes mail on the IMAP server. The first sync reads up to the configured message limit per folder; later syncs refresh that window. IMAP server settings are currently limited to TLS port 993.

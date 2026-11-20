@@ -167,11 +167,11 @@ async function init() {
     const accounts = gmail.accounts || [];
     const line = document.getElementById('access-status');
     const show = (id, visible, text) => { const b = document.getElementById(id); b.hidden = !visible; if (text) (b.querySelector('span') || b).textContent = text; return b; };
-    line.textContent = !gmail.configured ? 'Gmail is not configured on this server (see docs/gmail-web.md).'
-      : !accounts.length ? 'No Gmail account is connected.'
-      : accounts.length === 1 ? '1 Gmail account connected.' : accounts.length + ' Gmail accounts connected.';
-    show('connect-gmail', gmail.configured, accounts.length ? 'Add another Gmail account' : 'Connect Gmail (read-only)').classList.toggle('action', !accounts.length);
-    show('grant-modify', gmail.configured && !accounts.length);
+    line.textContent = !gmail.configured ? 'No mail connector is configured.'
+      : !accounts.length ? 'No mail account is connected.'
+      : accounts.length === 1 ? '1 mail account connected.' : accounts.length + ' mail accounts connected.';
+    show('connect-gmail', gmail.configured && !!gmail.gmail_configured, accounts.length ? 'Add another Gmail account' : 'Connect Gmail (read-only)').classList.toggle('action', !accounts.length);
+    show('grant-modify', gmail.gmail_configured && !accounts.length);
     accountList.replaceChildren(...accounts.map((account, at) => accountRow(account, at, gmail.configured)));
     prefsForm.elements.gmail_write_read.disabled = !gmail.write_access;
     return gmail;
@@ -180,22 +180,35 @@ async function init() {
     const row = el('li', undefined, 'account-row');
     const dot = el('span', undefined, 'account-dot'); dot.dataset.slot = String(at % 6);
     const name = account.email || 'Gmail account ' + account.id;
-    const facts = [account.write ? 'Read, and change read/unread (gmail.modify)' : 'Read-only (gmail.readonly)', account.stored + ' message(s) saved',
+    const facts = [account.provider === 'imap' ? 'Read-only IMAP' : account.write ? 'Read, and change read/unread (gmail.modify)' : 'Read-only (gmail.readonly)', account.stored + ' message(s) saved',
                    account.last_sync ? 'last synced ' + formatWhen(account.last_sync * 1000) : 'not synced yet'];
     const text = el('div', undefined, 'min-w-0');
     text.append(el('strong', name, 'break-all'), el('div', facts.join(' · '), 'meta'));
     const actions = el('div', undefined, 'account-actions');
     const add = (label, className, handler) => { const b = el('button', label, className || ''); b.type = 'button'; b.addEventListener('click', () => handler(b)); actions.append(b); };
-    if (configured) add(account.write ? 'Return to read-only…' : 'Allow changing read/unread…', '', b => authorise(account.write ? 'readonly' : 'modify', b, 'settings', account.id));
+    if (configured && account.provider !== 'imap') add(account.write ? 'Return to read-only…' : 'Allow changing read/unread…', '', b => authorise(account.write ? 'readonly' : 'modify', b, 'settings', account.id));
     add('Remove', 'danger', async button => {
       if (!confirm('Remove ' + name + '?\n\nThis deletes its saved messages, attachments, topics and translations from this server. Your other accounts and your tasks are kept. You can connect it again later and sync again.')) return;
       button.disabled = true;
-      try { await request('/api/connectors/gmail/disconnect', 'POST', {account_id: account.id}); notify(name + ' was removed. Its saved mail was deleted from this server.'); await showGmail(); }
+      try { await request(account.provider === 'imap' ? '/api/connectors/imap/disconnect' : '/api/connectors/gmail/disconnect', 'POST', {account_id: account.id}); notify(name + ' was removed. Its saved mail was deleted from this server.'); await showGmail(); }
       catch (error) { notify(error.message, true); button.disabled = false; }
     });
     row.append(dot, text, actions);
     return row;
   }
+  document.getElementById('connect-imap').addEventListener('click', async event => {
+    const form = document.getElementById('imap-form'), button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const fields = Object.fromEntries([...form.querySelectorAll('input')].map(input => [input.name,input.value.trim()]));
+      const result = await request('/api/connectors/imap/connect', 'POST', fields);
+      form.querySelector('[name=password]').value = '';
+      await showGmail();
+      await request('/api/connectors/gmail/sync', 'POST', {account_id: result.account_id});
+      notify('IMAP account connected. Sync started.');
+    } catch (error) { notify(error.message, true); }
+    finally { button.disabled = false; }
+  });
   const authorise = async (access, button, next, accountId) => {
     button.disabled = true;
     try { location.assign((await request('/api/connectors/gmail/connect', 'POST', accountId == null ? {access, next} : {access, next, account_id: accountId})).authorization_url); }

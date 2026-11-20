@@ -42,6 +42,17 @@
             </div>
             <p class="meta"><strong>Remove</strong> deletes that account&rsquo;s sign-in from this server together with its saved messages, attachments, topics and translations; the other accounts and your tasks are kept. It does not revoke Google&rsquo;s permission; do that at <code>myaccount.google.com/permissions</code>.</p>
           </section>
+          <section class="panel settings-section" aria-labelledby="imap-heading">
+            <h2 id="imap-heading">IMAP accounts</h2>
+            <p>Read-only import. For iCloud Mail, create an app-specific password in your Apple Account. Mail is copied to this server; marking it read here stays local.</p>
+            <div id="imap-form" class="task-form">
+              <label>Email address <input name="email" type="email" required autocomplete="email" placeholder="you@icloud.com"></label>
+              <label>IMAP server <input name="host" required value="imap.mail.me.com" autocomplete="off"></label>
+              <label>IMAP username <input name="username" required autocomplete="username" placeholder="you"></label>
+              <label>App-specific password <input name="password" type="password" required autocomplete="new-password"></label>
+              <button id="connect-imap" type="button">Connect IMAP</button>
+            </div>
+          </section>
 
           <section id="time" class="panel settings-section scroll-mt-24" aria-labelledby="time-heading">
             <h2 id="time-heading"><i class="fa-regular fa-clock" aria-hidden="true"></i>Time and tasks</h2>

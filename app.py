@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 import ai
 import gmail_web
+import imap_web
 import google_login
 import mailsearch
 import flags
@@ -92,7 +93,7 @@ def proposal(message, user=None):
     """Rule-based starting point for a task; no deadline is inferred."""
     user = user or prefs.DEFAULTS
     subject = (message.get('subject') or '').strip() or '(No subject)'
-    return {'source':{'provider':'gmail','message_id':message['id'],'thread_id':message['thread_id'],
+    return {'source':{'provider':'imap' if message['id'].startswith('imap-') else 'gmail','message_id':message['id'],'thread_id':message['thread_id'],
                       'subject':subject,'date':message['date']},
             'inferred':{'title':subject[:200],'description':summarize(message),
                         'priority':user['default_priority'],'due_date':None,'due_time':None,
@@ -322,10 +323,24 @@ class Handler(BaseHTTPRequestHandler):
                         url = gmail_web.begin(db,self.gmail_config,session['id'],cookie_token(self.headers.get('Cookie')),access,next_page,account_id)
                 except gmail_web.GmailConnectionError as exc: raise RequestError(503,str(exc)) from None
                 return self._json(200,{'authorization_url':url})
+            if path == '/api/connectors/imap/connect' and self.command == 'POST':
+                try:
+                    with self._db() as db:
+                        account_id = imap_web.add(db,self.gmail_config,session['id'],data.get('email'),data.get('host','imap.mail.me.com'),data.get('username'),data.get('password'))
+                except (ValueError,imap_web.IMAPError) as exc: raise RequestError(400,str(exc)) from None
+                except (OSError,imap_web.imaplib.IMAP4.error): raise RequestError(424,'Cannot connect to IMAP server or sign in') from None
+                return self._json(201,{'account_id':account_id})
+            if path == '/api/connectors/imap/disconnect' and self.command == 'POST':
+                account_id=data.get('account_id')
+                if not isinstance(account_id,int) or isinstance(account_id,bool) or account_id>=0: raise RequestError(400,'Invalid IMAP account')
+                try:
+                    with self._db() as db: imap_web.remove(db,session['id'],account_id)
+                except imap_web.IMAPError as exc: raise RequestError(404,str(exc)) from None
+                return self._json(200,{'connected':True})
             if path == '/api/connectors/gmail/sync' and self.command == 'POST':
                 with self._db() as db:
-                    if not gmail_web.status(db,session['id']): raise RequestError(503,'Gmail is disconnected')
-                if not gmail_web.configured(self.gmail_config): raise RequestError(503,'Gmail is not configured')
+                    if not gmail_web.status(db,session['id']): raise RequestError(503,'No mail account is connected')
+                    if not gmail_web.configured(self.gmail_config) and not any(a['provider']=='imap' for a in gmail_web.accounts(db,session['id'])): raise RequestError(503,'No mail connector is configured')
                 # Runs in the background: a full sync outlasts proxy timeouts. Poll /status for progress.
                 account_id = data.get('account_id')
                 if account_id is not None:
@@ -498,7 +513,7 @@ class Handler(BaseHTTPRequestHandler):
                 message = self._gmail_message(session,data.get('id'))
                 return self._json(200,{'draft':draft_reply(message),'sent':False,'template':True})
             if path == '/api/tasks' and self.command == 'POST':
-                message = dict(self._gmail_message(session,data.get('message_id')),provider='gmail')
+                message = dict(self._gmail_message(session,data.get('message_id')),provider='imap' if data.get('message_id','').startswith('imap-') else 'gmail')
                 with self._db() as db:
                     data.setdefault('due_timezone',prefs.effective(db,session['id'],self.gmail_config)['timezone'])
                     existing = task_for_source(db,'gmail',message['id'],session['id'])
@@ -621,7 +636,7 @@ class Handler(BaseHTTPRequestHandler):
                 labelling = dict(topics.progress(session['id']),pending=topics.pending_count(db,session['id']) if connected else 0)
                 linking = dict(websites.progress(session['id']),pending=websites.pending_count(db,session['id']) if connected else 0)
                 limit = prefs.effective(db,session['id'],self.gmail_config)['sync_max_messages'] if connected else None
-            return self._json(200,{'configured':gmail_web.configured(self.gmail_config),'connected':connected,'accounts':accounts,
+            return self._json(200,{'configured':gmail_web.configured(self.gmail_config) or any(a['provider']=='imap' for a in accounts),'gmail_configured':gmail_web.configured(self.gmail_config),'connected':connected,'accounts':accounts,
                                    'last_sync':stamp,'stored':stored,'counts':counts,'write_access':writable,'remote':remote,'flags':guessing,'topics':labelling,'websites':linking,'sync_limit':limit,'sync':gmail_web.sync_progress(session['id'])})
         if path == '/api/connectors/gmail/messages':  # Local copy only; POST /sync talks to Gmail.
             query = parse_qs(urlparse(self.path).query)
