@@ -162,6 +162,8 @@
                 </select>
                 <span class="meta">Applies to new translations. Use Retranslate on an already translated message to update its saved result.</span>
               </label>
+              <label class="check"><input name="translate_preload" type="checkbox"><span class="font-medium text-slate-800">Pretranslate unread inbox messages when the server is idle</span></label>
+              <p class="meta">Uses only mail already saved on this server and installed language packs. Starts one message at a time when CPU load is low and stores results in the same SQLite cache. A translation already running will finish even if load rises; it may briefly delay an email opened at the same moment. <span id="translation-preload-status">No background translations yet.</span></p>
               <p class="meta">The installed Argos packs do not provide a smaller model option in this app. <span id="translation-timing">No translation measured since this server started.</span> <button id="refresh-translation-timing" type="button" class="link-button">Refresh timing</button></p>
             </div>
             <div class="task-form">

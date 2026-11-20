@@ -30,13 +30,13 @@ def _idle() -> bool:
 
 
 def _candidate(db, user_id: int, language: str):
-    rows = db.execute('''SELECT message_id, subject, body_text, snippet, label_ids, read_override
+    rows = db.execute('''SELECT message_id, subject, body_text, snippet
         FROM gmail_messages m WHERE user_id=? AND in_inbox=1 AND has_full=1
+        AND (read_override=0 OR (read_override IS NULL AND label_ids LIKE '%"UNREAD"%'))
         AND NOT EXISTS (SELECT 1 FROM message_translations t WHERE t.user_id=m.user_id
                         AND t.message_id=m.message_id AND t.language_key=?)
         ORDER BY internal_date DESC LIMIT 30''', (user_id, language)).fetchall()
-    return next((row for row in rows if gmail_web._is_unread(row)
-                 and (row['body_text'] or row['snippet'] or row['subject'])
+    return next((row for row in rows if (row['body_text'] or row['snippet'] or row['subject'])
                  and (user_id, row['message_id'], language) not in _FAILED), None)
 
 
