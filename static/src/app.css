@@ -19,6 +19,30 @@
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
 }
 
+/* Unread People rows remain in place for the chosen delay, then fade and close their grid track. */
+#messages .row-wrap { display: grid; grid-template-rows: 1fr; }
+#messages .row-wrap > .message { min-height: 0; }
+#messages .row-wrap.read-leaving { animation: inbox-row-fade 400ms linear forwards; pointer-events: none; }
+#messages .row-wrap.read-collapsing {
+  grid-template-rows: 0fr;
+  margin-bottom: -.5rem;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: grid-template-rows 300ms ease, margin-bottom 300ms ease;
+}
+@keyframes inbox-row-fade {
+  0% { opacity: 1; }
+  25% { opacity: .75; }
+  50% { opacity: .5; }
+  75% { opacity: .25; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #messages .row-wrap.read-leaving { animation: none; opacity: 0; }
+  #messages .row-wrap.read-collapsing { transition: none; }
+}
+
 /* ------------------------------------------------------------------ base */
 @layer base {
   html { @apply scroll-smooth; }

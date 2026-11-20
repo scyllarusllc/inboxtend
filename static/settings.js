@@ -45,6 +45,7 @@ function readForm() {
     due_soon_hours: Number(form.due_soon_hours.value),
     default_priority: form.default_priority.value,
     inbox_view: form.inbox_view.value,
+    unread_dismiss_delay_ms: Number(form.unread_dismiss_delay_ms.value),
     sync_sent: form.sync_sent.checked,
     mark_read_on_open: form.mark_read_on_open.checked,
     gmail_write_read: form.gmail_write_read.checked,

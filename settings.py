@@ -19,6 +19,7 @@ DEFAULTS = {
     'due_soon_hours': 48,           # A task due within this many hours is flagged "due soon".
     'default_priority': 'medium',   # Priority pre-selected when suggesting a task.
     'inbox_view': 'threads',        # How the Inbox lists mail: threads (conversations), messages or people.
+    'unread_dismiss_delay_ms': 1000, # Wait before a read person leaves the Unread list.
     'sync_sent': True,              # Also mirror sent mail.
     'mark_read_on_open': True,      # Opening a message marks it read.
     'gmail_write_read': False,      # Also apply read/unread to Gmail (needs the gmail.modify grant; set when it is granted).
@@ -76,6 +77,10 @@ def _clean(key, value):
     if key == 'inbox_view':
         if value not in INBOX_VIEWS:
             raise ValueError('Unknown inbox view')
+        return value
+    if key == 'unread_dismiss_delay_ms':
+        if type(value) is not int or value not in (0, 500, 1000, 1500, 2500):
+            raise ValueError('Choose a supported unread dismissal delay')
         return value
     if key == 'ai_provider':
         if value not in AI_PROVIDERS:

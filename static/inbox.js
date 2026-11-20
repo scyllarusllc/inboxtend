@@ -211,28 +211,49 @@ function updateReadLocally(id, unread) {
   if (onlyUnread && !group.unread_count && currentGroup?.id !== group.id && !pendingRead.has(id)) retireRow(row, group.id);
 }
 const retiringRows = new WeakSet();
+let retiringCount = 0, queuedListData = null, retiringContext = '';
+const listContext = () => [folder, view, accountFilter, searchText, onlyUnread, onlyAttachments].join('|');
 function retireRow(row, groupId) {
   if (retiringRows.has(row)) return;
   retiringRows.add(row);
-  row.classList.add('read-leaving');
-  const attempt = () => {
-    const group = groups.find(g => g.id === groupId);
-    if (!row.isConnected || !group || group.unread_count || currentGroup?.id === groupId || view !== 'people' || !onlyUnread) {
-      row.classList.remove('read-leaving');
-      retiringRows.delete(row);
-      return;
-    }
-    // Keep the layout steady while the pointer is over the list; otherwise the next row jumps under it.
-    if (list.matches(':hover')) {
-      list.addEventListener('pointerleave', () => setTimeout(attempt, 300), {once: true});
-      return;
-    }
-    row.remove();
-    groups = groups.filter(g => g.id !== groupId);
-    messages = groups.flatMap(g => g.messages);
+  retiringCount++;
+  retiringContext = listContext();
+  const finish = () => {
     retiringRows.delete(row);
+    retiringCount--;
+    if (!retiringCount && queuedListData) {
+      const data = queuedListData;
+      queuedListData = null;
+      if (retiringContext === listContext()) renderList(data);
+    }
   };
-  setTimeout(attempt, 700);
+  const eligible = () => {
+    const group = groups.find(g => g.id === groupId);
+    return row.isConnected && group && !group.unread_count && currentGroup?.id !== groupId && view === 'people' && onlyUnread;
+  };
+  const attempt = () => {
+    if (!eligible()) { finish(); return; }
+    // Keep the clicked row under the pointer until the pointer moves away from it.
+    if (row.matches(':hover')) {
+      row.addEventListener('pointerleave', () => setTimeout(attempt, 150), {once: true});
+      return;
+    }
+    row.classList.add('read-leaving');
+    setTimeout(() => {
+      if (!eligible()) { row.classList.remove('read-leaving'); finish(); return; }
+      row.classList.remove('read-leaving');
+      row.classList.add('read-collapsing');
+      setTimeout(() => {
+        if (eligible()) {
+          row.remove();
+          groups = groups.filter(g => g.id !== groupId);
+          messages = groups.flatMap(g => g.messages);
+        } else row.classList.remove('read-collapsing');
+        finish();
+      }, 320);
+    }, 400);
+  };
+  setTimeout(attempt, userSettings.unread_dismiss_delay_ms ?? 1000);
 }
 function settleReadUi(id) {
   if (view !== 'people' || !onlyUnread) return;
@@ -629,6 +650,8 @@ function findFresh(all) {
   return new Set(recent.keys());
 }
 function renderList(data) {
+  if (retiringCount && retiringContext === listContext()) { queuedListData = data; return; }
+  queuedListData = null;
   const previous = selectedId;
   list.replaceChildren();
   groups = data.groups || [];
