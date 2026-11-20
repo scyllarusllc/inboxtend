@@ -189,6 +189,11 @@
   .workspace-grid.has-translation { @apply lg:grid-cols-[minmax(270px,.7fr)_minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(260px,.7fr)_minmax(0,1.2fr)_minmax(0,1.2fr)]; }
   /* From 1024 px the message and its translation sit side by side next to the list; narrower, everything is one column. */
   .workspace-grid > * { @apply min-w-0; }
+  .workspace-grid > .review-panel, .workspace-grid > .translation-panel {
+    height: min(75svh, 52rem);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
   .inbox-panel { @apply max-h-[65vh] overflow-y-auto lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto; }
   #messages { @apply grid grid-cols-[minmax(0,1fr)] gap-2; }
   .search-box { @apply mb-4; }
@@ -275,7 +280,7 @@
   .group-snippet { @apply overflow-hidden text-ellipsis whitespace-nowrap; }
   .more-button { @apply w-full border-dashed bg-transparent text-indigo-700 shadow-none; }
   .message-body a { @apply break-all text-indigo-700 underline decoration-indigo-300 underline-offset-2 hover:text-indigo-900 hover:decoration-indigo-600; }
-  .message-body { @apply my-3 max-h-[28rem] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-relaxed text-slate-800; }
+  .message-body { @apply my-3 whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-relaxed text-slate-800; }
   .conversation-thread { @apply mt-5 grid gap-2; }
   .conversation-thread h4, .attachment-heading { @apply mb-1 flex items-center gap-2; }
   .attachment-section { @apply mt-5 grid gap-2; }

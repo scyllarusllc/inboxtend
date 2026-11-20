@@ -299,6 +299,8 @@ async function setRead(id, markRead) {
 async function selectMessage(id) {
   selectedId = id;
   clearWebsiteLink();
+  detail.closest('.review-panel').scrollTop = 0;
+  translationPanel.scrollTop = 0;
   detailRead = null;
   const m = messages.find(message => message.id === id) || {id, subject: '', from: '', date: ''};
   for (const button of list.querySelectorAll('button.message')) {
