@@ -35,6 +35,7 @@ DEFAULTS = {
     'ai_attachments': False,        # Also send small text/CSV attachments with the email.
     # Offline translation of opened messages using installed Argos language packs.
     'translate_enabled': False,
+    'translate_preload': False,      # Fill the local translation cache while the server is idle.
     'translate_language': '',
     'translate_max_chars': 5000,
     # Country flags next to correspondents, guessed once per sender by the AI provider and cached. Enabling it means
@@ -45,7 +46,7 @@ DEFAULTS = {
     'topics_enabled': False,
 }
 _INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'auto_sync_minutes': (0, 1440), 'ai_timeout': (10, 1800)}
-_BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled', 'flags_enabled', 'topics_enabled')
+_BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled', 'translate_preload', 'flags_enabled', 'topics_enabled')
 
 
 def valid_timezone(name) -> str:

@@ -58,6 +58,7 @@ function readForm() {
     ai_timeout: Number(form.ai_timeout.value),
     ai_attachments: form.ai_attachments.checked,
     translate_enabled: form.translate_enabled.checked,
+    translate_preload: form.translate_preload.checked,
     translate_language: form.translate_language.value.trim(),
     translate_max_chars: Number(form.translate_max_chars.value),
     flags_enabled: form.flags_enabled.checked,
@@ -98,6 +99,10 @@ async function init() {
     const showPacks = async () => {
       const packs = await request('/api/translation/packs');
       showTiming(packs.recent);
+      const preload = packs.preload || {};
+      document.getElementById('translation-preload-status').textContent = preload.last_error
+        ? 'Last background attempt: ' + preload.last_error
+        : `Pretranslated ${preload.completed || 0} message(s) since this server started.`;
       const selected = languageSelect.value || result.settings.translate_language || '';
       languageSelect.replaceChildren(new Option('Choose an installed language', ''), ...[...new Set(packs.installed.map(pair => pair.target))].map(code => {
         const language = packs.catalog.find(item => item.code === code);

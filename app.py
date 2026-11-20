@@ -21,6 +21,7 @@ import topics
 import settings as prefs
 import mailstats
 import local_translation
+import translation_preload
 import agentsteers_bridge
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
@@ -594,7 +595,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200,{'catalog':[{'code':code,'name':name} for code,name in local_translation.LANGUAGES.items()],
                                    'installed':local_translation.installed_pairs(),
                                    'installation':local_translation.install_status(),
-                                   'runtime_ready':local_translation.runtime_ready(), 'recent':recent})
+                                   'runtime_ready':local_translation.runtime_ready(), 'recent':recent,
+                                   'preload':translation_preload.status(session['id'])})
         if path == '/api/connectors/gmail/stats':
             raw = parse_qs(urlparse(self.path).query).get('account',[''])[0]
             account_id = int(raw) if raw.isdigit() else None
@@ -723,6 +725,7 @@ if __name__=='__main__':
     Handler.auth_manager=AuthManager(DEFAULT_DB,username=config.get('INBOX_TEND_ADMIN_USERNAME',''),
                                      password_hash=config.get('INBOX_TEND_ADMIN_PASSWORD_HASH',''))
     gmail_web.start_auto_sync(DEFAULT_DB,config)
+    translation_preload.start(DEFAULT_DB,config)
     with ThreadingHTTPServer((host,port),Handler) as server:
         print(f'Inbox Tend: http://{host}:{port}')
         server.serve_forever()
