@@ -89,7 +89,7 @@ async function showProposal(messageId, prepared) {
     const box = el('div', undefined, 'ai-box');
     box.append(el('p', 'AI suggestion · confidence ' + proposal.ai.confidence + ' · ' + (proposal.ai.provider || 'AI') + ' · model: ' + proposal.ai.model, 'meta'));
     for (const quote of proposal.ai.evidence) box.append(el('blockquote', (quote.verified ? '✓ ' : '⚠ Not found word for word in the message: ') + quote.text, quote.verified ? '' : 'unverified'));
-    if (!proposal.ai.evidence.length) box.append(el('p', 'The AI gave no supporting quote.', 'meta'));
+    if (!proposal.ai.evidence.length) box.append(el('p', proposal.ai.image_review ? 'Image contents cannot be quote-verified here; check the previews above.' : 'The AI gave no supporting quote.', 'meta'));
     if (proposal.ai.notes) box.append(el('p', 'Notes: ' + proposal.ai.notes, 'meta'));
     form.append(box);
   }
@@ -128,7 +128,8 @@ async function showProposal(messageId, prepared) {
       submit.disabled = false;
     }
   });
-  detail.append(form);
+  (detail.querySelector('.task-slot') || detail).append(form);
+  form.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function formatBytes(n) {
   return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
@@ -352,7 +353,6 @@ async function selectMessage(id) {
   const about = topicButtons(full.topics, code => { searchBox.value = 'topic:' + code; searchText = searchBox.value; reloadList(); window.scrollTo({top: 0, behavior: 'smooth'}); });
   detail.replaceChildren(...head, ...(about ? [about] : []), ...(person ? [person] : []), body);
   const attachments = renderAttachments(full);
-  if (attachments) detail.append(attachments);
   if (currentGroup && currentGroup.kind === 'person' && currentGroup.messages.length > 1) {
     const all = el('section', undefined, 'conversation-thread');
     all.append(groupHeading('All messages with ' + currentGroup.title + ' · ' + currentGroup.messages.length, currentGroup.messages));
@@ -410,6 +410,21 @@ async function selectMessage(id) {
   const bar = el('div', undefined, 'action-bar');
   if (full.direction !== 'sent') bar.append(reply);
   bar.append(propose);
+  const manual = iconButton('plus', 'Create task manually');
+  manual.addEventListener('click', async () => {
+    manual.disabled = true;
+    try {
+      const base = await request('/api/connectors/gmail/messages/' + encodeURIComponent(id) + '/proposal');
+      if (full.attachments.length) {
+        base.inferred.title = 'Review ' + full.attachments.length + ' attachments';
+        base.inferred.description = 'Review the attachments in this message and decide what follow-up is needed.';
+      }
+      base.note = 'Manual task: edit the fields after reviewing this message and its attachments.';
+      await showProposal(id,base);
+    } catch (error) { notify(error.message,true); }
+    finally { manual.disabled = false; }
+  });
+  bar.append(manual);
   let note = null;
   if (full.direction !== 'sent') {
     const toggle = iconButton('check', 'Mark as read');
@@ -430,24 +445,27 @@ async function selectMessage(id) {
   if (full.unread && userSettings.mark_read_on_open && full.direction !== 'sent')
     setRead(id, true).catch(error => notify('Could not mark the message as read: ' + error.message, true));
   paintRead();
-  if (userSettings.ai_enabled) detail.append(aiControls(id, full.direction === 'sent'));
+  if (userSettings.ai_enabled) detail.append(aiControls(id, full));
+  detail.append(el('div',undefined,'task-slot'));
+  if (attachments) detail.append(attachments);
 }
-function aiControls(id, isSent) {
+function aiControls(id, message) {
   const box = el('div', undefined, 'ai-actions');
   box.append(el('h4', 'AI assistant (' + aiProvider().name + ')'),
-    el('p', 'Sends this message’s text to ' + aiProvider().vendor + ' through the server’s ' + aiProvider().name + ' login only when you press a button.', 'meta'));
+    el('p', 'Only your chosen action sends this message’s text, or its stored images for image review, to ' + aiProvider().vendor + ' through the server’s ' + aiProvider().name + ' login.', 'meta'));
   const status = el('p', '', 'meta');
   const guidance = document.createElement('input');
   guidance.type = 'text'; guidance.maxLength = 500; guidance.className = 'ai-guidance';
   guidance.placeholder = 'Optional: what should the reply say?';
-  const suggest = iconButton('sparkles', 'Suggest task with AI');
+  const suggest = iconButton('sparkles', 'Suggest task from email text');
   const write = iconButton('sparkles', 'Draft reply with AI');
+  const reviewImages = iconButton('eye', 'Translate and explain images in Chinese');
   const run = async (button, work) => {
-    suggest.disabled = write.disabled = true;
+    suggest.disabled = write.disabled = reviewImages.disabled = true;
     status.textContent = 'Asking ' + aiProvider().name + '… this can take up to ' + userSettings.ai_timeout + ' seconds.';
     try { await work(); status.textContent = ''; }
     catch (error) { status.textContent = error.message; }
-    suggest.disabled = write.disabled = false;
+    suggest.disabled = write.disabled = reviewImages.disabled = false;
   };
   suggest.addEventListener('click', () => run(suggest, async () => {
     const result = await request('/api/ai/task', 'POST', {id});
@@ -463,7 +481,44 @@ function aiControls(id, isSent) {
     draft.replaceChildren(el('h4', 'AI draft (not sent) — review and edit before using'), el('pre', result.draft), copy);
   }));
   box.append(suggest, el('span', ' '));
-  if (!isSent) box.append(guidance, el('span', ' '), write);
+  if (!message.direction || message.direction !== 'sent') box.append(guidance, el('span', ' '), write);
+  const imageCount = message.attachments.filter(file => file.stored && ['image/jpeg','image/png','image/gif','image/webp'].includes(file.mime_type)).length;
+  if (imageCount) {
+    reviewImages.addEventListener('click', () => run(reviewImages, async () => {
+      const response = await request('/api/ai/images','POST',{id});
+      if (selectedId !== id) return;
+      for (const old of box.querySelectorAll('.image-review')) old.remove();
+      const result = response.review;
+      const review = el('section',undefined,'image-review');
+      review.append(el('h5','Images translated and explained in Chinese'),
+        el('p',imageCount + ' images · ' + result.provider + ' · ' + result.model + ' · AI interpretation; check against the images.','meta'));
+      for (const item of result.images) {
+        const section = el('div',undefined,'image-review-item');
+        section.append(el('strong',item.number + '. ' + item.name),
+          el('p','图中文字（中文）：' + (item.visible_text_zh || '没有可辨认的文字。')),
+          el('p','图片含义：' + (item.meaning_zh || '无法确定。')));
+        review.append(section);
+      }
+      review.append(el('p','整体说明：' + (result.summary_zh || '无法确定这些图片的整体含义。')));
+      const create = iconButton('plus','Create task from image review');
+      create.addEventListener('click', async () => {
+        create.disabled = true;
+        try {
+          const base = await request('/api/connectors/gmail/messages/' + encodeURIComponent(id) + '/proposal');
+          base.inferred.title = result.task_title;
+          base.inferred.description = result.task_description || result.summary_zh;
+          base.note = 'Task filled from an AI interpretation of the images. Check the images and edit before saving.';
+          base.ai = {confidence:'low',provider:result.provider,model:result.model,evidence:[],image_review:true,
+            notes:result.actionable ? 'The images may imply a follow-up; verify it yourself.' : 'No explicit action was found. This is a review task.'};
+          await showProposal(id,base);
+        } catch (error) { notify(error.message,true); }
+        finally { create.disabled = false; }
+      });
+      review.append(create);
+      box.append(review);
+    }));
+    box.append(el('span',' '),reviewImages);
+  }
   box.append(status);
   return box;
 }

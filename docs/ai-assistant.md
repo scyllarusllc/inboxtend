@@ -22,12 +22,20 @@ secrets do not belong in web settings.
 Only when you press an AI button on a message, and only if you enabled the assistant in **Settings**, the text of
 *that one message* is sent to the chosen provider through the login of the operating-system user that runs Inbox Tend:
 direction, sender, recipients, date, subject and body (first 20,000 characters), plus, if you ticked the option,
-up to three small text/CSV attachments (8,000 characters each). The current date and your timezone are added. For a
+up to three small text/CSV attachments (8,000 characters each). The image review button additionally sends up to eight stored images (2 MiB each). The current date and your timezone are added. For a
 reply draft, the guidance you typed is added too. Nothing else is sent, nothing is sent in the background, and no
 reply is ever sent: results only fill a form or a draft that you review.
 
 The provider's terms and your plan with it (ChatGPT/Codex or Claude) govern how that text is handled. If your mail is
 too sensitive for that, leave the assistant off.
+
+## Image-only mail
+
+In Message review, **Translate and explain images in Chinese** is shown when the selected message has saved PNG, JPEG, GIF or WebP images. It is an explicit AI action, independent of offline text translation. It sends the selected message text and up to eight stored images (2 MiB each) to the chosen provider through its CLI login. The result shows Chinese text/translation and an interpretation for each image, plus an overall summary. Images and AI interpretations are untrusted; check the previews before relying on the result.
+
+**Create task from image review** fills the normal task form from that result. No task is saved until the user reviews and confirms it. **Create task manually** is available even when AI is off. The ordinary **Suggest task from email text** button does not read images. Image evidence cannot be checked with the text quote verifier, so image-derived tasks are marked as requiring visual review.
+
+Codex receives images as CLI image inputs in an isolated temporary directory; Claude receives base64 image blocks through its structured stdin input. Temporary copies are deleted after the request. The image action never runs automatically.
 
 ## Setup
 

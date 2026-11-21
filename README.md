@@ -34,7 +34,7 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 - **AgentSteers mock handoff (opt-in, disabled by default):** reviewed tasks can be sent from either the task list or expanded task details to a separately configured mock-only MCP service, with explicit confirmation and status display. No real Codex, GitHub write, or email send is performed. A fictional registration-page task is included in `make demo`. [Setup and limitations](docs/agentsteers-handoff.md).
 
   ![Tasks](static/screens/tasks.jpg)
-- **AI assistant** (opt-in): drives Codex CLI (default) or Claude Code CLI installed on the server. Provider, model and timeout are set in Settings. Task suggestions quote and verify their evidence. Each feature sends only what [docs/ai-assistant.md](docs/ai-assistant.md) lists.
+- **AI assistant** (opt-in): drives Codex CLI (default) or Claude Code CLI installed on the server. Provider, model and timeout are set in Settings. Text task suggestions quote and verify their evidence. An explicit image review action translates and explains stored image attachments in Chinese, then can prefill a task for review. Each feature sends only what [docs/ai-assistant.md](docs/ai-assistant.md) lists.
 - **Responsive:** works on a phone.
 
   <img src="static/screens/phone.jpg" alt="The inbox on a phone" width="260">

@@ -158,6 +158,21 @@ class Handler(BaseHTTPRequestHandler):
                     files.append((item['name'],item['mime_type'],bytes(row['content'])[:ai.MAX_ATTACHMENT_CHARS * 4].decode('utf-8','replace')))
         return message,files,user
 
+    def _image_inputs(self,session,message_id):
+        message = self._gmail_message(session,message_id)
+        with self._db() as db:
+            user = prefs.effective(db,session['id'],self.gmail_config)
+            if not user['ai_enabled']: raise RequestError(403,'The AI assistant is turned off in Settings')
+            candidates = [item for item in message['attachments'] if item['stored'] and item['mime_type'] in ('image/jpeg','image/png','image/gif','image/webp')]
+            if not candidates: raise RequestError(400,'No stored images are available for AI review')
+            if len(candidates) > ai.MAX_IMAGE_ATTACHMENTS: raise RequestError(400,f'Review at most {ai.MAX_IMAGE_ATTACHMENTS} images at a time')
+            images = []
+            for item in candidates:
+                if item['size_bytes'] > ai.MAX_IMAGE_BYTES: raise RequestError(400,'An image is larger than the 2 MiB review limit')
+                row = gmail_web.attachment(db,session['id'],message['id'],item['id'])
+                images.append((item['name'],item['mime_type'],bytes(row['content'])))
+        return message,images,user
+
     def _db(self):
         @contextmanager
         def opened():
@@ -481,6 +496,11 @@ class Handler(BaseHTTPRequestHandler):
                                                    'ai':{'confidence':result['confidence'],'evidence':result['evidence'],'notes':result['notes'],
                                                          'provider':ai.PROVIDERS[ai.provider_of(user)]['name'],
                                                          'model':user['ai_model'] or 'provider default'}})
+                        if path == '/api/ai/images':
+                            message,images,user = self._image_inputs(session,data.get('id'))
+                            result = ai.review_images(self.gmail_config,message,images,user)
+                            return self._json(200,{'review':dict(result,provider=ai.PROVIDERS[ai.provider_of(user)]['name'],
+                                                                  model=user['ai_model'] or 'provider default')})
                         if path == '/api/ai/reply':
                             message,files,user = self._ai_inputs(session,data.get('id'))
                             guidance = data.get('guidance','')
