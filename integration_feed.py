@@ -6,12 +6,13 @@ returns message bodies, attachments, credentials, or task descriptions.
 from __future__ import annotations
 
 import base64
+import binascii
+import hashlib
 import hmac
 import json
 import os
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlsplit
-from zoneinfo import ZoneInfo
 
 from tasks import _deadline
 
@@ -21,20 +22,30 @@ class FeedError(Exception):
         self.status, self.message = status, message
 
 
-def _cursor_encode(snapshot_at, max_id, last_id):
-    value = json.dumps([snapshot_at, max_id, last_id], separators=(",", ":")).encode()
-    return base64.urlsafe_b64encode(value).decode().rstrip("=")
+def _cursor_encode(snapshot_at, max_id, last_id, owner_id, secret):
+    payload = json.dumps([snapshot_at, max_id, last_id, owner_id],
+                         separators=(",", ":")).encode()
+    signature = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(payload + signature).decode().rstrip("=")
 
 
-def _cursor_decode(value):
+def _cursor_decode(value, owner_id, secret):
     try:
         raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-        snapshot_at, max_id, last_id = json.loads(raw)
-        datetime.fromisoformat(snapshot_at.replace("Z", "+00:00"))
-        if not all(type(n) is int and n >= 0 for n in (max_id, last_id)) or last_id > max_id:
+        if len(raw) <= 32:
+            raise ValueError()
+        payload, signature = raw[:-32], raw[-32:]
+        expected = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError()
+        snapshot_at, max_id, last_id, scoped_owner = json.loads(payload)
+        date = datetime.fromisoformat(snapshot_at.replace("Z", "+00:00"))
+        if date.tzinfo is None or date > datetime.now(timezone.utc):
+            raise ValueError()
+        if scoped_owner != owner_id or not all(type(n) is int and n >= 0 for n in (max_id, last_id)) or last_id > max_id:
             raise ValueError()
         return snapshot_at, max_id, last_id
-    except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+    except (ValueError, TypeError, UnicodeError, binascii.Error):
         raise FeedError(400, "Invalid pagination cursor") from None
 
 
@@ -45,8 +56,10 @@ def _task(row):
     if due_date and value["due_time"]:
         due_at = _deadline(due_date, value["due_time"], value["due_timezone"]).isoformat()
     source_url = value["source_url"] or None
-    if source_url and urlsplit(source_url).scheme not in ("https", "http"):
-        source_url = None
+    if source_url:
+        parsed_url = urlsplit(source_url)
+        if parsed_url.scheme != "https" or not parsed_url.hostname or parsed_url.username or parsed_url.password:
+            source_url = None
     assigned = value["assigned_agent"] or None
     job_id = value["agentsteers_job_id"] or None
     # This ID is not proof of a live running AgentSteers execution.
@@ -89,7 +102,7 @@ def read_page(db, authorization, path):
         cursor = params["cursor"][0]
         if len(cursor) > 2048:
             raise FeedError(400, "Cursor too long")
-        snapshot_at, max_id, last_id = _cursor_decode(cursor)
+        snapshot_at, max_id, last_id = _cursor_decode(cursor, owner_id, expected)
     else:
         snapshot_at = datetime.now(timezone.utc).isoformat()
         max_id = db.execute("SELECT COALESCE(MAX(id),0) FROM tasks WHERE user_id=?", (owner_id,)).fetchone()[0]
@@ -104,7 +117,7 @@ def read_page(db, authorization, path):
     ).fetchall()
     has_more = len(rows) > limit
     visible = rows[:limit]
-    next_cursor = _cursor_encode(snapshot_at, max_id, visible[-1]["id"]) if has_more else None
+    next_cursor = _cursor_encode(snapshot_at, max_id, visible[-1]["id"], owner_id, expected) if has_more else None
     return {
         "source": "inboxtend", "schema_version": 1,
         "snapshot_at": snapshot_at, "items": [_task(row) for row in visible],
