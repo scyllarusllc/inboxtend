@@ -34,7 +34,10 @@ function taskImageDetails(task) {
         } else row.append(el('p','Image was not stored: '+(file.skipped_reason || 'unavailable'),'meta'));
         body.append(row);
       }
-      const reviewBox=el('div',undefined,'task-image-review');body.append(reviewBox);
+      const reviewBox=el('div',undefined,'task-image-review');
+      const run=iconButton('language','Translate and explain all '+result.images.length+' images in Chinese');
+      body.prepend(run);
+      body.append(reviewBox);
       const showReview=review=>{
         reviewBox.replaceChildren();
         if(!review)return;
@@ -62,18 +65,25 @@ function taskImageDetails(task) {
         section.append(apply);reviewBox.append(section);
       };
       showReview(result.review);
-      if(userSettings.ai_enabled) {
-        const run=iconButton('eye',result.review?'Review images again with AI':'Translate and explain images in Chinese');
-        run.addEventListener('click',async()=>{
-          run.disabled=true;
-          try {
-            const answer=await request('/api/tasks/'+task.id+'/images/review','POST',{});
-            showReview(answer.review);notify('Image review saved with this task.');
-          } catch(error) {notify(error.message,true);}
-          finally {run.disabled=false;}
-        });
-        body.insertBefore(run,reviewBox);
-      } else body.append(el('p','Enable the AI assistant in Settings to translate and explain these images.','meta'));
+      run.addEventListener('click',async()=>{
+        run.disabled=true;
+        run.textContent='Translating and explaining images…';
+        try {
+          const answer=await request('/api/tasks/'+task.id+'/images/review','POST',{});
+          showReview(answer.review);
+          notify('Image review saved with this task.');
+        } catch(error) {notify(error.message,true);}
+        finally {
+          run.replaceChildren(icon('language'),document.createTextNode('Translate and explain all '+result.images.length+' images in Chinese'));
+          run.disabled=false;
+        }
+      });
+      if(!userSettings.ai_enabled) {
+        const hint=el('p',undefined,'meta');
+        hint.append(document.createTextNode('The AI assistant may need to be enabled in '));
+        const link=el('a','Settings');link.href='/user/settings#ai';hint.append(link,document.createTextNode('.'));
+        body.insertBefore(hint,reviewBox);
+      }
     } catch(error) {body.textContent='Could not load task images: '+error.message;panel.dataset.loaded='false';}
   });
   return panel;
