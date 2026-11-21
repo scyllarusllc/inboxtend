@@ -686,6 +686,16 @@ class Handler(BaseHTTPRequestHandler):
                         raise RequestError(415,'Preview is available for text and CSV files only')
                     return self._json(200,{'name':row['filename'],'mime_type':row['mime_type'],'trusted':False,
                                            'content':content[:65536].decode('utf-8','replace'),'truncated':len(content)>65536})
+                if len(parts)==8 and parts[7]=='thumbnail':
+                    signatures = {
+                        'image/png': content.startswith(b'\x89PNG\r\n\x1a\n'),
+                        'image/jpeg': content.startswith(b'\xff\xd8\xff'),
+                        'image/gif': content.startswith((b'GIF87a',b'GIF89a')),
+                        'image/webp': content.startswith(b'RIFF') and content[8:12] == b'WEBP',
+                    }
+                    if len(content) > 2 * 1024 * 1024 or not signatures.get(row['mime_type'],False):
+                        raise RequestError(415,'Image preview unavailable')
+                    return self._send(200,content,row['mime_type'],(('Content-Disposition','inline'),))
                 if len(parts)==7:  # Always a download: never rendered inline and never trusted for its declared type.
                     safe = ''.join(c if c.isalnum() or c in '._-' else '_' for c in row['filename'])[:100] or 'attachment'
                     disposition = f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(row['filename'])}"

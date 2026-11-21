@@ -293,6 +293,8 @@
   .attachment-row { @apply flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2; }
   .attachment-meta { @apply mr-auto grid min-w-0 gap-0.5 text-sm; }
   .attachment-preview { @apply w-full overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs; }
+  .attachment-image { display: block; width: auto; max-width: 100%; max-height: 18rem; object-fit: contain; border-radius: .5rem; background: #fff; }
+  .attachment-row > .attachment-image { flex-basis: 100%; }
   .ai-actions { @apply mt-5 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/50 p-4; }
   .ai-actions h4 { @apply mb-1 flex items-center gap-2; }
   .ai-actions > .meta, .ai-actions > p { @apply mb-3; }

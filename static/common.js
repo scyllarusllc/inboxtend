@@ -99,7 +99,7 @@ function notify(message,error=false) {
 
 // Resolves once the session (and CSRF token) is known; page scripts await it.
 const sessionReady = request('/api/session').then(session => { csrfToken = session.csrf_token; });
-let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', inbox_view: 'threads', mark_read_on_open: true, gmail_write_read: false, ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: '', flags_enabled: false, topics_enabled: false};
+let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', inbox_view: 'people', mark_read_on_open: true, gmail_write_read: false, ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: '', flags_enabled: false, topics_enabled: false};
 const AI_PROVIDERS = {codex: {name: 'Codex', vendor: 'OpenAI'}, claude: {name: 'Claude', vendor: 'Anthropic'}};
 function aiProvider() { return AI_PROVIDERS[userSettings.ai_provider] || AI_PROVIDERS.codex; }
 // Resolves after the user's saved settings are loaded (falls back to the defaults above on failure).

@@ -1,8 +1,9 @@
 'use strict';
 const list = document.getElementById('messages');
 const detail = document.getElementById('detail');
+const relatedMessages = document.getElementById('related-messages');
 const draft = document.getElementById('draft');
-let messages = [], selectedId = null, folder = 'inbox', view = 'threads', groups = [], currentGroup = null, gmailWriteAccess = false;
+let messages = [], selectedId = null, folder = 'inbox', view = 'people', groups = [], currentGroup = null, gmailWriteAccess = false;
 // What the list shows: search words (Gmail-style operators work), two quick filters, and how many rows are drawn.
 let flagsAttempted = false, topicsAttempted = false, websitesAttempted = false;
 const websiteLink = document.getElementById('message-website-link');
@@ -141,7 +142,9 @@ function renderAttachments(message) {
   for (const file of message.attachments) {
     const row = el('div', undefined, 'attachment-row');
     const meta = el('div', undefined, 'attachment-meta');
-    meta.append(el('strong', file.name), el('span', file.mime_type + ' · ' + formatBytes(file.size_bytes) +
+    const kind = file.mime_type.startsWith('image/') ? 'Image' : file.mime_type === 'application/pdf' ? 'PDF document' :
+      (file.mime_type.startsWith('text/') || /\.(txt|csv)$/i.test(file.name)) ? 'Text document' : 'File';
+    meta.append(el('strong', file.name || 'Unnamed attachment'), el('span', kind + ' · ' + formatBytes(file.size_bytes) +
       (file.stored ? '' : ' · not stored (' + (file.skipped_reason || 'unavailable') + ')'), 'meta'));
     row.append(meta);
     if (file.stored) {
@@ -149,23 +152,36 @@ function renderAttachments(message) {
       const download = el('a', 'Download', 'icon-button'); download.href = base; download.setAttribute('download', file.name); download.prepend(icon('download'));
       row.append(download);
       if (file.mime_type === 'text/plain' || file.mime_type === 'text/csv' || /\.(txt|csv)$/i.test(file.name)) {
-        const preview = el('pre', undefined, 'attachment-preview'); preview.hidden = true;
-        const open = iconButton('paperclip', 'Preview');
-        open.addEventListener('click', async () => {
-          if (!preview.hidden) { preview.hidden = true; return; }
-          open.disabled = true;
-          try {
-            const result = await request(base + '/preview');
-            preview.textContent = result.content + (result.truncated ? '\n… (truncated)' : '');  // Untrusted: text only.
-          } catch (error) { preview.textContent = 'Preview unavailable: ' + error.message; }
-          preview.hidden = false; open.disabled = false;
-        });
-        row.append(open, preview);
+        const preview = el('pre', 'Loading text preview…', 'attachment-preview');
+        row.append(preview);
+        request(base + '/preview').then(result => {
+          const content = result.content || '';
+          const short = content.length > 800;
+          preview.textContent = short ? content.slice(0,800) + '\n…' : content || '(Empty text file)';
+          if (short) {
+            const expand = iconButton('eye', 'Show more');
+            expand.addEventListener('click', () => {
+              const open = expand.getAttribute('aria-expanded') === 'true';
+              expand.setAttribute('aria-expanded',String(!open));
+              expand.lastChild.textContent = open ? 'Show more' : 'Show less';
+              preview.textContent = open ? content.slice(0,800) + '\n…' : content + (result.truncated ? '\n… (preview truncated)' : '');
+            });
+            row.append(expand);
+          }
+        }).catch(error => { preview.textContent = 'Preview unavailable: ' + error.message; });
+      } else if (['image/png','image/jpeg','image/gif','image/webp'].includes(file.mime_type) && file.size_bytes <= 2 * 1024 * 1024) {
+        const image = document.createElement('img');
+        image.className = 'attachment-image'; image.alt = 'Preview of ' + (file.name || 'image attachment');
+        image.loading = 'lazy'; image.src = base + '/thumbnail';
+        image.addEventListener('error', () => image.replaceWith(el('p', 'Image preview unavailable.', 'meta')));
+        row.append(image);
       }
+    } else {
+      row.append(el('p', 'Preview unavailable because this file was not saved on the server.', 'meta'));
     }
     block.append(row);
   }
-  block.append(el('p', 'Attachments are untrusted. They are only downloaded, never opened or run by this app.', 'meta'));
+  block.append(el('p', 'Only plain text and verified raster images are previewed. Other files are downloads.', 'meta'));
   return block;
 }
 // "Synced x of y" next to what Gmail itself reports, so it is clear how much of the mailbox is here.
@@ -307,6 +323,7 @@ async function selectMessage(id) {
     button.setAttribute('aria-pressed', String(button.dataset.id === (currentGroup ? currentGroup.id : id)));
   }
   draft.replaceChildren();
+  relatedMessages.replaceChildren();
   if (window.innerWidth < 1024) document.getElementById('review-heading').scrollIntoView({behavior: 'smooth', block: 'start'});   // One column: the message is below the list, so bring it into view.
   detail.replaceChildren(el('h3', m.subject || '(No subject)'),
     el('div', (m.from || 'Unknown sender') + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'), el('p', 'Loading message…'));
@@ -352,7 +369,7 @@ async function selectMessage(id) {
       item.addEventListener('click', () => selectMessage(t.id));
       all.append(item);
     }
-    detail.append(all);
+    relatedMessages.append(all);
   }
   if (full.thread.length > 1 && !(currentGroup && currentGroup.kind === 'person')) {
     const thread = el('section', undefined, 'conversation-thread');
@@ -370,7 +387,7 @@ async function selectMessage(id) {
       item.addEventListener('click', () => selectMessage(t.id));
       thread.append(item);
     }
-    detail.append(thread);
+    relatedMessages.append(thread);
   }
   const reply = iconButton('reply', 'Prepare an unsent reply draft');
   reply.className += ' action';
@@ -460,7 +477,7 @@ window.inboxSearch = (query, wantFolder = 'inbox') => {
     folderInbox.setAttribute('aria-pressed', String(folder === 'inbox'));
     folderSent.setAttribute('aria-pressed', String(folder === 'sent'));
     selectedId = null; currentGroup = null; showViewState();
-    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
+    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); relatedMessages.replaceChildren(); clearTranslation(); clearWebsiteLink();
   }
   listLimit = PAGE;
   searchBox.value = query; searchText = query; clearTimeout(searchTimer); reloadList();
@@ -502,7 +519,7 @@ function chooseView(next) {
   if (view === next) return;
   view = next; currentGroup = null; selectedId = null; listLimit = PAGE;
   showViewState();
-  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); relatedMessages.replaceChildren(); clearTranslation(); clearWebsiteLink();
   userSettings.inbox_view = next;
   request('/api/settings', 'PATCH', {inbox_view: next}).catch(() => {});  // Remembered for next time.
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
@@ -517,7 +534,7 @@ function chooseFolder(next) {
   folderSent.setAttribute('aria-pressed', String(next === 'sent'));
   selectedId = null; currentGroup = null; listLimit = PAGE;
   showViewState();
-  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); relatedMessages.replaceChildren(); clearTranslation(); clearWebsiteLink();
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
 }
 folderInbox.addEventListener('click', () => chooseFolder('inbox'));
@@ -682,7 +699,7 @@ function renderList(data) {
   paintRead();
   if (!messages.some(m => m.id === previous)) {
     selectedId = null; currentGroup = null;
-    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
+    detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); relatedMessages.replaceChildren(); clearTranslation(); clearWebsiteLink();
   } else if (currentGroup) {
     currentGroup = groups.find(g => g.id === currentGroup.id) || null;  // Fresh data for the open group.
   }
@@ -802,7 +819,7 @@ async function refreshGmail(startSync = false) {
       if (state.configured) gmailStatus.replaceChildren('Gmail is not connected. Connect it in ', link, ' to see your mail.');
       else gmailStatus.replaceChildren('Gmail is not configured on this server (see docs/gmail-web.md). Details in ', link, '.');
       list.replaceChildren(el('p', 'No mail yet: connect Gmail in Settings.', 'meta'));
-      detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
+      detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); relatedMessages.replaceChildren(); clearTranslation(); clearWebsiteLink();
       messages = []; selectedId = null; gmailRefresh.disabled = false;
       return;
     }
@@ -885,7 +902,7 @@ accountSelect.addEventListener('change', () => {
   accountFilter = accountSelect.value;
   if (accountFilter) sessionStorage.setItem('inboxtend-account', accountFilter); else sessionStorage.removeItem('inboxtend-account');
   listLimit = PAGE; selectedId = null; currentGroup = null;
-  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); clearTranslation(); clearWebsiteLink();
+  detail.replaceChildren('Choose a message to see its details.'); draft.replaceChildren(); relatedMessages.replaceChildren(); clearTranslation(); clearWebsiteLink();
   refreshGmail().catch(error => { gmailStatus.textContent = error.message; });
 });
 gmailRefresh.addEventListener('click', async () => {
@@ -896,7 +913,7 @@ async function init() {
   try { await sessionReady; } catch (error) { notify('Could not load session: ' + error.message, true); return; }
   await settingsReady;
   if (userSettings.websites_enabled) document.getElementById('review-caption').textContent = 'AI guesses may be wrong';
-  view = ['threads', 'messages', 'people'].includes(userSettings.inbox_view) ? userSettings.inbox_view : 'threads';
+  view = ['people', 'threads', 'messages'].includes(userSettings.inbox_view) ? userSettings.inbox_view : 'people';
   document.getElementById('filter-unread').setAttribute('aria-pressed', String(onlyUnread));
   showViewState();
   if (userSettings.translate_enabled) {

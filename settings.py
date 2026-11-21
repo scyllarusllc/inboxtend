@@ -13,12 +13,12 @@ from zoneinfo import ZoneInfo
 
 PRIORITIES = ('low', 'medium', 'high')
 AI_PROVIDERS = ('codex', 'claude')
-INBOX_VIEWS = ('threads', 'messages', 'people')
+INBOX_VIEWS = ('people', 'threads', 'messages')
 DEFAULTS = {
     'timezone': 'Pacific/Saipan',   # Default for new task deadlines; also how mail times are displayed.
     'due_soon_hours': 48,           # A task due within this many hours is flagged "due soon".
     'default_priority': 'medium',   # Priority pre-selected when suggesting a task.
-    'inbox_view': 'threads',        # How the Inbox lists mail: threads (conversations), messages or people.
+    'inbox_view': 'people',         # How the Inbox lists mail: people, threads (conversations) or messages.
     'unread_dismiss_delay_ms': 1000, # Wait before a read person leaves the Unread list.
     'sync_sent': True,              # Also mirror sent mail.
     'mark_read_on_open': True,      # Opening a message marks it read.
