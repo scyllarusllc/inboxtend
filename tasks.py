@@ -174,6 +174,16 @@ def connection(path=DEFAULT_DB):
             purpose TEXT NOT NULL, user_id INTEGER, expires_at INTEGER NOT NULL)''')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_attachments_message ON gmail_attachments(user_id,message_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_inbox ON gmail_messages(user_id,in_inbox,internal_date DESC)')
+        db.execute('CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY)')
+        if not db.execute("SELECT 1 FROM schema_migrations WHERE name='task_images_backfill_v1'").fetchone():
+            # Tasks created before image copying was added still need their cached mail images.
+            db.execute('''INSERT INTO task_attachments(task_id,filename,mime_type,size_bytes,content,skipped_reason)
+                SELECT t.id,a.filename,a.mime_type,a.size_bytes,a.content,a.skipped_reason
+                FROM tasks t JOIN gmail_attachments a
+                  ON a.user_id=t.user_id AND a.message_id=t.message_id
+                WHERE t.source_provider IN ('gmail','imap') AND a.mime_type LIKE 'image/%'
+                  AND NOT EXISTS (SELECT 1 FROM task_attachments x WHERE x.task_id=t.id)''')
+            db.execute("INSERT INTO schema_migrations(name) VALUES('task_images_backfill_v1')")
     db.execute('PRAGMA foreign_keys=ON')
     return db
 

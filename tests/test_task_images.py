@@ -3,6 +3,22 @@ import unittest
 from tasks import connection, create_task, get_task, task_image, task_images, save_task_image_review, task_image_review, delete_task
 
 class TaskImageTests(unittest.TestCase):
+    def test_existing_task_images_are_backfilled_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=directory+'/tasks.sqlite3'
+            db=connection(path)
+            db.execute("INSERT INTO gmail_attachments(user_id,message_id,filename,mime_type,size_bytes,content) VALUES(1,'old-mail','old.jpg','image/jpeg',4,?)",(b'\xff\xd8\xff\x00',))
+            task=create_task(db,{'provider':'gmail','id':'old-mail'},
+                {'title':'Old task','description':'','priority':'medium'},user_id=1)
+            db.execute('DELETE FROM task_attachments WHERE task_id=?',(task['id'],))
+            db.execute("DELETE FROM schema_migrations WHERE name='task_images_backfill_v1'")
+            db.commit()
+            db.close()
+            for _ in range(2):
+                db=connection(path)
+                self.assertEqual(get_task(db,task['id'],user_id=1)['image_count'],1)
+                db.close()
+
     def test_images_survive_mail_removal_and_are_user_scoped(self):
         with tempfile.TemporaryDirectory() as directory:
             db=connection(directory+'/tasks.sqlite3')
