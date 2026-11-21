@@ -1,4 +1,4 @@
-"""Read-only IMAP import into the local mail cache."""
+"""IMAP import and read/unread flag updates for the local mail cache."""
 import email
 import imaplib
 import json
@@ -48,6 +48,40 @@ def _text(part):
     try: return part.get_content()
     except (UnicodeError, LookupError, ValueError): return part.get_payload(decode=True).decode('utf-8','replace')
 
+def set_seen(db, config, user_id, account_id, message_ids, seen):
+    """Update only \\Seen, grouped by folder. Reject stale UIDs after a folder reset."""
+    row = account(db,user_id,account_id)
+    try:
+        cipher = bytes(row['password'])
+        password = AESGCM(gmail_web._key(config)).decrypt(cipher[:12],cipher[12:],str(user_id).encode()).decode()
+    except Exception: raise IMAPError('Cannot decrypt IMAP password') from None
+    groups = {}
+    for mid in message_ids:
+        match = re.fullmatch(r'imap-(-\d+)~(\d+)~(inbox|sent)~(\d+)',mid)
+        if not match or int(match[1]) != account_id:
+            raise IMAPError('Invalid IMAP message ID')
+        groups.setdefault((match[3],match[2]),[]).append(match[4])
+    if not groups: return
+    try:
+        with imaplib.IMAP4_SSL(row['host'],993,ssl_context=ssl.create_default_context(),timeout=30) as client:
+            client.login(row['username'],password)
+            for (folder,validity),uids in groups.items():
+                name = 'INBOX'
+                if folder == 'sent':
+                    typ,boxes = client.list()
+                    if typ != 'OK': raise IMAPError('Cannot list IMAP folders')
+                    name = next((line.decode('utf-8','replace').rsplit(' ',1)[-1].strip('"') for line in boxes or [] if b'\\Sent' in line),None)
+                    if not name: raise IMAPError('Sent folder is unavailable')
+                typ,_ = client.select(name,readonly=False)
+                if typ != 'OK': raise IMAPError('Cannot open IMAP folder for flag update')
+                current = (client.response('UIDVALIDITY')[1] or [b''])[0].decode()
+                if current != validity: raise IMAPError('IMAP folder changed; refresh mail before marking it read')
+                for uid in uids:
+                    typ,_ = client.uid('store',uid,'+FLAGS.SILENT' if seen else '-FLAGS.SILENT','(\\Seen)')
+                    if typ != 'OK': raise IMAPError('IMAP server rejected the read/unread change')
+    except (imaplib.IMAP4.error,OSError) as exc:
+        raise IMAPError('IMAP read/unread update failed') from exc
+
 def sync(db, config, user_id, account_id, report=lambda **kw: None):
     row = account(db,user_id,account_id)
     try:
@@ -84,7 +118,7 @@ def sync(db, config, user_id, account_id, report=lambda **kw: None):
             prefix = f'imap-{account_id}~{validity}~{kind}~'
             for uid in uids:
                 mid = prefix+uid.decode()
-                typ, records = client.uid('fetch',uid,'(RFC822 FLAGS)')
+                typ, records = client.uid('fetch',uid,'(BODY.PEEK[] FLAGS)')
                 if typ!='OK': continue
                 pair = next((x for x in records if isinstance(x,tuple)),None)
                 if not pair: continue

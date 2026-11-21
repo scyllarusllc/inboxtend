@@ -261,7 +261,20 @@ def set_read(db,config,user_id,message_id,read,*,write=False,opener=urlopen):
     row = db.execute('SELECT label_ids,account_id FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,message_id)).fetchone()
     if row is None: return None
     want_unread = not read
-    outcome = {'unread':want_unread,'gmail_changed':False,'gmail_error':None}
+    outcome = {'unread':want_unread,'gmail_changed':False,'imap_changed':False,'gmail_error':None}
+    if row['account_id'] is not None and row['account_id'] < 0:
+        import imap_web
+        try:
+            imap_web.set_seen(db,config,user_id,row['account_id'],[message_id],read)
+            labels = [x for x in json.loads(row['label_ids'] or '[]') if x != 'UNREAD']
+            if want_unread: labels.append('UNREAD')
+            with db:
+                db.execute('UPDATE gmail_messages SET label_ids=?,read_override=NULL WHERE user_id=? AND message_id=?',
+                           (json.dumps(labels),user_id,message_id))
+            outcome['imap_changed'] = True
+            return outcome
+        except (imap_web.IMAPError,ValueError) as exc:
+            outcome['gmail_error'] = str(exc)
     if write and not message_id.startswith('imap-'):
         try: account, gmail_id = _split(db,user_id,message_id)
         except GmailConnectionError as exc: account, gmail_id = None, ''; outcome['gmail_error'] = str(exc)
@@ -302,18 +315,28 @@ def mark_all_read(db,config,user_id,ids,*,write=False,opener=urlopen):
     has the gmail.modify grant (one batch request per account). A failed Gmail update keeps the local change and is
     reported, never raised. Returns {'marked', 'gmail_changed', 'gmail_error'}."""
     ids = list(dict.fromkeys(ids))
-    outcome = {'marked':len(ids),'gmail_changed':0,'gmail_error':None}
+    outcome = {'marked':len(ids),'gmail_changed':0,'imap_changed':0,'gmail_error':None}
     if not ids: return outcome
     marks = ','.join('?' * len(ids))
     with db:   # Read here; if Gmail still says unread, remember the local override (cleared below once Gmail agrees).
         db.execute("UPDATE gmail_messages SET read_override=CASE WHEN label_ids LIKE '%\"UNREAD\"%' THEN 1 ELSE NULL END "
                    f"WHERE user_id=? AND message_id IN ({marks})",(user_id,*ids))
-    if not write: return outcome
     by_account, errors, skipped = {}, [], {}
     for r in db.execute(f'SELECT message_id,account_id FROM gmail_messages WHERE user_id=? AND message_id IN ({marks})',(user_id,*ids)):
         by_account.setdefault(r['account_id'],[]).append(r['message_id'])
     for account_id,stored in by_account.items():
-        if account_id is not None and account_id < 0: continue
+        if account_id is not None and account_id < 0:
+            import imap_web
+            try:
+                imap_web.set_seen(db,config,user_id,account_id,stored,True)
+                with db:
+                    for mid in stored:
+                        labels = [x for x in json.loads(db.execute('SELECT label_ids FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,mid)).fetchone()[0] or '[]') if x != 'UNREAD']
+                        db.execute('UPDATE gmail_messages SET label_ids=?,read_override=NULL WHERE user_id=? AND message_id=?',(json.dumps(labels),user_id,mid))
+                outcome['imap_changed'] += len(stored)
+            except (imap_web.IMAPError,ValueError) as exc: errors.append(str(exc))
+            continue
+        if not write: continue
         try: account = _account(db,user_id,account_id)
         except GmailConnectionError as exc: errors.append(str(exc)); continue
         if MODIFY_SCOPE not in _granted(account):
