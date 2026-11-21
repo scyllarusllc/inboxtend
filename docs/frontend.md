@@ -1,8 +1,6 @@
 # Front end: Tailwind CSS and Font Awesome
 
-The UI is plain server-rendered HTML plus a little vanilla JavaScript, styled with **Tailwind CSS v4** and icons from
-**Font Awesome Free**. There is no framework and no runtime dependency: the stylesheet is compiled ahead of time and
-committed, so running the app needs only Python. Node is needed only to change the look.
+The UI runs in a **Next.js App Router** shell, styled with **Tailwind CSS v4** and **Font Awesome Free**. The shell currently reuses page bodies and vanilla JavaScript from `static/` while those interactions are moved into React components. Next.js requires Node.js at runtime; FastAPI serves the API and existing static files.
 
 | What | Where |
 |---|---|
@@ -11,7 +9,7 @@ committed, so running the app needs only Python. Node is needed only to change t
 | Page bodies / shared header and footer | `static/pages/*.html`, `static/layout.html` |
 | Icons (committed copy) | `static/vendor/fontawesome/` |
 | Country flags (committed copy, 257 SVGs) | `static/vendor/flag-icons/`; the accepted codes are generated into `countries.py` |
-| Navigation markup | `nav_html()` in `app.py` |
+| Next.js navigation | `frontend/app/[[...segments]]/page.jsx` |
 | Build tooling | `package.json`, `package-lock.json` |
 
 ## Working on the styles

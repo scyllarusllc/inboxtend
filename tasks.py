@@ -2,10 +2,13 @@
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from functools import lru_cache
 from zoneinfo import ZoneInfo
 import json
 import os
 import sqlite3
+from sqlmodel import create_engine
+from sqlalchemy.pool import NullPool
 import settings
 from email.utils import getaddresses, parseaddr
 
@@ -26,11 +29,43 @@ def peer_for(label_ids, from_addr, to_addr):
     return (addr or '').strip().lower()[:254], (name or '').strip()[:120]
 
 
+@lru_cache(maxsize=8)
+def _engine(path):
+    return create_engine(f'sqlite:///{Path(path).resolve()}', poolclass=NullPool,
+                         connect_args={'timeout': 5})
+
+
+class SQLModelConnection:
+    """Keep the existing sqlite3 transaction API while using a SQLModel engine."""
+    def __init__(self, path):
+        self._lease = _engine(str(path)).raw_connection()
+        self._driver = self._lease.driver_connection
+
+    def __getattr__(self, name):
+        return getattr(self._driver, name)
+
+    def __setattr__(self, name, value):
+        if name in ('_lease', '_driver'):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._driver, name, value)
+
+    def __enter__(self):
+        self._driver.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self._driver.__exit__(*args)
+
+    def close(self):
+        self._lease.close()
+
+
 def connection(path=DEFAULT_DB):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o700)
-    db = sqlite3.connect(path, timeout=5)
+    db = SQLModelConnection(path)
     path.chmod(0o600)
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA busy_timeout=5000')

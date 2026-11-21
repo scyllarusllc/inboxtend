@@ -1,17 +1,25 @@
 {
   "name": "inbox-tend-ui",
   "private": true,
-  "description": "Build tooling for Inbox Tend's stylesheet. The running app needs only Python: the compiled CSS and the Font Awesome files are committed.",
+  "description": "Next.js frontend and Tailwind CSS build tooling for Inbox Tend.",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "build:css": "tailwindcss -i static/src/app.css -o static/styles.css --minify",
     "watch:css": "tailwindcss -i static/src/app.css -o static/styles.css --watch",
-    "vendor": "node scripts/vendor-assets.mjs"
+    "vendor": "node scripts/vendor-assets.mjs",
+    "next:dev": "next dev frontend --port 3000",
+    "next:build": "next build frontend",
+    "next:start": "next start frontend --port 3000"
   },
   "devDependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",
     "@tailwindcss/cli": "^4.3.5",
     "flag-icons": "^7.6.0",
     "tailwindcss": "^4.3.5"
+  },
+  "dependencies": {
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   }
 }

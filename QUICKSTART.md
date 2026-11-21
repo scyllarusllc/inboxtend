@@ -1,9 +1,10 @@
 # Inbox Tend quickstart
 
-Python 3.10+ and the standard library run the app. Connecting Gmail requires `cryptography` (`python3 -m pip install -r requirements.txt`) and Google Web OAuth credentials (`INBOX_TEND_GOOGLE_*` and `INBOX_TEND_TOKEN_KEY` in `.env`); see [docs/gmail-web.md](docs/gmail-web.md).
+Python 3.10+ with `requirements.txt` runs the FastAPI backend. Node.js and `npm ci` are needed for the Next.js frontend. Connecting Gmail requires Google Web OAuth credentials (`INBOX_TEND_GOOGLE_*` and `INBOX_TEND_TOKEN_KEY` in `.env`); see [docs/gmail-web.md](docs/gmail-web.md).
 
 ```bash
 make dev                 # prepares .venv/dependencies, then starts 127.0.0.1:8765
+make dev-next            # FastAPI on 8765 + Next.js on 3000; open 127.0.0.1:3000
 make dev PORT=8766       # choose another local port
 ```
 

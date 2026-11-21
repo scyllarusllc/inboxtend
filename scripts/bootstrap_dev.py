@@ -36,7 +36,7 @@ def modules_ready() -> bool:
     if not PYTHON.is_file():
         return False
     result = subprocess.run([str(PYTHON), '-c',
-                             'import cryptography, langdetect, ctranslate2; from argostranslate import package, translate'],
+                             'import cryptography, langdetect, ctranslate2, fastapi, sqlmodel, typer, uvicorn; from argostranslate import package, translate'],
                             cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return result.returncode == 0
 

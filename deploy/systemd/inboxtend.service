@@ -9,7 +9,7 @@ Type=simple
 WorkingDirectory=/root/github/inboxtend
 Environment=INBOX_TEND_PORT=8765
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 app.py
+ExecStart=/root/github/inboxtend/.venv/bin/python cli.py serve --port 8765
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=yes

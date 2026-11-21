@@ -10,7 +10,6 @@ import traceback
 from html import escape
 from contextlib import contextmanager, closing
 from pathlib import Path
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 import ai
 import gmail_web
@@ -110,34 +109,19 @@ def raster_preview_mime(mime,content):
     }
     return mime if len(content) <= ai.MAX_IMAGE_BYTES and signatures.get(mime,False) else None
 
-class Handler(BaseHTTPRequestHandler):
+class Handler:
     db_path = DEFAULT_DB
     auth_manager = None
     gmail_config = {}
 
     def _send(self,status,payload,mime,extra_headers=()):
-        headers = {'Content-Type':mime,'Content-Length':str(len(payload)),'Cache-Control':'no-store',
-                   'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
-                   'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"}
-        for key,value in extra_headers:   # A caller's header replaces the default of the same name instead of repeating it.
-            headers[next((k for k in headers if k.lower() == key.lower()),key)] = value
-        self.send_response(status)
-        for key,value in headers.items():
-            self.send_header(key,value)
-        self.end_headers()
-        self.wfile.write(payload)
+        raise NotImplementedError('The ASGI adapter supplies HTTP responses')
 
     def _json(self,status,data,extra_headers=()):
         self._send(status,json.dumps(data,ensure_ascii=False).encode(),'application/json; charset=utf-8',extra_headers)
 
     def _redirect(self,location,extra_headers=()):
-        self.send_response(303)
-        self.send_header('Location',location)
-        for key,value in extra_headers: self.send_header(key,value)
-        self.send_header('Cache-Control','no-store')
-        self.send_header('Referrer-Policy','no-referrer')
-        self.send_header('Content-Length','0')
-        self.end_headers()
+        raise NotImplementedError('The ASGI adapter supplies HTTP redirects')
 
     def _host_ok(self):
         host = self.headers.get('Host','')
@@ -823,23 +807,9 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self._json(500,{'error':'Internal error; see the server log'})
 
-    def do_GET(self): self._handle()
-    def do_POST(self): self._handle(True)
-    def do_PATCH(self): self._handle(True)
-    def do_DELETE(self): self._handle(True)
-    def log_message(self,*args): pass
-
 class RequestError(Exception):
     def __init__(self,status,message): self.status,self.message=status,message
 
 if __name__=='__main__':
-    host,port='127.0.0.1',int(os.environ.get('INBOX_TEND_PORT','8765'))
-    config=read_config(ROOT/'.env')
-    Handler.gmail_config=config
-    Handler.auth_manager=AuthManager(DEFAULT_DB,username=config.get('INBOX_TEND_ADMIN_USERNAME',''),
-                                     password_hash=config.get('INBOX_TEND_ADMIN_PASSWORD_HASH',''))
-    gmail_web.start_auto_sync(DEFAULT_DB,config)
-    translation_preload.start(DEFAULT_DB,config)
-    with ThreadingHTTPServer((host,port),Handler) as server:
-        print(f'Inbox Tend: http://{host}:{port}')
-        server.serve_forever()
+    import uvicorn
+    uvicorn.run('asgi:app', host='127.0.0.1', port=int(os.environ.get('INBOX_TEND_PORT','8765')))

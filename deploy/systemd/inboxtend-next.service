@@ -1,0 +1,17 @@
+[Unit]
+Description=Inbox Tend Next.js frontend
+After=inboxtend.service
+Requires=inboxtend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/github/inboxtend
+Environment=INBOX_TEND_API_ORIGIN=http://127.0.0.1:8765
+ExecStart=/usr/bin/npm run next:start
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

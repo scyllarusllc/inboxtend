@@ -2,12 +2,20 @@ PORT ?= 8765
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 CADDY ?= caddy
 
-.PHONY: dev caddy-dev test build-pages css css-watch css-check vendor demo
+.PHONY: dev dev-next caddy-dev test build-pages css css-watch css-check vendor demo
 
 dev:
 	python3 scripts/bootstrap_dev.py
 	.venv/bin/python scripts/free_dev_port.py $(PORT)
 	INBOX_TEND_PORT=$(PORT) .venv/bin/python app.py
+
+dev-next:
+	python3 scripts/bootstrap_dev.py
+	test -d node_modules/next || npm ci
+	.venv/bin/python scripts/free_dev_port.py $(PORT)
+	INBOX_TEND_PORT=$(PORT) .venv/bin/python cli.py serve --port $(PORT) & backend_pid=$$!; \
+	trap 'kill $$backend_pid 2>/dev/null || true' EXIT INT TERM; \
+	INBOX_TEND_API_ORIGIN=http://127.0.0.1:$(PORT) npm run next:dev
 
 caddy-dev:
 	INBOX_TEND_PORT=$(PORT) $(CADDY) run --config deploy/Caddyfile.local

@@ -12,6 +12,16 @@ sudo systemctl enable --now inboxtend.service inboxtend-backup.timer
 
 `inboxtend.service` starts at boot and is restarted 3 seconds after any crash. The app listens on `127.0.0.1:8765` (`INBOX_TEND_PORT` in the unit); put HTTPS in front of it with Caddy or similar. After updating the code run `sudo systemctl restart inboxtend`.
 
+To serve the Next.js frontend, run `npm ci && npm run next:build`, then install and enable its service:
+
+```bash
+sudo install -m 644 deploy/systemd/inboxtend-next.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now inboxtend-next.service
+```
+
+It listens on port 3000 and proxies API and static requests to FastAPI on port 8765. Point your reverse proxy at port 3000. Keep the FastAPI service running; Next.js does not open the SQLite file.
+
 ```bash
 systemctl status inboxtend          # state
 journalctl -u inboxtend -f          # logs and tracebacks (stdout/stderr go to the journal)
