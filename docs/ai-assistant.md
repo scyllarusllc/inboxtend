@@ -29,13 +29,13 @@ reply is ever sent: results only fill a form or a draft that you review.
 The provider's terms and your plan with it (ChatGPT/Codex or Claude) govern how that text is handled. If your mail is
 too sensitive for that, leave the assistant off.
 
-## Image-only mail
+## Image-only mail and task handoff
 
-In Message review, **Translate and explain images in Chinese** is shown when the selected message has saved PNG, JPEG, GIF or WebP images. It is an explicit AI action, independent of offline text translation. It sends the selected message text and up to eight stored images (2 MiB each) to the chosen provider through its CLI login. The result shows Chinese text/translation and an interpretation for each image, plus an overall summary. Images and AI interpretations are untrusted; check the previews before relying on the result.
+In Inbox → Message review, three suggestion buttons create a task for the selected image email: **Translate images to Chinese**, **Explain what the images mean**, or **Review images and plan follow-up**. A message has one task; pressing another suggestion later opens that existing task. Creating the task copies all saved image attachments into `task_attachments`, so task images remain available if the mailbox connection is removed. No AI request happens at this step.
 
-**Create task from image review** fills the normal task form from that result. No task is saved until the user reviews and confirms it. **Create task manually** is available even when AI is off. The ordinary **Suggest task from email text** button does not read images. Image evidence cannot be checked with the text quote verifier, so image-derived tasks are marked as requiring visual review.
+On the Tasks page, expand **Images** to see and download the copies. Press **Translate and explain images in Chinese** there to send the task text and up to eight stored images (2 MiB each) to the selected provider. The saved result shows a Chinese translation and interpretation for each image, an overall summary, and suggested task wording. **Use suggested task text** applies it only after an explicit click. Nothing is sent automatically. Images and AI interpretations are untrusted; check each preview before acting.
 
-Codex receives images as CLI image inputs in an isolated temporary directory; Claude receives base64 image blocks through its structured stdin input. Temporary copies are deleted after the request. The image action never runs automatically.
+Codex receives images as CLI image inputs in an isolated temporary directory; Claude receives base64 image blocks through structured stdin. Temporary copies are deleted after the request. The ordinary Inbox **Suggest task from email text** action does not read images.
 
 ## Setup
 

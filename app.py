@@ -26,7 +26,7 @@ import local_translation
 import translation_preload
 import agentsteers_bridge
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
-from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
+from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, task_images, task_image, task_image_review, save_task_image_review, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
 ROOT = Path(__file__).resolve().parent
 _TRANSLATION_TIMINGS = {}
@@ -100,6 +100,15 @@ def proposal(message, user=None):
                         'due_timezone':user['timezone'],'project_label':'','customer_label':''},
             'note':'Rule-based suggestion from the Gmail subject and snippet; no deadline was inferred.'}
 
+def raster_preview_mime(mime,content):
+    signatures = {
+        'image/png': content.startswith(b'\x89PNG\r\n\x1a\n'),
+        'image/jpeg': content.startswith(b'\xff\xd8\xff'),
+        'image/gif': content.startswith((b'GIF87a',b'GIF89a')),
+        'image/webp': content.startswith(b'RIFF') and content[8:12] == b'WEBP',
+    }
+    return mime if len(content) <= ai.MAX_IMAGE_BYTES and signatures.get(mime,False) else None
+
 class Handler(BaseHTTPRequestHandler):
     db_path = DEFAULT_DB
     auth_manager = None
@@ -157,21 +166,6 @@ class Handler(BaseHTTPRequestHandler):
                     row = gmail_web.attachment(db,session['id'],message['id'],item['id'])
                     files.append((item['name'],item['mime_type'],bytes(row['content'])[:ai.MAX_ATTACHMENT_CHARS * 4].decode('utf-8','replace')))
         return message,files,user
-
-    def _image_inputs(self,session,message_id):
-        message = self._gmail_message(session,message_id)
-        with self._db() as db:
-            user = prefs.effective(db,session['id'],self.gmail_config)
-            if not user['ai_enabled']: raise RequestError(403,'The AI assistant is turned off in Settings')
-            candidates = [item for item in message['attachments'] if item['stored'] and item['mime_type'] in ('image/jpeg','image/png','image/gif','image/webp')]
-            if not candidates: raise RequestError(400,'No stored images are available for AI review')
-            if len(candidates) > ai.MAX_IMAGE_ATTACHMENTS: raise RequestError(400,f'Review at most {ai.MAX_IMAGE_ATTACHMENTS} images at a time')
-            images = []
-            for item in candidates:
-                if item['size_bytes'] > ai.MAX_IMAGE_BYTES: raise RequestError(400,'An image is larger than the 2 MiB review limit')
-                row = gmail_web.attachment(db,session['id'],message['id'],item['id'])
-                images.append((item['name'],item['mime_type'],bytes(row['content'])))
-        return message,images,user
 
     def _db(self):
         @contextmanager
@@ -496,11 +490,6 @@ class Handler(BaseHTTPRequestHandler):
                                                    'ai':{'confidence':result['confidence'],'evidence':result['evidence'],'notes':result['notes'],
                                                          'provider':ai.PROVIDERS[ai.provider_of(user)]['name'],
                                                          'model':user['ai_model'] or 'provider default'}})
-                        if path == '/api/ai/images':
-                            message,images,user = self._image_inputs(session,data.get('id'))
-                            result = ai.review_images(self.gmail_config,message,images,user)
-                            return self._json(200,{'review':dict(result,provider=ai.PROVIDERS[ai.provider_of(user)]['name'],
-                                                                  model=user['ai_model'] or 'provider default')})
                         if path == '/api/ai/reply':
                             message,files,user = self._ai_inputs(session,data.get('id'))
                             guidance = data.get('guidance','')
@@ -536,12 +525,59 @@ class Handler(BaseHTTPRequestHandler):
                 message = dict(self._gmail_message(session,data.get('message_id')),provider='imap' if data.get('message_id','').startswith('imap-') else 'gmail')
                 with self._db() as db:
                     data.setdefault('due_timezone',prefs.effective(db,session['id'],self.gmail_config)['timezone'])
-                    existing = task_for_source(db,'gmail',message['id'],session['id'])
+                    existing = task_for_source(db,message['provider'],message['id'],session['id'])
                     if existing:
                         return self._json(409,{'error':'Task already exists','task':existing})
                     task = create_task(db,message,data,session['id'])
                 return self._json(201,{'task':task})
+            if path == '/api/tasks/from-message' and self.command == 'POST':
+                intent = data.get('intent')
+                suggestions = {
+                    'translate_images': ('Translate attached images into Chinese', 'Read the text in every attached image, translate it into Chinese, and record anything unclear.'),
+                    'explain_images': ('Explain what the attached images mean', 'Review every attached image, explain its meaning, and identify any information that needs verification.'),
+                    'review_images': ('Review attached images and decide next steps', 'Review all attached images, translate any text into Chinese, and decide what follow-up is needed.'),
+                }
+                if intent not in suggestions: raise RequestError(400,'Unknown image task suggestion')
+                message = dict(self._gmail_message(session,data.get('message_id')),
+                               provider='imap' if str(data.get('message_id','')).startswith('imap-') else 'gmail')
+                with self._db() as db:
+                    image_count = db.execute("SELECT COUNT(*) FROM gmail_attachments WHERE user_id=? AND message_id=? AND mime_type LIKE 'image/%'",
+                                             (session['id'],message['id'])).fetchone()[0]
+                    if not image_count: raise RequestError(400,'This message has no image attachments')
+                    existing = task_for_source(db,message['provider'],message['id'],session['id'])
+                    if existing: return self._json(200,{'task':existing,'existing':True})
+                    user = prefs.effective(db,session['id'],self.gmail_config)
+                    title,description = suggestions[intent]
+                    task = create_task(db,message,{'title':title,'description':description,'priority':user['default_priority'],
+                                                   'due_date':None,'due_time':None,'due_timezone':user['timezone']},session['id'])
+                return self._json(201,{'task':task,'existing':False})
             parts = path.strip('/').split('/')
+            if len(parts)==5 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3:] == ['images','review'] and self.command == 'POST':
+                task_id = int(parts[2])
+                with self._db() as db:
+                    task = get_task(db,task_id,user_id=session['id'])
+                    if not task: raise RequestError(404,'Task not found')
+                    user = prefs.effective(db,session['id'],self.gmail_config)
+                    if not user['ai_enabled']: raise RequestError(403,'The AI assistant is turned off in Settings')
+                    files = task_images(db,task_id,session['id'])
+                    if not files: raise RequestError(400,'This task has no images')
+                    if len(files) > ai.MAX_IMAGE_ATTACHMENTS: raise RequestError(400,f'Review at most {ai.MAX_IMAGE_ATTACHMENTS} images at a time')
+                    images = []
+                    for file in files:
+                        row = task_image(db,task_id,file['id'],session['id'])
+                        if row['content'] is None or not raster_preview_mime(row['mime_type'],bytes(row['content'])):
+                            raise RequestError(400,'All task images must be stored, supported and at most 2 MiB for AI review')
+                        images.append((row['filename'],row['mime_type'],bytes(row['content'])))
+                context = {'direction':'received','from':'Task source','to':'Task owner','date':task['created_at'],
+                           'subject':task['title'],'body_text':task['description']}
+                try:
+                    with ai.guard(session['id']):
+                        result = ai.review_images(self.gmail_config,context,images,user)
+                except ai.AIBusy as exc: raise RequestError(429,str(exc)) from None
+                except ai.AIError as exc: raise RequestError(424,str(exc)) from None
+                result = dict(result,provider=ai.PROVIDERS[ai.provider_of(user)]['name'],model=user['ai_model'] or 'provider default')
+                with self._db() as db: saved = save_task_image_review(db,task_id,session['id'],result)
+                return self._json(200,{'review':saved})
             if len(parts)==4 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3]=='agentsteers-dispatch' and self.command == 'POST':
                 # Authenticated session + same-origin + CSRF checked above; explicit confirmation in request.
                 if data.get('confirm') != 'DISPATCH MOCK':
@@ -707,15 +743,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(200,{'name':row['filename'],'mime_type':row['mime_type'],'trusted':False,
                                            'content':content[:65536].decode('utf-8','replace'),'truncated':len(content)>65536})
                 if len(parts)==8 and parts[7]=='thumbnail':
-                    signatures = {
-                        'image/png': content.startswith(b'\x89PNG\r\n\x1a\n'),
-                        'image/jpeg': content.startswith(b'\xff\xd8\xff'),
-                        'image/gif': content.startswith((b'GIF87a',b'GIF89a')),
-                        'image/webp': content.startswith(b'RIFF') and content[8:12] == b'WEBP',
-                    }
-                    if len(content) > 2 * 1024 * 1024 or not signatures.get(row['mime_type'],False):
+                    mime = raster_preview_mime(row['mime_type'],content)
+                    if not mime:
                         raise RequestError(415,'Image preview unavailable')
-                    return self._send(200,content,row['mime_type'],(('Content-Disposition','inline'),))
+                    return self._send(200,content,mime,(('Content-Disposition','inline'),))
                 if len(parts)==7:  # Always a download: never rendered inline and never trusted for its declared type.
                     safe = ''.join(c if c.isalnum() or c in '._-' else '_' for c in row['filename'])[:100] or 'attachment'
                     disposition = f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(row['filename'])}"
@@ -737,6 +768,25 @@ class Handler(BaseHTTPRequestHandler):
                 rows = list_tasks(db,user_id=session['id'])
                 zone = prefs.effective(db,session['id'],self.gmail_config)['timezone']
             return self._json(200,{'tasks':rows,'timezone':zone})
+        if len(parts) >= 4 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3]=='images':
+            task_id = int(parts[2])
+            with self._db() as db:
+                if len(parts)==4:
+                    images = task_images(db,task_id,session['id'])
+                    if images is None: raise RequestError(404,'Task not found')
+                    return self._json(200,{'images':images,'review':task_image_review(db,task_id,session['id'])})
+                if len(parts)==6 and parts[4].isdigit() and parts[5] in ('thumbnail','download'):
+                    row = task_image(db,task_id,int(parts[4]),session['id'])
+                    if row is None: raise RequestError(404,'Task image not found')
+                    if row['content'] is None: raise RequestError(404,'Task image was not stored')
+                    content = bytes(row['content'])
+                    if parts[5]=='thumbnail':
+                        mime = raster_preview_mime(row['mime_type'],content)
+                        if not mime: raise RequestError(415,'Image preview unavailable')
+                        return self._send(200,content,mime,(('Content-Disposition','inline'),))
+                    safe = ''.join(c if c.isalnum() or c in '._-' else '_' for c in row['filename'])[:100] or 'image'
+                    disposition = f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(row['filename'])}"
+                    return self._send(200,content,'application/octet-stream',(('Content-Disposition',disposition),))
         if len(parts) in (3,4) and parts[:2]==['api','tasks'] and parts[2].isdigit():
             with self._db() as db:
                 task = get_task(db,int(parts[2]),user_id=session['id'])

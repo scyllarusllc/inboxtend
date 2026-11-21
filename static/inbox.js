@@ -120,9 +120,8 @@ async function showProposal(messageId, prepared) {
     data.due_time = data.due_time.trim() || null;
     data.due_timezone = f.due_timezone || userSettings.timezone;
     try {
-      await request('/api/tasks', 'POST', data);
-      feedback.textContent = 'Task saved locally. No email sent. ';
-      const link = el('a', 'View in Tasks'); link.href = '/user/tasks'; feedback.append(link);
+      const created = await request('/api/tasks', 'POST', data);
+      location.assign('/user/tasks#task-' + created.task.id);
     } catch (error) {
       feedback.textContent = error.message;
       submit.disabled = false;
@@ -441,6 +440,30 @@ async function selectMessage(id) {
   }
   detail.append(bar);
   if (note) detail.append(note);
+  const imageCount = full.attachments.filter(file => file.mime_type.startsWith('image/')).length;
+  if (imageCount) {
+    const choices = el('section',undefined,'image-task-choices');
+    choices.append(el('h4',imageCount + ' image attachments · continue in Tasks'),
+      el('p','Choose a starting goal. All images are copied into the task; you can translate and explain them there.','meta'));
+    for (const [intent,label] of [
+      ['translate_images','Translate images to Chinese'],
+      ['explain_images','Explain what the images mean'],
+      ['review_images','Review images and plan follow-up']]) {
+      const button = iconButton('plus',label);
+      button.addEventListener('click',async () => {
+        for (const choice of choices.querySelectorAll('button')) choice.disabled = true;
+        try {
+          const result = await request('/api/tasks/from-message','POST',{message_id:id,intent});
+          location.assign('/user/tasks#task-' + result.task.id);
+        } catch (error) {
+          notify(error.message,true);
+          for (const choice of choices.querySelectorAll('button')) choice.disabled = false;
+        }
+      });
+      choices.append(button);
+    }
+    detail.append(choices);
+  }
   // Opening a message marks it read. Shown as read at once; put back if the request fails.
   if (full.unread && userSettings.mark_read_on_open && full.direction !== 'sent')
     setRead(id, true).catch(error => notify('Could not mark the message as read: ' + error.message, true));
@@ -452,20 +475,19 @@ async function selectMessage(id) {
 function aiControls(id, message) {
   const box = el('div', undefined, 'ai-actions');
   box.append(el('h4', 'AI assistant (' + aiProvider().name + ')'),
-    el('p', 'Only your chosen action sends this message’s text, or its stored images for image review, to ' + aiProvider().vendor + ' through the server’s ' + aiProvider().name + ' login.', 'meta'));
+    el('p', 'Only your chosen text action sends this message’s text to ' + aiProvider().vendor + '. Image analysis is done from the task in Tasks.', 'meta'));
   const status = el('p', '', 'meta');
   const guidance = document.createElement('input');
   guidance.type = 'text'; guidance.maxLength = 500; guidance.className = 'ai-guidance';
   guidance.placeholder = 'Optional: what should the reply say?';
   const suggest = iconButton('sparkles', 'Suggest task from email text');
   const write = iconButton('sparkles', 'Draft reply with AI');
-  const reviewImages = iconButton('eye', 'Translate and explain images in Chinese');
   const run = async (button, work) => {
-    suggest.disabled = write.disabled = reviewImages.disabled = true;
+    suggest.disabled = write.disabled = true;
     status.textContent = 'Asking ' + aiProvider().name + '… this can take up to ' + userSettings.ai_timeout + ' seconds.';
     try { await work(); status.textContent = ''; }
     catch (error) { status.textContent = error.message; }
-    suggest.disabled = write.disabled = reviewImages.disabled = false;
+    suggest.disabled = write.disabled = false;
   };
   suggest.addEventListener('click', () => run(suggest, async () => {
     const result = await request('/api/ai/task', 'POST', {id});
@@ -482,43 +504,6 @@ function aiControls(id, message) {
   }));
   box.append(suggest, el('span', ' '));
   if (!message.direction || message.direction !== 'sent') box.append(guidance, el('span', ' '), write);
-  const imageCount = message.attachments.filter(file => file.stored && ['image/jpeg','image/png','image/gif','image/webp'].includes(file.mime_type)).length;
-  if (imageCount) {
-    reviewImages.addEventListener('click', () => run(reviewImages, async () => {
-      const response = await request('/api/ai/images','POST',{id});
-      if (selectedId !== id) return;
-      for (const old of box.querySelectorAll('.image-review')) old.remove();
-      const result = response.review;
-      const review = el('section',undefined,'image-review');
-      review.append(el('h5','Images translated and explained in Chinese'),
-        el('p',imageCount + ' images · ' + result.provider + ' · ' + result.model + ' · AI interpretation; check against the images.','meta'));
-      for (const item of result.images) {
-        const section = el('div',undefined,'image-review-item');
-        section.append(el('strong',item.number + '. ' + item.name),
-          el('p','图中文字（中文）：' + (item.visible_text_zh || '没有可辨认的文字。')),
-          el('p','图片含义：' + (item.meaning_zh || '无法确定。')));
-        review.append(section);
-      }
-      review.append(el('p','整体说明：' + (result.summary_zh || '无法确定这些图片的整体含义。')));
-      const create = iconButton('plus','Create task from image review');
-      create.addEventListener('click', async () => {
-        create.disabled = true;
-        try {
-          const base = await request('/api/connectors/gmail/messages/' + encodeURIComponent(id) + '/proposal');
-          base.inferred.title = result.task_title;
-          base.inferred.description = result.task_description || result.summary_zh;
-          base.note = 'Task filled from an AI interpretation of the images. Check the images and edit before saving.';
-          base.ai = {confidence:'low',provider:result.provider,model:result.model,evidence:[],image_review:true,
-            notes:result.actionable ? 'The images may imply a follow-up; verify it yourself.' : 'No explicit action was found. This is a review task.'};
-          await showProposal(id,base);
-        } catch (error) { notify(error.message,true); }
-        finally { create.disabled = false; }
-      });
-      review.append(create);
-      box.append(review);
-    }));
-    box.append(el('span',' '),reviewImages);
-  }
   box.append(status);
   return box;
 }

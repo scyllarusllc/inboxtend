@@ -66,6 +66,13 @@ def connection(path=DEFAULT_DB):
         db.execute('''CREATE TABLE IF NOT EXISTS task_events (
             id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
             action TEXT NOT NULL, changes TEXT NOT NULL, created_at TEXT NOT NULL)''')
+        db.execute('''CREATE TABLE IF NOT EXISTS task_attachments (
+            id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            filename TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+            content BLOB, skipped_reason TEXT NOT NULL DEFAULT '')''')
+        db.execute('''CREATE TABLE IF NOT EXISTS task_image_reviews (
+            task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)''')
         db.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','user')),
@@ -218,7 +225,7 @@ def _soon(db, user_id):
 
 def list_tasks(db, now=None, user_id=1):
     hours = _soon(db, user_id)
-    rows = db.execute("SELECT * FROM tasks WHERE user_id=? ORDER BY status='done', due_date IS NULL, due_date, due_time, id", (user_id,))
+    rows = db.execute("SELECT t.*,(SELECT COUNT(*) FROM task_attachments a WHERE a.task_id=t.id) AS image_count FROM tasks t WHERE user_id=? ORDER BY status='done', due_date IS NULL, due_date, due_time, id", (user_id,))
     return [decorate(r, now, hours) for r in rows]
 
 
@@ -238,7 +245,7 @@ def task_summary(db, now=None, user_id=1):
 
 
 def get_task(db, task_id, now=None, user_id=1):
-    row = db.execute('SELECT * FROM tasks WHERE id=? AND user_id=?', (task_id,user_id)).fetchone()
+    row = db.execute('SELECT t.*,(SELECT COUNT(*) FROM task_attachments a WHERE a.task_id=t.id) AS image_count FROM tasks t WHERE id=? AND user_id=?', (task_id,user_id)).fetchone()
     return decorate(row, now, _soon(db, user_id)) if row else None
 
 
@@ -280,9 +287,42 @@ def create_task(db, message, fields, user_id=1):
             db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES (?,?,?,?)',
                        (task_id,'created',json.dumps({'source_provider':provider,'message_id':message_id,
                                                     **({'ai_assisted':True} if fields.get('ai_assisted') is True else {})}),now))
+            db.execute('''INSERT INTO task_attachments(task_id,filename,mime_type,size_bytes,content,skipped_reason)
+                SELECT ?,a.filename,a.mime_type,a.size_bytes,a.content,a.skipped_reason
+                FROM gmail_attachments a WHERE a.user_id=? AND a.message_id=? AND a.mime_type LIKE 'image/%' ''',
+                (task_id,user_id,message_id))
     except sqlite3.IntegrityError as exc:
         raise ValueError('A task already exists for this message') from exc
     return get_task(db, task_id, user_id=user_id)
+
+
+def task_images(db, task_id, user_id):
+    if not db.execute('SELECT 1 FROM tasks WHERE id=? AND user_id=?',(task_id,user_id)).fetchone():
+        return None
+    return [dict(id=r['id'],name=r['filename'],mime_type=r['mime_type'],size_bytes=r['size_bytes'],
+                 stored=bool(r['has_content']),skipped_reason=r['skipped_reason'])
+            for r in db.execute('SELECT id,filename,mime_type,size_bytes,content IS NOT NULL AS has_content,skipped_reason FROM task_attachments WHERE task_id=? ORDER BY id',(task_id,))]
+
+
+def task_image(db, task_id, image_id, user_id):
+    return db.execute('''SELECT a.* FROM task_attachments a JOIN tasks t ON t.id=a.task_id
+        WHERE t.id=? AND t.user_id=? AND a.id=?''',(task_id,user_id,image_id)).fetchone()
+
+
+def task_image_review(db, task_id, user_id):
+    row = db.execute('SELECT result_json,created_at FROM task_image_reviews WHERE task_id=? AND user_id=?',(task_id,user_id)).fetchone()
+    return dict(json.loads(row['result_json']),created_at=row['created_at']) if row else None
+
+
+def save_task_image_review(db, task_id, user_id, result):
+    now = _now()
+    with db:
+        db.execute('''INSERT INTO task_image_reviews(task_id,user_id,result_json,created_at) VALUES(?,?,?,?)
+            ON CONFLICT(task_id) DO UPDATE SET result_json=excluded.result_json,created_at=excluded.created_at''',
+            (task_id,user_id,json.dumps(result,ensure_ascii=False),now))
+        db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES(?,?,?,?)',
+                   (task_id,'images_reviewed',json.dumps({'image_count':len(result['images'])}),now))
+    return dict(result,created_at=now)
 
 
 def update_task(db, task_id, fields, user_id=1):

@@ -5,6 +5,79 @@ const taskSearch = document.getElementById('task-search');
 const taskFilter = document.getElementById('task-filter');
 const taskRefresh = document.getElementById('task-refresh');
 let cachedTasks = [];
+let openedTaskFromHash = false;
+function taskImageDetails(task) {
+  const panel=el('details');
+  const heading=document.createElement('summary');
+  heading.append(icon('paperclip'),document.createTextNode(' Images ('+task.image_count+')'));
+  panel.append(heading);
+  panel.addEventListener('toggle',async()=>{
+    if(!panel.open || panel.dataset.loaded==='true')return;
+    panel.dataset.loaded='true';
+    const body=el('div','Loading task images…','task-image-list');panel.append(body);
+    try {
+      const result=await request('/api/tasks/'+task.id+'/images');
+      body.replaceChildren();
+      for(const file of result.images) {
+        const row=el('div',undefined,'attachment-row');
+        row.append(el('strong',file.name || 'Unnamed image'),el('span',(file.size_bytes/1048576).toFixed(1)+' MB','meta'));
+        if(file.stored) {
+          const base='/api/tasks/'+task.id+'/images/'+file.id;
+          const download=el('a','Download','icon-button');download.href=base+'/download';download.setAttribute('download',file.name);
+          row.append(download);
+          if(['image/jpeg','image/png','image/gif','image/webp'].includes(file.mime_type) && file.size_bytes<=2*1024*1024) {
+            const image=document.createElement('img');image.className='attachment-image';image.alt='Preview of '+file.name;
+            image.loading='lazy';image.src=base+'/thumbnail';
+            image.addEventListener('error',()=>image.replaceWith(el('p','Preview unavailable.','meta')));
+            row.append(image);
+          }
+        } else row.append(el('p','Image was not stored: '+(file.skipped_reason || 'unavailable'),'meta'));
+        body.append(row);
+      }
+      const reviewBox=el('div',undefined,'task-image-review');body.append(reviewBox);
+      const showReview=review=>{
+        reviewBox.replaceChildren();
+        if(!review)return;
+        const section=el('section',undefined,'image-review');
+        section.append(el('h4','Chinese translation and image interpretation'),
+          el('p',review.provider+' · '+review.model+' · AI guesses may be wrong; check the images.','meta'));
+        for(const item of review.images) {
+          const part=el('div',undefined,'image-review-item');
+          part.append(el('strong',item.number+'. '+item.name),
+            el('p','图中文字（中文）：'+(item.visible_text_zh || '没有可辨认的文字。')),
+            el('p','图片含义：'+(item.meaning_zh || '无法确定。')));
+          section.append(part);
+        }
+        section.append(el('p','整体说明：'+(review.summary_zh || '无法确定。')));
+        const apply=iconButton('check','Use suggested task text');
+        apply.addEventListener('click',async()=>{
+          apply.disabled=true;
+          try {
+            await request('/api/tasks/'+task.id,'PATCH',{revision:task.revision,
+              title:review.task_title,description:review.task_description || review.summary_zh});
+            notify('Task text updated from the image review. Check it before acting.');
+            await refreshTasks();
+          } catch(error) {notify(error.message,true);apply.disabled=false;}
+        });
+        section.append(apply);reviewBox.append(section);
+      };
+      showReview(result.review);
+      if(userSettings.ai_enabled) {
+        const run=iconButton('eye',result.review?'Review images again with AI':'Translate and explain images in Chinese');
+        run.addEventListener('click',async()=>{
+          run.disabled=true;
+          try {
+            const answer=await request('/api/tasks/'+task.id+'/images/review','POST',{});
+            showReview(answer.review);notify('Image review saved with this task.');
+          } catch(error) {notify(error.message,true);}
+          finally {run.disabled=false;}
+        });
+        body.insertBefore(run,reviewBox);
+      } else body.append(el('p','Enable the AI assistant in Settings to translate and explain these images.','meta'));
+    } catch(error) {body.textContent='Could not load task images: '+error.message;panel.dataset.loaded='false';}
+  });
+  return panel;
+}
 let agentSteersReadiness={state:'checking',can_dispatch:false,message:'Checking AgentSteers mock configuration…'};
 const pendingAgentDispatches=new Set();
 let agentSteersVerifiedThisPage=false;
@@ -219,6 +292,7 @@ function renderTasks() {
   }
   for(const task of matching){
     const item=el('article',undefined,'task-item');
+    item.id='task-'+task.id;
     item.dataset.deadline=task.deadline_state;
     const date=task.due_date?task.due_date+' '+(task.due_time || '23:59')+' ('+task.due_timezone+')':'No deadline';
     const head=el('div',undefined,'task-header');
@@ -243,6 +317,7 @@ function renderTasks() {
     if(task.owner){meta.append(el('span','·'),el('span','Owner: '+task.owner));}
     if(task.project_label){meta.append(el('span','·'),el('span','Project: '+task.project_label));}
     if(task.assigned_agent){meta.append(el('span','·'),el('span','Agent: '+task.assigned_agent+' ('+task.agent_status+')'));}
+    if(task.image_count){meta.append(el('span','·'),el('span',task.image_count+' images copied from the email'));}
     item.append(head,meta,el('p',task.description));
     const label=el('label','Status: ');
     const select=document.createElement('select');
@@ -313,8 +388,16 @@ function renderTasks() {
       }catch(error){placeholder.textContent='Could not load history: '+error.message;}
     });
     actions.append(makeAgentSteersControls(task));
-    item.append(actions,editor,history);
+    const images=task.image_count?taskImageDetails(task):null;
+    item.append(actions,...(images?[images]:[]),editor,history);
     taskList.append(item);
+    if(images && location.hash==='#task-'+task.id) {
+      images.open=true;
+      if(!openedTaskFromHash) {
+        openedTaskFromHash=true;
+        requestAnimationFrame(()=>item.scrollIntoView({behavior:'smooth',block:'start'}));
+      }
+    }
   }
 }
 async function refreshTasks() {
