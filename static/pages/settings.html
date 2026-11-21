@@ -7,7 +7,7 @@
       </div>
     </section>
 
-    <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
+    <div id="notice" class="notice-banner settings-notice" role="status" aria-live="polite"></div>
 
     <div class="grid items-start gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
       <nav class="min-w-0 lg:sticky lg:top-24" aria-label="Settings sections">
@@ -44,7 +44,7 @@
           </section>
           <section class="panel settings-section" aria-labelledby="imap-heading">
             <h2 id="imap-heading">IMAP accounts</h2>
-            <p>Read-only import. For iCloud Mail, create an app-specific password in your Apple Account. Mail is copied to this server; marking it read here stays local.</p>
+            <p>For iCloud Mail, create an app-specific password in your Apple Account. Mail is copied to this server. Marking it read or unread here updates the same flag on the IMAP server; Inbox Tend does not send or delete mail.</p>
             <div id="imap-form" class="task-form">
               <label>Email address <input name="email" type="email" required autocomplete="email" placeholder="you@icloud.com"></label>
               <label>IMAP server <input name="host" required value="imap.mail.me.com" autocomplete="off"></label>

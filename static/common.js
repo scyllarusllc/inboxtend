@@ -88,7 +88,7 @@ function notify(message,error=false) {
   const banner=document.getElementById('notice');
   if(!banner)return;
   banner.textContent=message;
-  banner.className=error?'notice-banner error':'notice-banner';
+  banner.classList.toggle('error',error);
 }
 
 

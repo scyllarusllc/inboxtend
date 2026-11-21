@@ -180,7 +180,7 @@ async function init() {
     const row = el('li', undefined, 'account-row');
     const dot = el('span', undefined, 'account-dot'); dot.dataset.slot = String(at % 6);
     const name = account.email || 'Gmail account ' + account.id;
-    const facts = [account.provider === 'imap' ? 'Read-only IMAP' : account.write ? 'Read, and change read/unread (gmail.modify)' : 'Read-only (gmail.readonly)', account.stored + ' message(s) saved',
+    const facts = [account.provider === 'imap' ? 'IMAP: read mail and change read/unread' : account.write ? 'Read, and change read/unread (gmail.modify)' : 'Read-only (gmail.readonly)', account.stored + ' message(s) saved',
                    account.last_sync ? 'last synced ' + formatWhen(account.last_sync * 1000) : 'not synced yet'];
     const text = el('div', undefined, 'min-w-0');
     text.append(el('strong', name, 'break-all'), el('div', facts.join(' · '), 'meta'));

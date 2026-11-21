@@ -10,6 +10,7 @@ from tasks import connection
 RAW = b'From: Alice <alice@example.org>\r\nTo: You <you@icloud.com>\r\nSubject: Hello\r\nDate: Thu, 19 Nov 2026 10:00:00 +0000\r\nMessage-ID: <hello@example.org>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nPlease review this.\r\n'
 
 class FakeIMAP:
+    stores = []
     def __init__(self,*args,**kwargs): self.selected = None
     def __enter__(self): return self
     def __exit__(self,*args): pass
@@ -19,10 +20,18 @@ class FakeIMAP:
     def response(self,name): return name,[b'123']
     def uid(self,command,*args):
         if command=='search': return 'OK',[b'7']
+        if command=='store':
+            self.stores.append(args)
+            return 'OK',[b'']
         return 'OK',[(b'7 (FLAGS (\\Seen) RFC822 {1}',RAW),b')']
 
+class RejectFlags(FakeIMAP):
+    def uid(self,command,*args):
+        if command=='store': return 'NO',[b'not allowed']
+        return super().uid(command,*args)
+
 class IMAPTests(unittest.TestCase):
-    def test_connect_sync_and_local_read(self):
+    def test_connect_sync_and_remote_read(self):
         with tempfile.TemporaryDirectory() as directory:
             db=connection(directory+'/mail.sqlite3')
             config={'INBOX_TEND_TOKEN_KEY':base64.urlsafe_b64encode(b'x'*32).decode()}
@@ -35,7 +44,18 @@ class IMAPTests(unittest.TestCase):
             self.assertEqual(len(messages),1)
             self.assertEqual(messages[0]['subject'],'Hello')
             self.assertEqual(gmail_web.message(db,config,1,messages[0]['id'])['body_text'].strip(),'Please review this.')
-            self.assertFalse(gmail_web.set_read(db,config,1,messages[0]['id'],True,write=True)['gmail_changed'])
+            with patch.object(imap_web.imaplib,'IMAP4_SSL',FakeIMAP):
+                result = gmail_web.set_read(db,config,1,messages[0]['id'],False)
+                self.assertTrue(result['imap_changed'])
+                self.assertEqual(FakeIMAP.stores[-1][1],'-FLAGS.SILENT')
+                result = gmail_web.mark_all_read(db,config,1,[messages[0]['id']])
+                self.assertEqual(result['imap_changed'],1)
+                self.assertEqual(FakeIMAP.stores[-1][1],'+FLAGS.SILENT')
+            with patch.object(imap_web.imaplib,'IMAP4_SSL',RejectFlags):
+                failure = gmail_web.set_read(db,config,1,messages[0]['id'],False)
+            self.assertFalse(failure['imap_changed'])
+            self.assertIn('rejected',failure['gmail_error'])
+            self.assertTrue(gmail_web.cached_inbox(db,1)[0]['unread'])
             imap_web.remove(db,1,account_id)
             self.assertEqual(gmail_web.stored_count(db,1),0)
             db.close()

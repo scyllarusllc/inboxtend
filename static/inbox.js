@@ -280,7 +280,7 @@ async function setRead(id, markRead) {
   updateReadLocally(id, !markRead);
   try {
     const result = await request('/api/connectors/gmail/messages/' + encodeURIComponent(id) + '/read', 'POST', {read: markRead});
-    if (result.gmail_error) notify('Saved here, but Gmail was not updated: ' + result.gmail_error, true);
+    if (result.gmail_error) notify('Saved here, but the mail server was not updated: ' + result.gmail_error, true);
     if (readVersion.get(id) === version) {
       pendingRead.delete(id);
       updateReadLocally(id, result.unread);
@@ -404,7 +404,8 @@ async function selectMessage(id) {
       toggle.disabled = false;
     });
     bar.append(toggle);
-    note = el('p', writesToGmail(accounts.find(a => a.id === full.account_id)) ? 'Read and unread changes are also applied in Gmail.' : 'Read and unread changes are kept in Inbox Tend only; Gmail is not changed.', 'meta mt-2');
+    const readOwner = accounts.find(a => a.id === full.account_id);
+    note = el('p', readOwner?.provider === 'imap' ? 'Read and unread changes are also applied on the IMAP server.' : writesToGmail(readOwner) ? 'Read and unread changes are also applied in Gmail.' : 'Read and unread changes are kept in Inbox Tend only; Gmail is not changed.', 'meta mt-2');
   }
   detail.append(bar);
   if (note) detail.append(note);
@@ -596,15 +597,16 @@ function showMarkAll(data) {
 markAllButton.addEventListener('click', async () => {
   const n = markAllButton.lastChild.textContent.match(/\(([\d,.\s]+)\)/);
   const writes = gmailWriteAccess && userSettings.gmail_write_read;
+  const hasImap = accounts.some(a => a.provider === 'imap' && (!accountFilter || String(a.id) === accountFilter));
   if (!confirm('Mark ' + (n ? n[1] : 'all') + ' unread message(s) as read?\n\n' + (filtersActive() || accountFilter ? 'Only the messages in the current list are changed. ' : '') +
-               (writes ? 'This is also applied in Gmail for accounts that allow it.' : 'This changes Inbox Tend only; Gmail is not changed.'))) return;
+               (hasImap ? 'IMAP read flags will be updated. ' : '') + (writes ? 'This is also applied in Gmail for accounts that allow it.' : 'Gmail read flags are not changed.'))) return;
   markAllButton.disabled = true;
   try {
     const body = {folder, q: searchText.trim(), unread: onlyUnread, attachments: onlyAttachments};
     if (accountFilter) body.account_id = Number(accountFilter);
     const result = await request('/api/connectors/gmail/messages/read-all', 'POST', body);
-    if (result.gmail_error) notify('Marked as read here, but Gmail was not fully updated: ' + result.gmail_error, true);
-    else notify(result.marked + ' message(s) marked as read' + (result.gmail_changed ? ' (also in Gmail).' : '.'));
+    if (result.gmail_error) notify('Marked as read here, but a mail server was not fully updated: ' + result.gmail_error, true);
+    else notify(result.marked + ' message(s) marked as read' + (result.gmail_changed || result.imap_changed ? ' (also on the mail server).' : '.'));
     await refreshGmail();
   } catch (error) { notify('Could not mark messages as read: ' + error.message, true); }
   markAllButton.disabled = false;
@@ -630,8 +632,8 @@ async function markGroupRead(ids, mark) {
   for (const id of ids) { pendingRead.set(id, false); updateReadLocally(id, false); }
   try {
     const result = await request('/api/connectors/gmail/messages/read-all', 'POST', {ids});
-    if (result.gmail_error) notify('Marked as read here, but Gmail was not fully updated: ' + result.gmail_error, true);
-    else notify(result.marked + ' message(s) marked as read' + (result.gmail_changed ? ' (also in Gmail).' : '.'));
+    if (result.gmail_error) notify('Marked as read here, but a mail server was not fully updated: ' + result.gmail_error, true);
+    else notify(result.marked + ' message(s) marked as read' + (result.gmail_changed || result.imap_changed ? ' (also on the mail server).' : '.'));
     for (const id of ids) { pendingRead.delete(id); settleReadUi(id); }
     request('/api/connectors/gmail/status').then(state => { const own = accountFilter ? (state.accounts || []).find(a => String(a.id) === accountFilter) : null; showCounts(own ? own.counts : state.counts); }).catch(() => {});
   } catch (error) {
