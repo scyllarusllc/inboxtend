@@ -91,7 +91,7 @@ function notify(message,error=false) {
   clearTimeout(noticeDismissTimer);
   banner.textContent=message;
   banner.classList.toggle('error',error);
-  if(banner.classList.contains('settings-notice') && message) {
+  if(banner.classList.contains('app-toast') && message) {
     noticeDismissTimer=setTimeout(() => { banner.textContent=''; },error?8000:4000);
   }
 }
