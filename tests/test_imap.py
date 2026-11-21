@@ -23,7 +23,7 @@ class FakeIMAP:
         if command=='store':
             self.stores.append(args)
             return 'OK',[b'']
-        return 'OK',[(b'7 (FLAGS (\\Seen) RFC822 {1}',RAW),b')']
+        return 'OK',[(b'7 (UID 7 BODY[] {1}',RAW),b' FLAGS (\\Seen))']
 
 class RejectFlags(FakeIMAP):
     def uid(self,command,*args):
@@ -57,6 +57,7 @@ class IMAPTests(unittest.TestCase):
             messages=gmail_web.cached_inbox(db,1)
             self.assertEqual(len(messages),1)
             self.assertEqual(messages[0]['subject'],'Hello')
+            self.assertFalse(messages[0]['unread'])
             self.assertEqual(gmail_web.message(db,config,1,messages[0]['id'])['body_text'].strip(),'Please review this.')
             with patch.object(imap_web.imaplib,'IMAP4_SSL',FakeIMAP):
                 result = gmail_web.set_read(db,config,1,messages[0]['id'],False)
@@ -72,6 +73,19 @@ class IMAPTests(unittest.TestCase):
             self.assertTrue(gmail_web.cached_inbox(db,1)[0]['unread'])
             imap_web.remove(db,1,account_id)
             self.assertEqual(gmail_web.stored_count(db,1),0)
+            db.close()
+
+    def test_bulk_seen_uses_bounded_uid_sets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db=connection(directory+'/mail.sqlite3')
+            config={'INBOX_TEND_TOKEN_KEY':base64.urlsafe_b64encode(b'x'*32).decode()}
+            with patch.object(imap_web.imaplib,'IMAP4_SSL',FakeIMAP):
+                account_id=imap_web.add(db,config,1,'you@icloud.com','imap.mail.me.com','you','secret')
+                FakeIMAP.stores.clear()
+                ids=[f'imap-{account_id}~123~inbox~{uid}' for uid in range(1,206)]
+                imap_web.set_seen(db,config,1,account_id,ids,True)
+            self.assertEqual(len(FakeIMAP.stores),3)
+            self.assertEqual([len(args[0].split(',')) for args in FakeIMAP.stores],[100,100,5])
             db.close()
 
 if __name__=='__main__': unittest.main()

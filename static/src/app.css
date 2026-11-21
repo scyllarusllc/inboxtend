@@ -150,7 +150,12 @@
   .notice-banner:not(:empty)::before { content: "\f05a"; font-family: "Font Awesome 7 Free"; font-weight: 900; @apply mt-px text-indigo-500; }
   .notice-banner.error { @apply border-rose-200 bg-rose-50 text-rose-900; }
   .notice-banner.error:not(:empty)::before { content: "\f071"; @apply text-rose-500; }
-  #notice.settings-notice { position: fixed; right: max(1rem, env(safe-area-inset-right)); bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 50; width: min(28rem, calc(100vw - 2rem)); max-height: min(50vh, 24rem); overflow-y: auto; margin: 0; box-shadow: 0 10px 30px rgb(15 23 42 / 0.18); }
+  #notice.settings-notice { position: fixed; right: max(1rem, env(safe-area-inset-right)); bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 50; width: fit-content; max-width: min(28rem, calc(100vw - 2rem)); max-height: min(50vh, 24rem); overflow-y: auto; margin: 0; border: 0; border-radius: 999px; background: #1e293b; color: #fff; box-shadow: 0 10px 30px rgb(15 23 42 / 0.25); animation: settings-toast-in 180ms ease-out; }
+  #notice.settings-notice:not(:empty)::before { color: #a5b4fc; }
+  #notice.settings-notice.error { background: #881337; color: #fff; }
+  #notice.settings-notice.error:not(:empty)::before { color: #fecdd3; }
+  @keyframes settings-toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @media (prefers-reduced-motion: reduce) { #notice.settings-notice { animation: none; } }
 
   /* Badges: one shape, several tones */
   .badge, .task-pill, .read-badge, .count-badge, .environment-badge { @apply inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600; }

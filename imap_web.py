@@ -84,8 +84,9 @@ def set_seen(db, config, user_id, account_id, message_ids, seen):
                 if typ != 'OK': raise IMAPError('Cannot open IMAP folder for flag update')
                 current = (client.response('UIDVALIDITY')[1] or [b''])[0].decode()
                 if current != validity: raise IMAPError('IMAP folder changed; refresh mail before marking it read')
-                for uid in uids:
-                    typ,_ = client.uid('store',uid,'+FLAGS.SILENT' if seen else '-FLAGS.SILENT','(\\Seen)')
+                for start in range(0,len(uids),100):
+                    uid_set = ','.join(uids[start:start+100])
+                    typ,_ = client.uid('store',uid_set,'+FLAGS.SILENT' if seen else '-FLAGS.SILENT','(\\Seen)')
                     if typ != 'OK': raise IMAPError('IMAP server rejected the read/unread change')
     except (imaplib.IMAP4.error,OSError) as exc:
         raise IMAPError('IMAP read/unread update failed') from exc
@@ -126,15 +127,25 @@ def sync(db, config, user_id, account_id, report=lambda **kw: None):
             prefix = f'imap-{account_id}~{validity}~{kind}~'
             for uid in uids:
                 mid = prefix+uid.decode()
-                typ, records = client.uid('fetch',uid,'(BODY.PEEK[] FLAGS)')
+                saved = db.execute('SELECT has_full FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,mid)).fetchone()
+                typ, records = client.uid('fetch',uid,'(FLAGS)' if saved and saved['has_full'] else '(BODY.PEEK[] FLAGS)')
                 if typ!='OK': continue
+                metadata = b' '.join(part[0] if isinstance(part,tuple) else part for part in records if isinstance(part,(tuple,bytes)))
+                flags_match = re.search(rb'FLAGS\s*\(([^)]*)\)',metadata,re.IGNORECASE)
+                if not flags_match: continue
+                flags = flags_match.group(1).decode('ascii','replace')
+                labels = ['SENT' if kind=='sent' else 'INBOX']
+                if '\\Seen' not in flags: labels.append('UNREAD')
+                if saved and saved['has_full']:
+                    db.execute('UPDATE gmail_messages SET label_ids=?,in_inbox=?,in_sent=? WHERE user_id=? AND message_id=?',
+                               (json.dumps(labels),int(kind=='inbox'),int(kind=='sent'),user_id,mid))
+                    db.commit()
+                    done+=1; report(done=done)
+                    continue
                 pair = next((x for x in records if isinstance(x,tuple)),None)
                 if not pair: continue
                 raw = pair[1]
                 msg = email.message_from_bytes(raw,policy=policy.default)
-                flags = pair[0].decode('ascii','replace')
-                labels = ['SENT' if kind=='sent' else 'INBOX']
-                if '\\Seen' not in flags: labels.append('UNREAD')
                 body=''; html=''; attachments=[]
                 for part in msg.walk():
                     if part.is_multipart(): continue

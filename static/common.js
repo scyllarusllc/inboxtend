@@ -84,11 +84,16 @@ function iconButton(name,label) {
   button.append(icon(name),document.createTextNode(label));
   return button;
 }
+let noticeDismissTimer;
 function notify(message,error=false) {
   const banner=document.getElementById('notice');
   if(!banner)return;
+  clearTimeout(noticeDismissTimer);
   banner.textContent=message;
   banner.classList.toggle('error',error);
+  if(banner.classList.contains('settings-notice') && message) {
+    noticeDismissTimer=setTimeout(() => { banner.textContent=''; },error?8000:4000);
+  }
 }
 
 

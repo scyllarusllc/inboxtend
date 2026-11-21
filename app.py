@@ -619,7 +619,7 @@ class Handler(BaseHTTPRequestHandler):
                                    'preload':translation_preload.status(session['id'])})
         if path == '/api/connectors/gmail/stats':
             raw = parse_qs(urlparse(self.path).query).get('account',[''])[0]
-            account_id = int(raw) if raw.isdigit() else None
+            account_id = int(raw) if raw.lstrip('-').isdigit() else None
             with self._db() as db:
                 if account_id is not None and account_id not in [a['id'] for a in gmail_web.accounts(db,session['id'])]: raise RequestError(404,'Unknown Gmail account')
                 tz = prefs.effective(db,session['id'],self.gmail_config)['timezone']
@@ -649,7 +649,7 @@ class Handler(BaseHTTPRequestHandler):
                 search = mailsearch.parse(query.get('q',[''])[0],unread=query.get('unread',[''])[0] == '1',attachments=query.get('attachments',[''])[0] == '1',tz=prefs.effective(db,session['id'],self.gmail_config)['timezone'])
                 searching = bool(mailsearch.condition(search)[0])
                 wanted = query.get('account',[''])[0]
-                if wanted and (not wanted.isdigit() or int(wanted) not in [a['id'] for a in gmail_web.accounts(db,session['id'])]): raise RequestError(404,'Unknown Gmail account')
+                if wanted and (not wanted.lstrip('-').isdigit() or int(wanted) not in [a['id'] for a in gmail_web.accounts(db,session['id'])]): raise RequestError(404,'Unknown mail account')
                 account_id = int(wanted) if wanted else None
                 listing = gmail_web.grouped_inbox(db,session['id'],folder,view,search if searching else None,account_id)
                 counts = gmail_web.folder_counts(db,session['id'],account_id)
