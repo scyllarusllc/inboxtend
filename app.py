@@ -25,6 +25,7 @@ import mailstats
 import local_translation
 import translation_preload
 import agentsteers_bridge
+import integration_feed
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
 from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, task_images, task_image, task_image_review, save_task_image_review, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
@@ -275,6 +276,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/privacy':
                 return self._send(200,render_page('privacy',bool(self._session())),'text/html; charset=utf-8')
             if path == '/api/health': return self._json(200,{'status':'ok'})
+        if not write and path == '/integration/v1/tasks':
+            try:
+                with self._db() as db:
+                    result = integration_feed.read_page(db, self.headers.get('Authorization',''), self.path)
+            except integration_feed.FeedError as exc:
+                raise RequestError(exc.status, exc.message) from None
+            return self._json(200, result, (('Cache-Control','private, no-store'),))
         if not write and path == '/api/auth/providers':   # Public: lets the login page show only what works
             return self._json(200,{'google':bool(self.auth_manager) and google_login.configured(self.gmail_config)})
         if not write and path == '/api/auth/google/start':
