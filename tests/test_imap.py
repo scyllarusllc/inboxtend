@@ -31,6 +31,18 @@ class RejectFlags(FakeIMAP):
         return super().uid(command,*args)
 
 class IMAPTests(unittest.TestCase):
+    def test_existing_database_opens_during_another_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = directory+'/mail.sqlite3'
+            writer = connection(path)
+            writer.execute('BEGIN IMMEDIATE')
+            try:
+                with connection(path) as reader:
+                    self.assertEqual(reader.execute('SELECT 1').fetchone()[0],1)
+            finally:
+                writer.rollback()
+                writer.close()
+
     def test_connect_sync_and_remote_read(self):
         with tempfile.TemporaryDirectory() as directory:
             db=connection(directory+'/mail.sqlite3')
@@ -38,6 +50,8 @@ class IMAPTests(unittest.TestCase):
             with patch.object(imap_web.imaplib,'IMAP4_SSL',FakeIMAP):
                 account_id=imap_web.add(db,config,1,'you@icloud.com','imap.mail.me.com','you','secret')
                 self.assertLess(account_id,0)
+                self.assertEqual(imap_web.add(db,config,1,'you@icloud.com','imap.mail.me.com','you','new-secret'),account_id)
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM imap_connections WHERE user_id=1').fetchone()[0],1)
                 self.assertNotIn(b'secret',bytes(imap_web.account(db,1,account_id)['password']))
                 imap_web.sync(db,config,1,account_id)
             messages=gmail_web.cached_inbox(db,1)

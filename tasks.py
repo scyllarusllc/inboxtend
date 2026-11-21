@@ -125,8 +125,9 @@ def connection(path=DEFAULT_DB):
                 email_address, display = peer_for(r['label_ids'], r['from_addr'], r['to_addr'])
                 db.execute('UPDATE gmail_messages SET peer_email=?,peer_name=? WHERE user_id=? AND message_id=?',
                            (email_address, display, r['user_id'], r['message_id']))
-        db.execute('UPDATE gmail_messages SET account_id=(SELECT c.id FROM gmail_connections c WHERE c.user_id=gmail_messages.user_id ORDER BY c.id LIMIT 1) '
-                   'WHERE account_id IS NULL AND EXISTS (SELECT 1 FROM gmail_connections c WHERE c.user_id=gmail_messages.user_id)')  # Mail from before accounts belongs to the user's first account
+        if 'account_id' not in message_columns:
+            db.execute('UPDATE gmail_messages SET account_id=(SELECT c.id FROM gmail_connections c WHERE c.user_id=gmail_messages.user_id ORDER BY c.id LIMIT 1) '
+                       'WHERE account_id IS NULL AND EXISTS (SELECT 1 FROM gmail_connections c WHERE c.user_id=gmail_messages.user_id)')  # One-time migration for mail from before accounts existed.
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_account ON gmail_messages(user_id,account_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_thread ON gmail_messages(user_id,thread_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_peer ON gmail_messages(user_id,peer_email)')

@@ -31,9 +31,17 @@ def add(db, config, user_id, address, host, username, password):
     with imaplib.IMAP4_SSL(host, 993, ssl_context=ssl.create_default_context(), timeout=15) as client:
         client.login(username, password)
     with db:
-        next_id = db.execute('SELECT MIN(id) FROM imap_connections').fetchone()[0]
-        account_id = min(0,next_id or 0)-1
-        db.execute('INSERT INTO imap_connections(id,user_id,email,host,username,password,connected_at) VALUES (?,?,?,?,?,?,?)', (account_id,user_id,address.lower(),host.lower(),username,cipher,int(time.time())))
+        address = address.lower()
+        existing = db.execute('SELECT id FROM imap_connections WHERE user_id=? AND email=?',(user_id,address)).fetchone()
+        if existing:
+            account_id = existing['id']
+            db.execute('UPDATE imap_connections SET host=?,username=?,password=?,connected_at=? WHERE id=? AND user_id=?',
+                       (host.lower(),username,cipher,int(time.time()),account_id,user_id))
+        else:
+            next_id = db.execute('SELECT MIN(id) FROM imap_connections').fetchone()[0]
+            account_id = min(0,next_id or 0)-1
+            db.execute('INSERT INTO imap_connections(id,user_id,email,host,username,password,connected_at) VALUES (?,?,?,?,?,?,?)',
+                       (account_id,user_id,address,host.lower(),username,cipher,int(time.time())))
     return account_id
 
 def remove(db, user_id, account_id):
@@ -149,6 +157,7 @@ def sync(db, config, user_id, account_id, report=lambda **kw: None):
                 db.execute('DELETE FROM gmail_attachments WHERE user_id=? AND message_id=?',(user_id,mid))
                 for n,(filename,mime,size,content) in enumerate(attachments):
                     db.execute('INSERT INTO gmail_attachments(user_id,message_id,part_id,filename,mime_type,size_bytes,content,skipped_reason) VALUES(?,?,?,?,?,?,?,?)',(user_id,mid,str(n),filename,mime,size,content,'' if content is not None else 'larger than the size limit'))
+                db.commit()  # Release the writer lock before the next network fetch.
                 done+=1; report(done=done)
             if kind=='inbox':
                 active={prefix+uid.decode() for uid in uids}

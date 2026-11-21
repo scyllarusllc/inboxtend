@@ -162,17 +162,22 @@ async function init() {
   });
   // Gmail accounts and their access level. Read-only by default; writing needs an explicit re-authorisation per account.
   const accountList = document.getElementById('gmail-accounts');
+  const imapList = document.getElementById('imap-accounts');
   async function showGmail() {
     const gmail = await request('/api/connectors/gmail/status');
-    const accounts = gmail.accounts || [];
+    const accounts = (gmail.accounts || []).filter(account => account.provider !== 'imap');
+    const imapAccounts = (gmail.accounts || []).filter(account => account.provider === 'imap');
     const line = document.getElementById('access-status');
     const show = (id, visible, text) => { const b = document.getElementById(id); b.hidden = !visible; if (text) (b.querySelector('span') || b).textContent = text; return b; };
-    line.textContent = !gmail.configured ? 'No mail connector is configured.'
-      : !accounts.length ? 'No mail account is connected.'
-      : accounts.length === 1 ? '1 mail account connected.' : accounts.length + ' mail accounts connected.';
-    show('connect-gmail', gmail.configured && !!gmail.gmail_configured, accounts.length ? 'Add another Gmail account' : 'Connect Gmail (read-only)').classList.toggle('action', !accounts.length);
+    line.textContent = !gmail.gmail_configured ? 'Gmail is not configured on this server.'
+      : !accounts.length ? 'No Gmail account is connected.'
+      : accounts.length === 1 ? '1 Gmail account connected.' : accounts.length + ' Gmail accounts connected.';
+    document.getElementById('imap-status').textContent = !imapAccounts.length ? 'No IMAP account is connected.'
+      : imapAccounts.length === 1 ? '1 IMAP account connected.' : imapAccounts.length + ' IMAP accounts connected.';
+    show('connect-gmail', !!gmail.gmail_configured, accounts.length ? 'Add another Gmail account' : 'Connect Gmail (read-only)').classList.toggle('action', !accounts.length);
     show('grant-modify', gmail.gmail_configured && !accounts.length);
     accountList.replaceChildren(...accounts.map((account, at) => accountRow(account, at, gmail.configured)));
+    imapList.replaceChildren(...imapAccounts.map((account, at) => accountRow(account, at, true)));
     prefsForm.elements.gmail_write_read.disabled = !gmail.write_access;
     return gmail;
   }

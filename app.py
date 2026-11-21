@@ -727,6 +727,7 @@ class Handler(BaseHTTPRequestHandler):
         except gmail_web.GmailConnectionError:
             self._json(503,{'error':'Gmail connection unavailable'})
         except sqlite3.Error:
+            traceback.print_exc()
             self._json(503,{'error':'Task database unavailable'})
         except (BrokenPipeError, ConnectionResetError):   # The browser left (navigated away, closed the tab): nothing to answer.
             pass
