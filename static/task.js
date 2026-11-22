@@ -248,6 +248,9 @@ function renderTask(task) {
   const side = el('aside', undefined, 'task-side');
   columns.append(mainCol, side);
   detailBox.append(columns);
+
+  mainCol.append(projectCard(task));
+  if (task.message_id) mainCol.append(correspondenceCard(task));
   
   const editBox = el('details', undefined, 'panel task-section task-edit');
   editBox.id = 'task-edit';
@@ -258,11 +261,35 @@ function renderTask(task) {
     mainCol.append(section('AgentSteers mock handoff', makeAgentSteersControls(task)));
   }
   if (task.source_provider === 'gmail' && task.message_id) side.append(emailCard(task));
-  if (task.message_id) side.append(correspondenceCard(task));
   const history = taskHistoryDetails(task);
   history.open = true;
   const stamps = el('p', 'Created ' + (task.created_at ? new Date(task.created_at).toLocaleString() : '—') + ' · Updated ' + (task.updated_at ? new Date(task.updated_at).toLocaleString() : '—'), 'meta');
   side.append(section('History', history, stamps));
+}
+
+function projectCard(task) {
+  const box = section('Task project');
+  box.append(el('p', 'Create or update this task’s folder on the server at /tasks/' + task.id + '. It includes the task, saved email history, and locally stored attachments.', 'meta'));
+  const actions = el('div', undefined, 'project-actions');
+  const create = iconButton('folder', 'Create as project');
+  const download = iconButton('download', 'Download all attachments');
+  const status = el('p', '', 'meta');
+  const exportNow = async button => {
+    create.disabled = download.disabled = true;
+    status.textContent = 'Preparing task project and attachments…';
+    try {
+      const result = (await request('/api/tasks/' + task.id + '/project', 'POST', {})).project;
+      status.textContent = 'Saved to ' + result.path + ' · ' + result.emails + ' emails · ' + result.attachments + ' attachments' +
+        (result.unavailable ? ' · ' + result.unavailable + ' unavailable in the local cache' : '') + '.';
+      if (button === download) location.assign('/api/tasks/' + task.id + '/attachments.zip');
+    } catch (error) { status.textContent = error.message; notify(error.message, true); }
+    finally { create.disabled = download.disabled = false; }
+  };
+  create.addEventListener('click', () => exportNow(create));
+  download.addEventListener('click', () => exportNow(download));
+  actions.append(create, download);
+  box.append(actions, status);
+  return box;
 }
 
 function correspondenceCard(task) {

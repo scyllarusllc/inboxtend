@@ -1,5 +1,9 @@
 import tempfile
 import unittest
+import os
+import zipfile
+from io import BytesIO
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlmodel import select
@@ -80,9 +84,11 @@ class StackTests(unittest.TestCase):
                 db.commit()
             old_manager = getattr(app.state, 'auth_manager', None)
             old_path = getattr(app.state, 'db_path', None)
+            old_config = getattr(app.state, 'gmail_config', None)
             token = 't' * 40
-            app.state.auth_manager = type('Manager', (), {'session': lambda self, value: {'id': 1} if value == token else None})()
+            app.state.auth_manager = type('Manager', (), {'session': lambda self, value: {'id': 1, 'csrf_token': 'csrf'} if value == token else None})()
             app.state.db_path = path
+            app.state.gmail_config = {'INBOX_TEND_GOOGLE_REDIRECT_URI': 'https://mail.example.org/api/connectors/gmail/callback'}
             try:
                 client = TestClient(app)
                 headers = {'Host': 'localhost:8765', 'Cookie': 'it_session=' + token}
@@ -93,9 +99,23 @@ class StackTests(unittest.TestCase):
                 self.assertEqual(data['total'], 3)
                 self.assertEqual(data['messages'][1]['direction'], 'sent')
                 self.assertTrue(data['messages'][2]['is_source'])
+                with connection(path) as db:
+                    db.execute("INSERT INTO gmail_attachments(user_id,message_id,filename,mime_type,size_bytes,content) VALUES(1,'source','image.jpg','image/jpeg',3,?)", (b'abc',))
+                    db.commit()
+                with tempfile.TemporaryDirectory() as projects, patch.dict(os.environ, {'INBOX_TEND_TASKS_DIR': projects}):
+                    self.assertEqual(client.post(f"/api/tasks/{created['id']}/project", headers=headers).status_code, 403)
+                    self.assertEqual(client.post(f"/api/tasks/{created['id']}/project", headers={**headers, 'X-CSRF-Token': 'csrf', 'Origin': 'https://evil.example.org'}).status_code, 403)
+                    exported = client.post(f"/api/tasks/{created['id']}/project", headers={**headers, 'X-CSRF-Token': 'csrf', 'Origin': 'https://mail.example.org'})
+                    self.assertEqual(exported.status_code, 200)
+                    self.assertEqual(exported.json()['project']['attachments'], 1)
+                    archive = client.get(f"/api/tasks/{created['id']}/attachments.zip", headers=headers)
+                    self.assertEqual(archive.status_code, 200)
+                    with zipfile.ZipFile(BytesIO(archive.content)) as bundle:
+                        self.assertEqual(bundle.read(bundle.namelist()[0]), b'abc')
             finally:
                 app.state.auth_manager = old_manager
                 app.state.db_path = old_path
+                app.state.gmail_config = old_config
 
 
 if __name__ == '__main__':

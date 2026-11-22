@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import quote
+import secrets
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import func
 from sqlmodel import select
 
@@ -13,7 +14,10 @@ from auth import cookie_token
 from db_models import Task, TaskAttachment, TaskImageReview, session as model_session
 from tasks import DEFAULT_DB, connection, decorate, _soon, events, task_work_plan
 from app import raster_preview_mime
+from auth import read_config
+from app import ROOT
 from gmail_web import _row as mail_row
+from task_project import export_task, project_path
 
 
 router = APIRouter(prefix='/api/tasks')
@@ -118,6 +122,41 @@ def task_correspondence(request: Request, task_id: int, offset: int = 0, user=De
     messages = [dict(mail_row(row), is_source=row['message_id'] == message_id) for row in rows]
     next_offset = offset + len(messages) if offset + len(messages) < total else None
     return json_result({'messages': messages, 'total': total, 'address': address, 'next_offset': next_offset})
+
+
+@router.post('/{task_id:int}/project')
+def create_project(request: Request, task_id: int, user=Depends(current_user)):
+    origin = request.headers.get('origin')
+    host = request.headers.get('host', '')
+    allowed = {f'http://{host}'}
+    config = getattr(request.app.state, 'gmail_config', None) or read_config(ROOT / '.env')
+    redirect = config.get('INBOX_TEND_GOOGLE_REDIRECT_URI', '')
+    public = urlparse(redirect)
+    if public.scheme == 'https' and public.netloc:
+        allowed.add('https://' + public.netloc)
+    if origin and origin not in allowed:
+        raise HTTPException(403, 'Cross-origin write blocked')
+    if request.headers.get('sec-fetch-site') == 'cross-site':
+        raise HTTPException(403, 'Cross-site write blocked')
+    if not secrets.compare_digest(request.headers.get('x-csrf-token', ''), user['csrf_token']):
+        raise HTTPException(403, 'CSRF token required')
+    path = getattr(request.app.state, 'db_path', DEFAULT_DB)
+    try: result = export_task(path, user['id'], task_id)
+    except LookupError: raise HTTPException(404, 'Task not found') from None
+    except OSError: raise HTTPException(503, 'Could not create the task project directory') from None
+    return json_result({'project': result})
+
+
+@router.get('/{task_id:int}/attachments.zip')
+def download_all_attachments(request: Request, task_id: int, user=Depends(current_user)):
+    path = getattr(request.app.state, 'db_path', DEFAULT_DB)
+    with model_session(path) as db:
+        exists = db.exec(select(Task.id).where(Task.id == task_id, Task.user_id == user['id'])).first()
+    if exists is None: raise HTTPException(404, 'Task not found')
+    archive = project_path(task_id) / 'attachments.zip'
+    if not archive.is_file(): raise HTTPException(404, 'Create the task project first')
+    return FileResponse(archive, media_type='application/zip', filename=f'task-{task_id}-attachments.zip',
+                        headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
 
 
 @router.get('/{task_id:int}/plan')

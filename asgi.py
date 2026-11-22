@@ -67,6 +67,7 @@ async def lifespan(_app: FastAPI):
         password_hash=config.get('INBOX_TEND_ADMIN_PASSWORD_HASH', ''))
     _app.state.auth_manager = RequestAdapter.auth_manager
     _app.state.db_path = DEFAULT_DB
+    _app.state.gmail_config = config
     gmail_web.start_auto_sync(DEFAULT_DB, config)
     translation_preload.start(DEFAULT_DB, config)
     yield

@@ -396,6 +396,11 @@
   .task-edit > summary { @apply cursor-pointer text-sm font-bold uppercase tracking-wider text-slate-500; }
   .task-edit[open] > summary { @apply mb-3; }
   .email-excerpt { @apply m-0 text-sm text-slate-600; }
+  .project-actions { @apply flex flex-wrap gap-3; }
+  .correspondence-list { @apply grid list-none gap-0 p-0; }
+  .correspondence-item { @apply grid gap-1 border-b border-slate-100 py-4 last:border-b-0; }
+  .correspondence-item > a { @apply text-base font-semibold; }
+  .correspondence-item > .email-excerpt { @apply line-clamp-2; }
   .task-side ol { @apply m-0 grid list-none gap-3 p-0; }
   .task-side ol li { @apply grid gap-0.5; }
   .zh { @apply ml-2 text-[0.8em] font-normal opacity-80; }
