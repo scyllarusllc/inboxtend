@@ -42,7 +42,7 @@ function aiPlanProgress() {
 }
 
 async function startWorking(task, button, refresh = false) {
-  if (lastPlan && !refresh) { document.getElementById('ai-plan')?.scrollIntoView({behavior: 'smooth', block: 'start'}); return; }
+  refresh = refresh || Boolean(lastPlan);
   const label = button.lastChild.textContent;
   button.disabled = true;
   button.setAttribute('aria-busy', 'true');
@@ -114,7 +114,9 @@ function planPanel(plan, task) {
   const head = el('div', undefined, 'ai-plan-head');
   head.append(icon('sparkles'), el('h2', 'How the AI would handle this'),
     el('span', p.confidence + ' confidence', 'task-pill'));
-  box.append(head, el('p', 'Saved ' + new Date(plan.created_at).toLocaleString() + ' · ' + plan.provider + ' · ' + plan.model + ' · A guess, not a fact: check it against the email.' +
+  box.append(head, el('p', 'Saved ' + new Date(plan.created_at).toLocaleString() + ' · ' + plan.provider + ' · ' + plan.model +
+    (plan.project_used ? ' · Read task project (' + plan.project_files + ' text files, ' + plan.project_images + ' images)' : '') +
+    ' · A guess, not a fact: check it against the source files.' +
     (plan.email_used ? '' : ' ' + (plan.note || 'Based on the task text only.')), 'meta'));
   box.append(planBody(p, enOf, {steps: 'Steps', questions: 'Confirm first', risks: 'Watch out for', draft: 'Reply draft (not sent)'}, p.reply_draft));
   if (p.reply_draft) {
@@ -212,10 +214,6 @@ function renderTask(task) {
   main.addEventListener('click', () => { main.disabled = true; changeStatus(task, finished ? 'new' : 'done'); });
   actions.append(main);
   if (!finished) {
-    const work = big('sparkles', lastPlan ? 'Show the AI plan' : 'Start working with AI', 'ai');
-    work.title = lastPlan ? 'Already planned: this shows the saved plan without asking the AI again.' : 'The AI reads this task and its email, then guesses how to handle it. It only advises; nothing is sent. The answer is saved with the task.';
-    work.addEventListener('click', () => startWorking(task, work));
-    actions.append(work);
     const wait = big('clock', 'Waiting');
     wait.setAttribute('aria-pressed', String(task.status === 'waiting'));
     wait.addEventListener('click', () => { wait.disabled = true; changeStatus(task, task.status === 'waiting' ? 'new' : 'waiting'); });
@@ -231,6 +229,7 @@ function renderTask(task) {
   edit.addEventListener('click', () => { const f = document.getElementById('task-edit'); f.open = true; f.scrollIntoView({behavior: 'smooth', block: 'start'}); f.querySelector('input').focus({preventScroll: true}); });
   actions.append(edit);
   card.append(actions);
+  card.append(projectCard(task));
   detailBox.append(card);
   if (lastPlan) detailBox.append(planPanel(lastPlan, task));   // Full width: English plan on the left, its Chinese translation on the right.
   if (task.image_count) {
@@ -249,7 +248,6 @@ function renderTask(task) {
   columns.append(mainCol, side);
   detailBox.append(columns);
 
-  mainCol.append(projectCard(task));
   if (task.message_id) mainCol.append(correspondenceCard(task));
   
   const editBox = el('details', undefined, 'panel task-section task-edit');
@@ -268,9 +266,17 @@ function renderTask(task) {
 }
 
 function projectCard(task) {
-  const box = section('Task project');
-  box.append(el('p', 'Create or update this task’s folder on the server at /tasks/' + task.id + '. It includes the task, saved email history, and locally stored attachments.', 'meta'));
+  const box = el('section', undefined, 'task-project');
+  box.append(el('h2', 'Task project'));
+  box.append(el('p', 'The AI plan reads .tasks/' + task.id + ' on the server. This folder includes the task, saved email history, and locally stored attachments. Add notes there before updating the plan.', 'meta'));
   const actions = el('div', undefined, 'project-actions');
+  if (task.status !== 'done' || lastPlan) {
+    const work = iconButton('sparkles', lastPlan ? 'Show the AI plan' : 'Start working with AI');
+    work.className = 'big-action ai';
+    work.title = 'Read the task project folder and prepare an updated AI plan.';
+    work.addEventListener('click', () => startWorking(task, work));
+    actions.append(work);
+  }
   const create = iconButton('folder', 'Create as project');
   const download = iconButton('download', 'Download all attachments');
   const status = el('p', '', 'meta');
@@ -289,6 +295,18 @@ function projectCard(task) {
   download.addEventListener('click', () => exportNow(download));
   actions.append(create, download);
   box.append(actions, status);
+  if (lastPlan) {
+    const ready = el('div', undefined, 'review-progress ai-work-progress is-complete');
+    const track = el('div', undefined, 'progress-track');
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-label', 'AI plan progress');
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-valuenow', '100');
+    track.append(el('div', undefined, 'progress-fill'));
+    ready.append(track, el('p', 'AI plan ready · saved ' + new Date(lastPlan.created_at).toLocaleString(), 'meta'));
+    box.append(ready);
+  }
   return box;
 }
 

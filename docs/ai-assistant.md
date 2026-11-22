@@ -19,11 +19,11 @@ secrets do not belong in web settings.
 
 ## What leaves your server
 
-Only when you press an AI button on a message, and only if you enabled the assistant in **Settings**, the text of
-*that one message* is sent to the chosen provider through the login of the operating-system user that runs Inbox Tend:
+Only when you press an AI button, and only if you enabled the assistant in **Settings**, content is sent to the chosen provider through the login of the operating-system user that runs Inbox Tend. On a message, the text of
+*that one message* is sent:
 direction, sender, recipients, date, subject and body (first 20,000 characters), plus, if you ticked the option,
 up to three small text/CSV attachments (8,000 characters each). The image review button additionally sends up to eight stored images (2 MiB each). The current date and your timezone are added. For a
-reply draft, the guidance you typed is added too. Nothing else is sent, nothing is sent in the background, and no
+reply draft, the guidance you typed is added too. The task AI plan sends the bounded project snapshot described below. Nothing is sent in the background, and no
 reply is ever sent: results only fill a form or a draft that you review.
 
 The provider's terms and your plan with it (ChatGPT/Codex or Claude) govern how that text is handled. If your mail is
@@ -36,6 +36,12 @@ In Inbox → Message review, three suggestion buttons create a task for the sele
 On the Tasks page, expand **Images** to see and download the copies. Press **Translate and explain images in Chinese** there to send the task text and up to eight stored images (2 MiB each) to the selected provider. The saved result shows a Chinese translation and interpretation for each image, an overall summary, and suggested task wording. **Use suggested task text** applies it only after an explicit click. Nothing is sent automatically. Images and AI interpretations are untrusted; check each preview before acting.
 
 Codex receives images as CLI image inputs in an isolated temporary directory; Claude receives base64 image blocks through structured stdin. Temporary copies are deleted after the request. The ordinary Inbox **Suggest task from email text** action does not read images.
+
+## Task project AI plan
+
+On a task page, **Show the AI plan** reads that task's `.tasks/<id>` directory and creates an updated plan on each click. If the directory does not exist, Inbox Tend creates it first from the local task, saved correspondence and attachments. Add your own notes or supporting files to the directory before clicking the button; project updates preserve added files. The server reads the files and passes a bounded snapshot to the selected AI provider. The model has no filesystem tools or direct access to the project directory.
+
+The snapshot includes up to 30,000 characters of text from `.txt`, `.md`, `.csv`, `.json` and `.log` files, with up to 5,000 characters per file. `emails.json` is condensed to the newest 30 saved emails. Up to eight valid JPEG, PNG, GIF or WebP images of at most 2 MiB each are supplied as images. Large, unsupported and excess files are listed as omitted in the prompt. `attachments.zip` is never sent. Every click is an explicit AI request and replaces the saved plan.
 
 ## Setup
 

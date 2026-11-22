@@ -13,7 +13,7 @@ from tasks import connection
 
 
 def root_dir():
-    return Path(os.environ.get('INBOX_TEND_TASKS_DIR', '/tasks')).resolve()
+    return Path(os.environ.get('INBOX_TEND_TASKS_DIR', str(Path(__file__).resolve().parent / '.tasks'))).resolve()
 
 
 def project_path(task_id: int):
@@ -79,6 +79,23 @@ def export_task(db_path, user_id: int, task_id: int):
                         (files / name).write_bytes(bytes(row['content']))
                         archive.write(files / name, arcname=name)
             (working / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+            if existing:
+                managed = {'task.json', 'emails.json', 'manifest.json', 'attachments.zip'}
+                try:
+                    old_manifest = json.loads((destination / 'manifest.json').read_text(encoding='utf-8'))
+                    managed.update('attachments/' + item['file'] for item in old_manifest if item.get('file'))
+                except (OSError, ValueError, TypeError):
+                    pass
+                for old in destination.rglob('*'):
+                    if old.is_symlink() or not old.is_file():
+                        continue
+                    relative = old.relative_to(destination)
+                    if relative.as_posix() in managed:
+                        continue
+                    target = working / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if not target.exists():
+                        shutil.copy2(old, target)
             os.chmod(working, 0o700)
             for path in working.rglob('*'):
                 if path.is_file(): os.chmod(path, 0o600)
@@ -98,3 +115,78 @@ def export_task(db_path, user_id: int, task_id: int):
         except Exception:
             shutil.rmtree(working, ignore_errors=True)
             raise
+
+
+PROJECT_TEXT_LIMIT = 30_000
+PROJECT_FILE_LIMIT = 5_000
+PROJECT_IMAGE_LIMIT = 8
+PROJECT_IMAGE_BYTES = 2 * 1024 * 1024
+
+
+def read_project(task_id: int):
+    """Read a bounded snapshot; model receives content, never filesystem access."""
+    folder = project_path(task_id)
+    if not folder.is_dir() or folder.is_symlink():
+        raise FileNotFoundError('Task project does not exist')
+    parts = []
+    remaining = PROJECT_TEXT_LIMIT
+    image_files = []
+    skipped = []
+    text_suffixes = {'.txt', '.md', '.csv', '.json', '.log'}
+    for path in sorted(folder.rglob('*')):
+        if not path.is_file() or path.is_symlink():
+            continue
+        name = path.relative_to(folder).as_posix()
+        if name == 'attachments.zip':
+            continue
+        if len(parts) + len(image_files) + len(skipped) >= 250:
+            skipped.append('More files omitted (250 file limit)')
+            break
+        size = path.stat().st_size
+        suffix = path.suffix.lower()
+        if suffix in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+            if len(image_files) >= PROJECT_IMAGE_LIMIT or size > PROJECT_IMAGE_BYTES:
+                skipped.append(f'{name}: image limit or size exceeded')
+                continue
+            content = path.read_bytes()
+            valid = {
+                '.jpg': content.startswith(b'\xff\xd8\xff'), '.jpeg': content.startswith(b'\xff\xd8\xff'),
+                '.png': content.startswith(b'\x89PNG\r\n\x1a\n'), '.gif': content.startswith((b'GIF87a', b'GIF89a')),
+                '.webp': content.startswith(b'RIFF') and content[8:12] == b'WEBP',
+            }
+            if not valid[suffix]:
+                skipped.append(f'{name}: invalid image data')
+                continue
+            mime = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp'}[suffix]
+            image_files.append((name, mime, content))
+        elif suffix in text_suffixes and remaining > 0:
+            if size > 2_000_000:
+                skipped.append(f'{name}: too large to read')
+                continue
+            content = path.read_bytes()
+            if b'\x00' in content[:4096]:
+                skipped.append(f'{name}: binary data')
+                continue
+            if name == 'emails.json':
+                try:
+                    emails = json.loads(content)
+                    lines = [f'{len(emails)} saved emails, newest first:']
+                    for mail in reversed(emails[-30:]):
+                        lines.append(f"{mail.get('date_header', '')} | {mail.get('from_addr', '')} → {mail.get('to_addr', '')} | {mail.get('subject', '')}\n{(mail.get('body_text') or mail.get('snippet') or '')[:400]}")
+                    source_text = '\n'.join(lines)
+                except (ValueError, TypeError, AttributeError):
+                    source_text = content.decode('utf-8', 'replace')
+            else:
+                source_text = content.decode('utf-8', 'replace')
+            text = source_text[:min(PROJECT_FILE_LIMIT, remaining)]
+            parts.append(f'File: {name}\n{text}')
+            remaining -= len(text)
+            if len(source_text) > len(text):
+                skipped.append(f'{name}: text truncated')
+        else:
+            skipped.append(f'{name}: unsupported file type')
+    text_files = len(parts)
+    if skipped and remaining > 0:
+        parts.append('Files not fully read:\n' + '\n'.join(skipped[:60]))
+    return {'text': '\n\n'.join(parts), 'images': image_files,
+            'text_files': text_files, 'image_count': len(image_files), 'skipped': len(skipped)}

@@ -12,6 +12,7 @@ frontend/AGENTS.md
 *.sqlite3-shm
 *.sqlite3-journal
 data/
+.tasks/
 .DS_Store
 
 # Local Google OAuth Desktop client configuration (never commit)

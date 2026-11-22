@@ -11,6 +11,7 @@ from sqlmodel import select
 from asgi import app, RequestAdapter
 from db_models import Task, session
 from tasks import connection, create_task, list_tasks
+from task_project import export_task, read_project
 
 
 class StackTests(unittest.TestCase):
@@ -112,6 +113,29 @@ class StackTests(unittest.TestCase):
                     self.assertEqual(archive.status_code, 200)
                     with zipfile.ZipFile(BytesIO(archive.content)) as bundle:
                         self.assertEqual(bundle.read(bundle.namelist()[0]), b'abc')
+                    project = read_project(created['id'])
+                    self.assertIn('3 saved emails', project['text'])
+                    self.assertIn('image.jpg', project['text'])
+                    folder = projects + '/' + str(created['id'])
+                    with open(folder + '/notes.md', 'w', encoding='utf-8') as notes:
+                        notes.write('Please review the updated context.')
+                    export_task(path, 1, created['id'])
+                    self.assertIn('Please review the updated context.', read_project(created['id'])['text'])
+                    plan = {'steps': [], 'approach': {'en': 'Use the project notes.', 'zh': ''},
+                            'summary': {'en': 'Review the task.', 'zh': ''}, 'reply_draft': '',
+                            'reply_draft_zh': '', 'questions': [], 'risks': [], 'confidence': 'medium'}
+                    with patch.object(RequestAdapter, 'auth_manager', app.state.auth_manager, create=True), \
+                         patch.object(RequestAdapter, 'db_path', path, create=True), \
+                         patch.object(RequestAdapter, 'gmail_config', app.state.gmail_config, create=True), \
+                         patch('app.prefs.effective', return_value={'ai_enabled': True, 'ai_provider': 'codex', 'ai_model': ''}), \
+                         patch('app.ai.work_plan', return_value=plan) as ai_plan:
+                        response = client.post('/api/ai/work', headers={**headers, 'X-CSRF-Token': 'csrf'},
+                                               json={'task_id': created['id'], 'refresh': True})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertTrue(response.json()['saved']['project_used'])
+                    self.assertIn('Please review the updated context.', ai_plan.call_args.kwargs['project_text'])
+                    saved = client.get(f"/api/tasks/{created['id']}/plan", headers=headers).json()['saved']
+                    self.assertEqual(saved['plan']['approach']['en'], 'Use the project notes.')
             finally:
                 app.state.auth_manager = old_manager
                 app.state.db_path = old_path
