@@ -1,16 +1,28 @@
 # Inbox Tend
 
-**Self-hosted Gmail workspace · SQLite · AGPL-3.0**
+**Self-hosted Gmail and IMAP workspace · SQLite · AGPL-3.0**
 
-Inbox Tend copies your Gmail into a SQLite database on your own server, shows who each message is from and what it is about, translates it, and helps you turn the next step into a tracked task. No email is ever sent, deleted or trashed.
+Inbox Tend copies Gmail and IMAP mail, including iCloud Mail, into SQLite on your server. It helps you review messages, translate text, and turn follow-up into tracked tasks. It never sends, deletes or trashes mail from a provider.
 
 ![The Inbox: mail list with topic icons and flags, a Spanish message with its person card, and the English translation in a third column](static/screens/inbox.jpg)
 
 *Screenshots use fictional demo data (`make demo`).*
 
+## Quick start
+
+Copy `.env.example` to `.env`, configure an administrator and keep that file private; [QUICKSTART.md](QUICKSTART.md) has the setup steps. Then run:
+
+```sh
+make dev
+```
+
+Open `http://127.0.0.1:8765`. One FastAPI server serves the pages, API and static files. Python edits restart the development server; page and asset edits refresh the browser. `make dev` stops an earlier Inbox Tend process on that port before starting and refuses to stop unrelated programs. The default workflow does not need a separate frontend server. Next.js remains available for comparison with `make dev-next`; editing Tailwind source styles still requires `make css`.
+
 ## Features
 
 - **Several Gmail accounts.** Connect as many as you like (Settings → Gmail accounts). Their mail is stored and searched together, the Inbox can be narrowed to one account, and each account has its own read-only or read/unread access and can be removed on its own.
+
+- **IMAP accounts, including iCloud Mail.** Connect an IMAP mailbox with its server address and app password. Imported mail joins the same local Inbox; read/unread changes update the IMAP server. There is no SMTP sending. See [IMAP mail](#imap-mail-including-icloud-mail).
 
   ![Two connected Gmail accounts in Settings](static/screens/accounts.jpg)
 - **Local copy of your mail.** Inbox and sent mail with full headers, text and HTML bodies, labels and attachments, saved in SQLite. Browsing never calls Gmail; new mail is fetched automatically (every 5 minutes by default; change or turn off under Settings → Mail sync) or on **Refresh inbox**. Gmail access is read-only unless you opt in (Settings → Gmail access) to marking mail read or unread in Gmail.
@@ -30,7 +42,7 @@ Inbox Tend copies your Gmail into a SQLite database on your own server, shows wh
 
   ![Messages filtered by topic:money](static/screens/topics.jpg)
 - **Offline translation** (opt-in): Argos language packs translate the opened message on your server. The result appears beside the original and is saved in SQLite; translation does not call an AI provider. To keep local translation responsive, only the first 5,000 characters of a long message are translated; the original remains available. Install only the language directions you need (see below).
-- **Tasks:** review a suggested task, edit it, save it with owner, priority, deadline and status, with an audit history. Reply drafts are prepared for you and never sent.
+- **Tasks:** review a suggested task, edit it, save it with owner, priority, deadline and status, with an audit history. Image-mail suggestions copy saved images into the task; translation and interpretation happen on the Tasks page after you press the AI button. Reply drafts are prepared for you and never sent.
 - **AgentSteers mock handoff (opt-in, disabled by default):** reviewed tasks can be sent from either the task list or expanded task details to a separately configured mock-only MCP service, with explicit confirmation and status display. No real Codex, GitHub write, or email send is performed. A fictional registration-page task is included in `make demo`. [Setup and limitations](docs/agentsteers-handoff.md).
 
   ![Tasks](static/screens/tasks.jpg)
@@ -71,15 +83,16 @@ Sign in as `demo@example.org` / `demo-password-123`. The demo never calls an AI.
 
 ## Current architecture
 
-- `asgi.py` and `app.py`: FastAPI/Uvicorn entry point and authenticated routes. The existing route dispatcher is retained behind an ASGI adapter during the endpoint migration. Writes still require a per-session CSRF token, loopback Host, same-origin request, JSON content type and a 16 KiB body limit.
+- `asgi.py`, `task_api.py` and `app.py`: FastAPI/Uvicorn entry point, native task-read routes, and the remaining authenticated routes behind an ASGI adapter during migration. Writes still require a per-session CSRF token, loopback Host, same-origin request, JSON content type and a 16 KiB body limit.
 - `tasks.py` and `db_models.py`: SQLModel engine and task mappings on the existing SQLite file. Existing SQL queries and migrations remain in `tasks.py` during the data-layer migration.
 - `cli.py`: Typer commands for serving the API and backing up SQLite.
 - `frontend/`: optional Next.js App Router page shell for comparison. The default development workflow serves the existing pages directly from FastAPI.
 
-Run `make dev`, then open `http://127.0.0.1:8765`. One FastAPI server provides pages, API and static files; Python changes restart the server and page or asset changes refresh the browser. Next.js remains available with `make dev-next` for comparison. Existing SQLite data is used in place; no export or import is needed.
-- `static/`: existing page markup and browser scripts reused by the Next.js shell, styled with compiled Tailwind CSS and self-hosted Font Awesome; see [docs/frontend.md](docs/frontend.md). Running Next.js requires Node.js.
+- `static/`: page markup and browser scripts served directly by FastAPI, styled with compiled Tailwind CSS and self-hosted Font Awesome; see [docs/frontend.md](docs/frontend.md). Next.js requires Node.js when used.
 - `gmail_web.py` and `connectors/gmail_readonly.py`: session-bound Web OAuth and read-only Gmail inbox panel, documented in [docs/gmail-web.md](docs/gmail-web.md). `gmail_oauth_local.py` remains a separate one-shot Desktop prototype.
 - `tests/`: local HTTP, persistence, migration, validation and connector tests.
+
+Run `make dev`, then open `http://127.0.0.1:8765`. One FastAPI server provides pages, API and static files; Python changes restart the server and page or asset changes refresh the browser. Next.js remains available with `make dev-next` for comparison. Existing SQLite data is used in place; no export or import is needed.
 
 ## Security boundary
 

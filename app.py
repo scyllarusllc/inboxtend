@@ -34,7 +34,7 @@ _TRANSLATION_TIMINGS_LOCK = threading.Lock()
 NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'))
 # name -> (title, description, scripts, active nav item, signed in)
 PAGES = {
-    'home': ('Inbox Tend · Review work from email', 'Review email-derived work with a human in control.', (), 'home', False),
+    'home': ('Inbox Tend · Gmail and IMAP mail to tasks', 'Review Gmail and IMAP mail, translate text, and track follow-up tasks on your own server.', (), 'home', False),
     'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', ('/static/login.js',), None, False),
     'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js','/static/vendor/chartjs/chart.umd.min.js','/static/stats.js'), 'inbox', True),
     'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/tasks.js'), 'tasks', True),

@@ -50,6 +50,16 @@ def inbox_dev_process(pid: int) -> bool:
         return cwd == PROJECT
     if not program.startswith('python'):
         return False
+    # Uvicorn's --reload worker inherits the listening socket. Its command line
+    # is a multiprocessing bootstrap, so verify the parent is this project's reloader.
+    if len(args) > 2 and args[1] == b'-c' and b'from multiprocessing.spawn import spawn_main' in args[2]:
+        try:
+            status = Path(f'/proc/{pid}/status').read_text()
+            parent = int(re.search(r'^PPid:\s*(\d+)$', status, re.MULTILINE).group(1))
+            parent_args = Path(f'/proc/{parent}/cmdline').read_bytes().split(b'\0')
+        except (OSError, AttributeError, ValueError):
+            return False
+        return cwd == PROJECT and b'--reload' in parent_args and inbox_dev_process(parent)
     scripts = [Path(os.fsdecode(arg)) for arg in args[1:] if arg]
     if not scripts or scripts[0].name not in ('app.py', 'cli.py'):
         return False
