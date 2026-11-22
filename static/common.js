@@ -41,7 +41,7 @@ const ICONS = {
   history: 'fa-solid fa-clock-rotate-left', check: 'fa-solid fa-check', 'check-double': 'fa-solid fa-check-double', plus: 'fa-solid fa-plus',
   mail: 'fa-regular fa-envelope', sent: 'fa-solid fa-paper-plane', received: 'fa-solid fa-inbox', paperclip: 'fa-solid fa-paperclip', download: 'fa-solid fa-download',
   eye: 'fa-regular fa-eye', language: 'fa-solid fa-language', sparkles: 'fa-solid fa-wand-magic-sparkles',
-  reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark'
+  reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark', play: 'fa-solid fa-play', clock: 'fa-regular fa-clock'
 };
 // Message text with web addresses made clickable. Only http(s) links, always in a new tab and without handing the page
 // to the destination (noopener) or telling it where you came from (noreferrer). The text itself stays plain text nodes.

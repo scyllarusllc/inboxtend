@@ -108,6 +108,9 @@ def connection(path=DEFAULT_DB):
         db.execute('''CREATE TABLE IF NOT EXISTS task_image_reviews (
             task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
             user_id INTEGER NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)''')
+        db.execute('''CREATE TABLE IF NOT EXISTS task_ai_plans (
+            task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)''')
         db.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','user')),
@@ -367,6 +370,23 @@ def save_task_image_review(db, task_id, user_id, result):
             (task_id,user_id,json.dumps(result,ensure_ascii=False),now))
         db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES(?,?,?,?)',
                    (task_id,'images_reviewed',json.dumps({'image_count':len(result['images'])}),now))
+    return dict(result,created_at=now)
+
+
+def task_work_plan(db, task_id, user_id):
+    """The saved "start working with AI" answer for a task, or None."""
+    row = db.execute('SELECT result_json,created_at FROM task_ai_plans WHERE task_id=? AND user_id=?',(task_id,user_id)).fetchone()
+    return dict(json.loads(row['result_json']),created_at=row['created_at']) if row else None
+
+
+def save_task_work_plan(db, task_id, user_id, result):
+    now = _now()
+    with db:
+        db.execute('''INSERT INTO task_ai_plans(task_id,user_id,result_json,created_at) VALUES(?,?,?,?)
+            ON CONFLICT(task_id) DO UPDATE SET result_json=excluded.result_json,created_at=excluded.created_at''',
+            (task_id,user_id,json.dumps(result,ensure_ascii=False),now))
+        db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES(?,?,?,?)',
+                   (task_id,'ai_plan_saved',json.dumps({'steps':len(result['plan']['steps'])}),now))
     return dict(result,created_at=now)
 
 

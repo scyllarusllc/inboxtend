@@ -365,6 +365,21 @@
   .mail-card { @apply grid gap-2; }
   .mail-card h1 { @apply m-0 text-xl; }
   .conversation-thread a.message { @apply block no-underline; }
+  .hero-actions { @apply grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:pl-10; }
+  .big-action { @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-base font-semibold text-slate-800 no-underline shadow-sm hover:bg-slate-50 disabled:opacity-60; }
+  .big-action.primary { @apply border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700; }
+  .big-action[aria-pressed="true"] { @apply border-indigo-600 bg-indigo-50 text-indigo-800; }
+  .big-action.ai { @apply border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700; }
+  .ai-plan { @apply grid gap-2 border-indigo-200 bg-indigo-50/40; }
+  .ai-plan-head { @apply flex flex-wrap items-center gap-2 text-indigo-700; }
+  .ai-plan-head h2 { @apply m-0 text-base text-slate-900; }
+  .ai-plan h3 { @apply mt-2 text-xs font-bold uppercase tracking-wider text-slate-500; }
+  .ai-summary { @apply font-semibold; }
+  .ai-steps { @apply m-0 grid list-decimal gap-2 pl-6; }
+  .ai-steps li span { @apply block; }
+  .ai-list { @apply m-0 list-disc pl-6 text-sm text-slate-700; }
+  .ai-draft { @apply m-0 whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-white p-3 font-sans text-sm; }
+  .ai-plan > button { @apply w-fit; }
   .task-title-link { @apply text-inherit no-underline hover:underline; }
   .task-actions { @apply flex flex-wrap items-center gap-x-4 gap-y-2 sm:pl-10; }
   .task-actions > label { @apply flex items-center gap-2; }

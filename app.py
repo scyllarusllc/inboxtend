@@ -27,7 +27,7 @@ import translation_preload
 import agentsteers_bridge
 import integration_feed
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
-from tasks import connection, DEFAULT_DB, get_task, task_for_source, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
+from tasks import connection, DEFAULT_DB, get_task, task_for_source, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, task_work_plan, save_task_work_plan, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
 ROOT = Path(__file__).resolve().parent
 _TRANSLATION_TIMINGS = {}
@@ -492,6 +492,26 @@ class Handler:
                                                    'ai':{'confidence':result['confidence'],'evidence':result['evidence'],'notes':result['notes'],
                                                          'provider':ai.PROVIDERS[ai.provider_of(user)]['name'],
                                                          'model':user['ai_model'] or 'provider default'}})
+                        if path == '/api/ai/work':
+                            task_id = data.get('task_id')
+                            if type(task_id) is not int: raise RequestError(400,'Task ID required')
+                            with self._db() as db:
+                                task = get_task(db,task_id,user_id=session['id'])
+                                user = prefs.effective(db,session['id'],self.gmail_config)
+                                saved = task_work_plan(db,task_id,session['id'])
+                            if not task: raise RequestError(404,'Task not found')
+                            if saved and data.get('refresh') is not True:
+                                return self._json(200,{'saved':saved})   # Already done once: no second AI run unless asked.
+                            if not user['ai_enabled']: raise RequestError(403,'The AI assistant is turned off in Settings')
+                            message,files,note = None,[],''
+                            if task['source_provider'] in ('gmail','imap') and task['message_id']:
+                                try: message,files,_ = self._ai_inputs(session,task['message_id'])
+                                except RequestError: note = 'The original email could not be loaded, so this plan uses the task text only.'
+                            plan = ai.work_plan(self.gmail_config,task,message,files,user)
+                            result = {'plan':plan,'email_used':message is not None,'note':note,
+                                      'provider':ai.PROVIDERS[ai.provider_of(user)]['name'],'model':user['ai_model'] or 'provider default'}
+                            with self._db() as db: saved = save_task_work_plan(db,task_id,session['id'],result)
+                            return self._json(200,{'saved':saved})
                         if path == '/api/ai/reply':
                             message,files,user = self._ai_inputs(session,data.get('id'))
                             guidance = data.get('guidance','')

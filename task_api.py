@@ -11,7 +11,7 @@ from sqlmodel import select
 
 from auth import cookie_token
 from db_models import Task, TaskAttachment, TaskImageReview, session as model_session
-from tasks import DEFAULT_DB, connection, decorate, _soon, events
+from tasks import DEFAULT_DB, connection, decorate, _soon, events, task_work_plan
 from app import raster_preview_mime
 
 
@@ -90,6 +90,16 @@ def task_events(request: Request, task_id: int, user=Depends(current_user)):
     if exists is None: raise HTTPException(404, 'Task not found')
     with connection(path) as db: history = events(db, task_id, user['id'])
     return json_result({'events': history})
+
+
+@router.get('/{task_id:int}/plan')
+def saved_plan(request: Request, task_id: int, user=Depends(current_user)):
+    path = getattr(request.app.state, 'db_path', DEFAULT_DB)
+    with model_session(path) as db:
+        exists = db.exec(select(Task.id).where(Task.id == task_id, Task.user_id == user['id'])).first()
+    if exists is None: raise HTTPException(404, 'Task not found')
+    with connection(path) as db: saved = task_work_plan(db, task_id, user['id'])
+    return json_result({'saved': saved})
 
 
 @router.get('/{task_id:int}/images')
