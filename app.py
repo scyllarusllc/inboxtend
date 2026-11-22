@@ -517,6 +517,22 @@ class Handler:
                                       'provider':ai.PROVIDERS[ai.provider_of(user)]['name'],'model':user['ai_model'] or 'provider default'}
                             with self._db() as db: saved = save_task_work_plan(db,task_id,session['id'],result)
                             return self._json(200,{'saved':saved})
+                        if path == '/api/ai/work-translate':
+                            task_id = data.get('task_id')
+                            if type(task_id) is not int: raise RequestError(400,'Task ID required')
+                            with self._db() as db:
+                                task = get_task(db,task_id,user_id=session['id'])
+                                saved = task_work_plan(db,task_id,session['id'])
+                                user = prefs.effective(db,session['id'],self.gmail_config)
+                            if not task or not saved: raise RequestError(404,'No saved AI plan for this task')
+                            plan = saved['plan']
+                            if any(isinstance(plan.get(k),dict) and plan[k].get('zh') for k in ('summary','approach')): return self._json(200,{'saved':saved})   # Already has Chinese.
+                            if not user['ai_enabled']: raise RequestError(403,'The AI assistant is turned off in Settings')
+                            done = ai.translate_plan(self.gmail_config,plan,user)
+                            result = {k:v for k,v in saved.items() if k not in ('plan','created_at')}
+                            result['plan'] = done
+                            with self._db() as db: saved = save_task_work_plan(db,task_id,session['id'],result)
+                            return self._json(200,{'saved':saved})
                         if path == '/api/ai/reply':
                             message,files,user = self._ai_inputs(session,data.get('id'))
                             guidance = data.get('guidance','')

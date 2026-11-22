@@ -34,7 +34,7 @@ function reviewProgress(count) {
     else node.remove();
   }};
 }
-function taskImageDetails(task) {
+function taskImageDetails(task, reviewHome) {   // reviewHome: an element that shows the extracted text and explanation elsewhere on the page
   const panel=el('details',undefined,'task-images');
   const heading=document.createElement('summary');
   heading.append(icon('paperclip'),document.createTextNode(' Images ('+task.image_count+')'));
@@ -59,26 +59,29 @@ function taskImageDetails(task) {
         } else row.append(el('p','Image was not stored: '+(file.skipped_reason || 'unavailable'),'meta'));
         body.append(row);
       }
-      const reviewBox=el('div',undefined,'task-image-review');
+      const reviewBox=reviewHome || el('div',undefined,'task-image-review');
       let saved=result.review;   // The saved answer lives in the database: it is shown on every visit, no new AI run needed.
       const count=result.images.length;
       const runLabel=()=>saved?'Translate again (replaces the saved result)':'Translate and explain all '+count+' images in Chinese';
       const run=iconButton('language',runLabel());
-      body.prepend(reviewBox);body.prepend(run);
+      if(!reviewHome)body.prepend(reviewBox);body.prepend(run);
       const showReview=review=>{
         reviewBox.replaceChildren();
-        if(!review)return;
+        if(!review){
+          if(reviewHome)reviewBox.append(el('p','Nothing extracted yet. Press “Translate and explain” under the images, and the AI will read the text in them and explain what they mean. · 还没有内容：点图片下方的 “翻译并解释” 按钮，AI 会提取图中文字并解释含义。','meta'));
+          return;
+        }
         const section=el('section',undefined,'image-review');
-        section.append(el('h4','Chinese translation and image interpretation'),
-          el('p','Saved '+(review.created_at?new Date(review.created_at).toLocaleString():'')+' · '+review.provider+' · '+review.model+' · AI guesses may be wrong; check the images.','meta'));
+        if(!reviewHome)section.append(el('h4','Chinese translation and image interpretation'));
+        section.append(el('p','Saved '+(review.created_at?new Date(review.created_at).toLocaleString():'')+' · '+review.provider+' · '+review.model+' · AI guesses may be wrong; check the images.','meta'));
         for(const item of review.images) {
           const part=el('div',undefined,'image-review-item');
           part.append(el('strong',item.number+'. '+item.name),
-            el('p','图中文字（中文）：'+(item.visible_text_zh || '没有可辨认的文字。')),
-            el('p','图片含义：'+(item.meaning_zh || '无法确定。')));
+            el('h5','Extracted text · 图中文字'),el('p',item.visible_text_zh || '没有可辨认的文字。','extracted'),
+            el('h5','AI explanation · 图片含义'),el('p',item.meaning_zh || '无法确定。'));
           section.append(part);
         }
-        section.append(el('p','整体说明：'+(review.summary_zh || '无法确定。')));
+        section.append(el('h5','Overall · 整体说明'),el('p',review.summary_zh || '无法确定。'));
         const apply=iconButton('check','Use suggested task text');
         apply.addEventListener('click',async()=>{
           apply.disabled=true;

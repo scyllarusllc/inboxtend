@@ -6,7 +6,7 @@ const ZH = {
   'Back to all tasks': '返回全部任务',
   'Mark as done': '标记完成', 'Reopen task': '重新打开任务', 'Start working with AI': 'AI 开始处理', 'Show the AI plan': '查看 AI 方案',
   'Waiting': '等待中', 'Open the email': '打开邮件', 'Edit': '编辑', 'Edit task': '编辑任务', 'Save changes': '保存修改',
-  'Images': '图片', 'History': '历史记录', 'From this email': '来自这封邮件', 'Read the full email': '阅读完整邮件',
+  'Images': '图片', 'Extracted text and AI explanation': '提取的文字与 AI 解读', 'History': '历史记录', 'From this email': '来自这封邮件', 'Read the full email': '阅读完整邮件',
   'How the AI would handle this': 'AI 会这样处理', 'Steps': '步骤', 'Confirm first': '先确认', 'Watch out for': '注意风险',
   'Reply draft (not sent)': '回复草稿（未发送）', 'Copy the draft': '复制草稿', 'Ask the AI again': '让 AI 重新生成',
   'Translate and explain all': '翻译并解释全部图片', 'Translate again (replaces the saved result)': '重新翻译（会替换已保存结果）',
@@ -64,7 +64,7 @@ function bilingual(root) {
   const found = [];
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const parent = node.parentElement;
-    if (!parent || ZH_SKIP.test(parent.tagName) || parent.classList.contains('zh') || parent.closest('.message-body, .bi-row, .ai-draft, .task-body, .email-excerpt, .image-review-item')) continue;
+    if (!parent || ZH_SKIP.test(parent.tagName) || parent.classList.contains('zh') || parent.closest('.message-body, .ai-plan, .ai-draft, .task-body, .email-excerpt, .image-review-item')) continue;
     const text = node.nodeValue.trim();
     if (!text) continue;
     const next = node.nextSibling;

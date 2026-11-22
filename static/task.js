@@ -36,32 +36,44 @@ async function startWorking(task, button, refresh = false) {
   }
 }
 
-// Plan text comes as {en, zh} (older saved plans: a plain string). English on the left, Chinese on the right
-// (one above the other on a narrow screen).
+// Plan text comes as {en, zh} (older saved plans: a plain string). The plan card on the left is English; the card
+// on its right is the same plan translated into Chinese by the AI (one above the other on a narrow screen).
 const hasText = value => value && (typeof value === 'object' ? (value.en || value.zh) : value);
 const enOf = value => (value && typeof value === 'object') ? (value.en || '') : (value || '');
 const zhOf = value => (value && typeof value === 'object') ? (value.zh || '') : '';
+const planHasChinese = p => [p.summary, p.approach].some(v => zhOf(v));
 
-// One row: the English node and the Chinese node side by side.
-function biRow(enNode, zhNode, cls) {
-  const row = el('div', undefined, 'bi-row' + (cls ? ' ' + cls : ''));
-  const left = el('div', undefined, 'bi-en'); left.append(...enNode);
-  row.append(left);
-  if (zhNode.length) { const right = el('div', undefined, 'bi-zh'); right.lang = 'zh'; right.append(...zhNode); row.append(right); }
-  else row.classList.add('bi-single');
-  return row;
-}
-// A paragraph-like row from one {en, zh} value; `prefix` (a number or bullet) goes in front of both sides.
-function biLine(value, cls, prefix = '') {
-  const side = text => text ? [el('p', prefix + text, cls)] : [];
-  return biRow(side(enOf(value)), side(zhOf(value)));
-}
-function biHeading(en, withChinese = true) {
-  return biRow([el('h3', en)], withChinese && ZH[en] ? [el('h3', ZH[en])] : [], 'bi-heading');
+// The plan's content in one language: `pick` returns that language's text of an {en, zh} value, `head` a section title.
+function planBody(p, pick, head, draft) {
+  const body = el('div', undefined, 'plan-body');
+  if (pick(p.summary)) body.append(el('p', pick(p.summary), 'ai-summary'));
+  if (pick(p.approach)) body.append(el('p', pick(p.approach)));
+  if (p.steps.length) {
+    body.append(el('h3', head.steps));
+    const steps = el('ol', undefined, 'ai-steps');
+    for (const step of p.steps) {
+      const li = el('li');
+      if (pick(step.title)) li.append(el('strong', pick(step.title)));
+      if (pick(step.detail)) li.append(el('span', pick(step.detail), 'meta'));
+      steps.append(li);
+    }
+    body.append(steps);
+  }
+  for (const [key, items] of [['questions', p.questions], ['risks', p.risks]]) {
+    const texts = items.map(pick).filter(Boolean);
+    if (!texts.length) continue;
+    body.append(el('h3', head[key]));
+    const list = el('ul', undefined, 'ai-list');
+    for (const text of texts) list.append(el('li', text));
+    body.append(list);
+  }
+  if (draft) { body.append(el('h3', head.draft)); body.append(el('pre', draft, 'ai-draft')); }
+  return body;
 }
 
 function planPanel(plan, task) {
   const p = plan.plan;
+  const pair = el('div', undefined, 'plan-pair');
   const box = el('section', undefined, 'panel ai-plan');
   box.id = 'ai-plan';
   const head = el('div', undefined, 'ai-plan-head');
@@ -69,36 +81,7 @@ function planPanel(plan, task) {
     el('span', p.confidence + ' confidence', 'task-pill'));
   box.append(head, el('p', 'Saved ' + new Date(plan.created_at).toLocaleString() + ' · ' + plan.provider + ' · ' + plan.model + ' · A guess, not a fact: check it against the email.' +
     (plan.email_used ? '' : ' ' + (plan.note || 'Based on the task text only.')), 'meta'));
-  const body = el('div', undefined, 'bi-grid');
-  const bilingualPlan = [p.summary, p.approach].some(v => zhOf(v));   // Older saved plans have English only: no right-hand column.
-  if (bilingualPlan) body.append(biRow([el('h3', 'English')], [el('h3', '中文')], 'bi-heading bi-columns'));
-  if (hasText(p.summary)) body.append(biLine(p.summary, 'ai-summary'));
-  if (hasText(p.approach)) body.append(biLine(p.approach));
-  if (p.steps.length) {
-    body.append(biHeading('Steps', bilingualPlan));
-    p.steps.forEach((step, index) => {
-      const side = pick => {
-        const title = pick(step.title), detail = pick(step.detail);
-        const nodes = [];
-        if (title) nodes.push(el('strong', (index + 1) + '. ' + title, 'ai-step-title'));
-        if (detail) nodes.push(el('span', detail, 'meta'));
-        if (!nodes.length) return [];
-        const wrap = el('div', undefined, 'ai-step'); wrap.append(...nodes);
-        return [wrap];
-      };
-      body.append(biRow(side(enOf), side(zhOf)));
-    });
-  }
-  for (const [heading, items] of [['Confirm first', p.questions], ['Watch out for', p.risks]]) {
-    if (!items.length) continue;
-    body.append(biHeading(heading, bilingualPlan));
-    for (const item of items) body.append(biLine(item, 'ai-item', '• '));
-  }
-  if (p.reply_draft) {
-    body.append(biHeading('Reply draft (not sent)', bilingualPlan));
-    body.append(biRow([el('pre', p.reply_draft, 'ai-draft')], p.reply_draft_zh ? [el('pre', p.reply_draft_zh, 'ai-draft ai-draft-zh')] : []));
-  }
-  box.append(body);
+  box.append(planBody(p, enOf, {steps: 'Steps', questions: 'Confirm first', risks: 'Watch out for', draft: 'Reply draft (not sent)'}, p.reply_draft));
   if (p.reply_draft) {
     const copy = iconButton('copy', 'Copy the draft');
     copy.addEventListener('click', async () => {
@@ -110,7 +93,36 @@ function planPanel(plan, task) {
   again.title = 'Replaces the saved plan with a new one';
   again.addEventListener('click', () => startWorking(task, again, true));
   box.append(again);
-  return box;
+
+  const zh = el('section', undefined, 'panel ai-plan ai-plan-zh');
+  zh.lang = 'zh';
+  const zhHead = el('div', undefined, 'ai-plan-head');
+  zhHead.append(icon('language'), el('h2', 'AI 中文翻译'));
+  zh.append(zhHead);
+  if (planHasChinese(p)) {
+    zh.append(el('p', '由 AI 翻译自左侧英文方案，仅供参考，请对照原文核实。', 'meta'));
+    zh.append(planBody(p, zhOf, {steps: '步骤', questions: '先确认', risks: '注意风险', draft: '回复草稿中文译文（未发送）'}, p.reply_draft_zh));
+  } else {
+    zh.append(el('p', '这份方案还没有中文翻译。点下面的按钮，让 AI 翻译并保存。', 'meta'));
+    const translate = iconButton('language', 'Translate with AI');
+    translate.addEventListener('click', async () => {
+      translate.disabled = true;
+      translate.replaceChildren(icon('language'), document.createTextNode(' 正在翻译…'));
+      try {
+        const result = await request('/api/ai/work-translate', 'POST', {task_id: task.id});
+        lastPlan = result.saved;
+        notify('已翻译并保存。');
+        await refreshTasks();
+      } catch (error) {
+        notify(error.message, true);
+        translate.disabled = false;
+        translate.replaceChildren(icon('language'), document.createTextNode('Translate with AI'));
+      }
+    });
+    zh.append(translate);
+  }
+  pair.append(box, zh);
+  return pair;
 }
 
 function section(title, ...children) {
@@ -185,18 +197,23 @@ function renderTask(task) {
   actions.append(edit);
   card.append(actions);
   detailBox.append(card);
+  if (lastPlan) detailBox.append(planPanel(lastPlan, task));   // Full width: English plan on the left, its Chinese translation on the right.
+  if (task.image_count) {
+    // The images on the left; what the AI extracted from them and what it thinks they mean on the right.
+    const pair = el('div', undefined, 'plan-pair');
+    const reviewBox = el('div', undefined, 'task-image-review');
+    const images = taskImageDetails(task, reviewBox);
+    pair.append(section('Images', images), section('Extracted text and AI explanation', reviewBox));
+    detailBox.append(pair);
+    images.open = true;
+  }
   // Two columns on a wide screen: the work (plan, images, edit) on the left, context (email, history) on the right.
   const columns = el('div', undefined, 'task-columns');
   const mainCol = el('div', undefined, 'task-main');
   const side = el('aside', undefined, 'task-side');
   columns.append(mainCol, side);
   detailBox.append(columns);
-  if (lastPlan) mainCol.append(planPanel(lastPlan, task));
-  if (task.image_count) {
-    const images = taskImageDetails(task);
-    mainCol.append(section('Images', images));
-    images.open = true;
-  }
+  
   const editBox = el('details', undefined, 'panel task-section task-edit');
   editBox.id = 'task-edit';
   const editSummary = el('summary', 'Edit task');
