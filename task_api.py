@@ -114,7 +114,7 @@ def images(request: Request, task_id: int, user=Depends(current_user)):
         saved = dict(json.loads(review.result_json), created_at=review.created_at) if review and review.user_id == user['id'] else None
         metadata = [{'id': file.id, 'name': file.filename, 'mime_type': file.mime_type,
                      'size_bytes': file.size_bytes, 'stored': file.content is not None,
-                     'skipped_reason': file.skipped_reason} for file in files]
+                     'skipped_reason': file.skipped_reason, 'rotation': file.rotation} for file in files]
     return json_result({'images': metadata, 'review': saved})
 
 

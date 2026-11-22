@@ -393,11 +393,23 @@ def _store(db,user_id,item,in_inbox=0,account=None):  # Folder flags are set on 
          h.get('to',''),h.get('cc',''),json.dumps(item.get('label_ids',[])),json.dumps(item.get('all_headers',[])),
          item.get('body_text',''),item.get('body_html',''),item.get('size_estimate',0),*peer_for(json.dumps(item.get('label_ids',[])),h.get('from',''),h.get('to','')),
          account_id))
+    turned = attachment_rotations(db,user_id,sid)
     db.execute('DELETE FROM gmail_attachments WHERE user_id=? AND message_id=?',(user_id,sid))
     for a in item.get('attachments',[]):
-        db.execute('INSERT INTO gmail_attachments(user_id,message_id,part_id,filename,mime_type,size_bytes,content,skipped_reason) '
-                   'VALUES (?,?,?,?,?,?,?,?)',(user_id,sid,a['part_id'],a['filename'],a['mime_type'],
-                   len(a['content']) if a['content'] is not None else a['size'],a['content'],a['skipped_reason']))
+        db.execute('INSERT INTO gmail_attachments(user_id,message_id,part_id,filename,mime_type,size_bytes,content,skipped_reason,rotation) '
+                   'VALUES (?,?,?,?,?,?,?,?,?)',(user_id,sid,a['part_id'],a['filename'],a['mime_type'],
+                   len(a['content']) if a['content'] is not None else a['size'],a['content'],a['skipped_reason'],turned.get(a['part_id'],0)))
+
+def attachment_rotations(db,user_id,message_id):
+    """How the user turned each image, so a re-sync (which rewrites the rows) keeps it."""
+    return {r['part_id']:r['rotation'] for r in db.execute('SELECT part_id,rotation FROM gmail_attachments WHERE user_id=? AND message_id=?',(user_id,message_id))}
+
+
+def rotate_attachment(db,user_id,message_id,attachment_id,rotation):
+    if rotation not in (0,90,180,270): raise ValueError('Rotation must be 0, 90, 180 or 270')
+    with db:
+        return db.execute('UPDATE gmail_attachments SET rotation=? WHERE user_id=? AND message_id=? AND id=?',(rotation,user_id,message_id,attachment_id)).rowcount == 1
+
 
 def last_sync(db,user_id,account_id=None):
     """When mail was last synced: for the given account, or (no id) the most recent sync of any account."""
@@ -722,8 +734,8 @@ def _detail(db,user_id,row):
                    'body_text':row['body_text'],'has_html':bool(row['body_html']),'size_estimate':row['size_estimate'],
                    'headers':json.loads(row['headers_json'] or '[]'),
                    'attachments':[{'id':a['id'],'name':a['filename'],'mime_type':a['mime_type'],'size_bytes':a['size_bytes'],
-                                   'stored':bool(a['has_content']),'skipped_reason':a['skipped_reason']}
-                                  for a in db.execute('SELECT id,filename,mime_type,size_bytes,skipped_reason,content IS NOT NULL AS has_content FROM gmail_attachments '
+                                   'stored':bool(a['has_content']),'skipped_reason':a['skipped_reason'],'rotation':a['rotation']}
+                                  for a in db.execute('SELECT id,filename,mime_type,size_bytes,skipped_reason,rotation,content IS NOT NULL AS has_content FROM gmail_attachments '
                                                       'WHERE user_id=? AND message_id=? ORDER BY id',(user_id,row['message_id']))]})
     if row['thread_id']:
         detail['thread'] = [dict(_row(t),) for t in db.execute(

@@ -105,6 +105,8 @@ def connection(path=DEFAULT_DB):
             id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
             filename TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL,
             content BLOB, skipped_reason TEXT NOT NULL DEFAULT '')''')
+        if 'rotation' not in {r['name'] for r in db.execute('PRAGMA table_info(task_attachments)')}:
+            db.execute('ALTER TABLE task_attachments ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0')  # Display turn in degrees: 0, 90, 180 or 270
         db.execute('''CREATE TABLE IF NOT EXISTS task_image_reviews (
             task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
             user_id INTEGER NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)''')
@@ -180,6 +182,8 @@ def connection(path=DEFAULT_DB):
             id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, message_id TEXT NOT NULL,
             part_id TEXT NOT NULL DEFAULT '', filename TEXT NOT NULL, mime_type TEXT NOT NULL,
             size_bytes INTEGER NOT NULL DEFAULT 0, content BLOB, skipped_reason TEXT NOT NULL DEFAULT '')''')
+        if 'rotation' not in {r['name'] for r in db.execute('PRAGMA table_info(gmail_attachments)')}:
+            db.execute('ALTER TABLE gmail_attachments ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0')  # Display turn in degrees
         db.execute('''CREATE TABLE IF NOT EXISTS user_settings (
             user_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL,
             PRIMARY KEY (user_id, key))''')
@@ -348,8 +352,17 @@ def task_images(db, task_id, user_id):
     if not db.execute('SELECT 1 FROM tasks WHERE id=? AND user_id=?',(task_id,user_id)).fetchone():
         return None
     return [dict(id=r['id'],name=r['filename'],mime_type=r['mime_type'],size_bytes=r['size_bytes'],
-                 stored=bool(r['has_content']),skipped_reason=r['skipped_reason'])
-            for r in db.execute('SELECT id,filename,mime_type,size_bytes,content IS NOT NULL AS has_content,skipped_reason FROM task_attachments WHERE task_id=? ORDER BY id',(task_id,))]
+                 stored=bool(r['has_content']),skipped_reason=r['skipped_reason'],rotation=r['rotation'])
+            for r in db.execute('SELECT id,filename,mime_type,size_bytes,content IS NOT NULL AS has_content,skipped_reason,rotation FROM task_attachments WHERE task_id=? ORDER BY id',(task_id,))]
+
+
+def rotate_task_image(db, task_id, image_id, user_id, rotation):
+    """Remember how an image must be turned to read upright. The stored file itself is never changed."""
+    if rotation not in (0, 90, 180, 270): raise ValueError('Rotation must be 0, 90, 180 or 270')
+    if not task_image(db, task_id, image_id, user_id): return False
+    with db:
+        db.execute('UPDATE task_attachments SET rotation=? WHERE id=? AND task_id=?',(rotation,image_id,task_id))
+    return True
 
 
 def task_image(db, task_id, image_id, user_id):

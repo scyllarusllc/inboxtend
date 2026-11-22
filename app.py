@@ -27,7 +27,7 @@ import translation_preload
 import agentsteers_bridge
 import integration_feed
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
-from tasks import connection, DEFAULT_DB, get_task, task_for_source, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, task_work_plan, save_task_work_plan, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
+from tasks import connection, DEFAULT_DB, get_task, task_for_source, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, task_work_plan, save_task_work_plan, rotate_task_image, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
 ROOT = Path(__file__).resolve().parent
 _TRANSLATION_TIMINGS = {}
@@ -408,6 +408,11 @@ class Handler:
                     user = prefs.effective(db,session['id'],self.gmail_config)
                     return self._json(200,gmail_web.mark_all_read(db,self.gmail_config,session['id'],ids,write=user['gmail_write_read']))
             parts_w = path.strip('/').split('/')
+            if len(parts_w)==8 and parts_w[:4]==['api','connectors','gmail','messages'] and parts_w[5]=='attachments' and parts_w[6].isdigit() and parts_w[7]=='rotate' and self.command == 'POST':
+                if type(data.get('rotation')) is not int or data['rotation'] not in (0,90,180,270): raise RequestError(400,'Rotation must be 0, 90, 180 or 270')
+                with self._db() as db:
+                    if not gmail_web.rotate_attachment(db,session['id'],parts_w[4],int(parts_w[6]),data['rotation']): raise RequestError(404,'Attachment not found')
+                return self._json(200,{'rotation':data['rotation']})
             if len(parts_w) == 6 and parts_w[:4] == ['api','connectors','gmail','messages'] and parts_w[5] == 'read' and self.command == 'POST':
                 if not isinstance(data.get('read'),bool): raise RequestError(400,'"read" must be true or false')
                 with self._db() as db:
@@ -574,6 +579,11 @@ class Handler:
                                                    'due_date':None,'due_time':None,'due_timezone':user['timezone']},session['id'])
                 return self._json(201,{'task':task,'existing':False})
             parts = path.strip('/').split('/')
+            if len(parts)==6 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3]=='images' and parts[4].isdigit() and parts[5]=='rotate' and self.command == 'POST':
+                if data.get('rotation') not in (0,90,180,270) or type(data.get('rotation')) is not int: raise RequestError(400,'Rotation must be 0, 90, 180 or 270')
+                with self._db() as db:
+                    if not rotate_task_image(db,int(parts[2]),int(parts[4]),session['id'],data['rotation']): raise RequestError(404,'Task image not found')
+                return self._json(200,{'rotation':data['rotation']})
             if len(parts)==5 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3:] == ['images','review'] and self.command == 'POST':
                 task_id = int(parts[2])
                 with self._db() as db:

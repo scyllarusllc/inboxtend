@@ -1,6 +1,39 @@
 'use strict';
 // Pieces shared by the task list (/user/tasks) and the single-task page (/user/task/<id>).
 // Callers define refreshTasks(): the list reloads every task, the detail page reloads the one it shows.
+// The server answers once, when the whole review is done, so this bar is an estimate: it fills toward ~95% over
+// the time a review usually takes (about 12 s per image), then jumps to 100% when the answer arrives.
+function reviewProgress(count) {
+  const node = el('div', undefined, 'review-progress');
+  const track = el('div', undefined, 'progress-track');
+  track.setAttribute('role', 'progressbar');
+  track.setAttribute('aria-label', 'Image review progress (estimated)');
+  track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100');
+  const fill = el('div', undefined, 'progress-fill');
+  track.append(fill);
+  const text = el('p', undefined, 'meta');
+  node.append(track, text);
+  const started = Date.now();
+  const expected = Math.max(15, count * 12);
+  const paint = percent => {
+    fill.style.width = percent + '%';
+    track.setAttribute('aria-valuenow', String(Math.round(percent)));
+  };
+  const tick = () => {
+    const seconds = (Date.now() - started) / 1000;
+    paint(95 * (1 - Math.exp(-seconds / (expected / 2))));
+    const stage = seconds < 4 ? 'Sending ' + count + ' image' + (count === 1 ? '' : 's') + ' to the AI…'
+      : seconds < expected ? 'Reading the images and translating the text…' : 'Still working, large images take longer…';
+    text.textContent = stage + ' ' + Math.floor(seconds) + 's · estimate, about ' + expected + 's in total';
+  };
+  tick();
+  const timer = window.setInterval(tick, 500);
+  return {node, finish(ok) {
+    window.clearInterval(timer);
+    if (ok) { paint(100); text.textContent = 'Done in ' + Math.round((Date.now() - started) / 1000) + 's.'; window.setTimeout(() => node.remove(), 1500); }
+    else node.remove();
+  }};
+}
 function taskImageDetails(task) {
   const panel=el('details',undefined,'task-images');
   const heading=document.createElement('summary');
@@ -21,10 +54,7 @@ function taskImageDetails(task) {
           const download=el('a','Download','icon-button');download.href=base+'/download';download.setAttribute('download',file.name);
           row.append(download);
           if(['image/jpeg','image/png','image/gif','image/webp'].includes(file.mime_type) && file.size_bytes<=2*1024*1024) {
-            const image=document.createElement('img');image.className='attachment-image';image.alt='Preview of '+file.name;
-            image.loading='lazy';image.src=base+'/thumbnail';
-            image.addEventListener('error',()=>image.replaceWith(el('p','Preview unavailable.','meta')));
-            row.append(image);
+            row.append(turnableImage(file,base+'/thumbnail',base+'/rotate'));
           }
         } else row.append(el('p','Image was not stored: '+(file.skipped_reason || 'unavailable'),'meta'));
         body.append(row);
@@ -62,14 +92,18 @@ function taskImageDetails(task) {
       showReview(result.review);
       run.addEventListener('click',async()=>{
         run.disabled=true;
-        run.textContent='Translating and explaining images…';
+        const count=result.images.length;
+        const progress=reviewProgress(count);
+        run.after(progress.node);
+        run.replaceChildren(icon('language'),document.createTextNode(' Translating and explaining images…'));
         try {
           const answer=await request('/api/tasks/'+task.id+'/images/review','POST',{});
+          progress.finish(true);
           showReview(answer.review);
           notify('Image review saved with this task.');
-        } catch(error) {notify(error.message,true);}
+        } catch(error) {progress.finish(false);notify(error.message,true);}
         finally {
-          run.replaceChildren(icon('language'),document.createTextNode('Translate and explain all '+result.images.length+' images in Chinese'));
+          run.replaceChildren(icon('language'),document.createTextNode('Translate and explain all '+count+' images in Chinese'));
           run.disabled=false;
         }
       });

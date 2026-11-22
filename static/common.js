@@ -41,7 +41,7 @@ const ICONS = {
   history: 'fa-solid fa-clock-rotate-left', check: 'fa-solid fa-check', 'check-double': 'fa-solid fa-check-double', plus: 'fa-solid fa-plus',
   mail: 'fa-regular fa-envelope', sent: 'fa-solid fa-paper-plane', received: 'fa-solid fa-inbox', paperclip: 'fa-solid fa-paperclip', download: 'fa-solid fa-download',
   eye: 'fa-regular fa-eye', language: 'fa-solid fa-language', sparkles: 'fa-solid fa-wand-magic-sparkles',
-  reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark', play: 'fa-solid fa-play', clock: 'fa-regular fa-clock'
+  reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark', play: 'fa-solid fa-play', 'rotate-left': 'fa-solid fa-rotate-left', 'rotate-right': 'fa-solid fa-rotate-right', clock: 'fa-regular fa-clock'
 };
 // Message text with web addresses made clickable. Only http(s) links, always in a new tab and without handing the page
 // to the destination (noopener) or telling it where you came from (noreferrer). The text itself stays plain text nodes.
@@ -337,11 +337,7 @@ function renderAttachments(message) {
           }
         }).catch(error => { preview.textContent = 'Preview unavailable: ' + error.message; });
       } else if (['image/png','image/jpeg','image/gif','image/webp'].includes(file.mime_type) && file.size_bytes <= 2 * 1024 * 1024) {
-        const image = document.createElement('img');
-        image.className = 'attachment-image'; image.alt = 'Preview of ' + (file.name || 'image attachment');
-        image.loading = 'lazy'; image.src = base + '/thumbnail';
-        image.addEventListener('error', () => image.replaceWith(el('p', 'Image preview unavailable.', 'meta')));
-        row.append(image);
+        row.append(turnableImage(file, base + '/thumbnail', base + '/rotate'));
       }
     } else {
       row.append(el('p', 'Preview unavailable because this file was not saved on the server.', 'meta'));
@@ -350,4 +346,44 @@ function renderAttachments(message) {
   }
   block.append(el('p', 'Only plain text and verified raster images are previewed. Other files are downloads.', 'meta'));
   return block;
+}
+
+// A preview that can be turned in 90-degree steps. The turn is saved with the image, so it is upright next time.
+function turnableImage(file, src, rotateUrl) {
+  const box = el('div', undefined, 'turnable');
+  const canvas = document.createElement('canvas');
+  canvas.className = 'attachment-image';
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Preview of ' + file.name);
+  const source = new Image();
+  let turn = file.rotation || 0;
+  const draw = () => {
+    const sideways = turn % 180 !== 0;
+    const scale = Math.min(1, 900 / Math.max(source.naturalWidth, source.naturalHeight));
+    const w = Math.round(source.naturalWidth * scale), h = Math.round(source.naturalHeight * scale);
+    canvas.width = sideways ? h : w; canvas.height = sideways ? w : h;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(turn * Math.PI / 180);
+    ctx.drawImage(source, -w / 2, -h / 2, w, h);
+  };
+  source.addEventListener('load', draw);
+  source.addEventListener('error', () => box.replaceWith(el('p', 'Preview unavailable.', 'meta')));
+  source.src = src;
+  const bar = el('div', undefined, 'turn-bar');
+  for (const [name, text, step] of [['rotate-left', 'Rotate left', -90], ['rotate-right', 'Rotate right', 90]]) {
+    const button = iconButton(name, text);
+    button.addEventListener('click', async () => {
+      const next = (turn + step + 360) % 360;
+      button.disabled = true;
+      try {
+        await request(rotateUrl, 'POST', {rotation: next});
+        turn = next; file.rotation = next; draw();
+      } catch (error) { notify(error.message, true); }
+      button.disabled = false;
+    });
+    bar.append(button);
+  }
+  box.append(canvas, bar);
+  return box;
 }

@@ -45,6 +45,7 @@ class TaskAttachment(SQLModel, table=True):
     size_bytes: int
     content: bytes | None = None
     skipped_reason: str = ''
+    rotation: int = 0
 
 
 class TaskImageReview(SQLModel, table=True):

@@ -380,6 +380,11 @@
   .ai-list { @apply m-0 list-disc pl-6 text-sm text-slate-700; }
   .ai-draft { @apply m-0 whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-white p-3 font-sans text-sm; }
   .ai-plan > button { @apply w-fit; }
+  .turnable { @apply grid basis-full gap-2; }
+  .turn-bar { @apply flex flex-wrap gap-2; }
+  .review-progress { @apply grid gap-1; }
+  .progress-track { @apply h-3 w-full overflow-hidden rounded-full bg-slate-200; }
+  .progress-fill { @apply h-full w-0 rounded-full bg-indigo-600 transition-[width] duration-500 ease-out; }
   .task-title-link { @apply text-inherit no-underline hover:underline; }
   .task-actions { @apply flex flex-wrap items-center gap-x-4 gap-y-2 sm:pl-10; }
   .task-actions > label { @apply flex items-center gap-2; }

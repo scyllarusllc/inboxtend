@@ -165,9 +165,10 @@ def sync(db, config, user_id, account_id, report=lambda **kw: None):
                 db.execute('''INSERT INTO gmail_messages(user_id,message_id,thread_id,from_addr,subject,date_header,snippet,internal_date,in_inbox,fetched_at,to_addr,cc_addr,label_ids,headers_json,body_text,body_html,size_estimate,peer_email,peer_name,has_full,account_id,in_sent)
                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,message_id) DO UPDATE SET label_ids=excluded.label_ids, in_inbox=excluded.in_inbox,in_sent=excluded.in_sent,body_text=excluded.body_text,body_html=excluded.body_html''',
                   (user_id,mid,thread,from_addr,headers.get('Subject',''),headers.get('Date',''),snippet,stamp,int(kind=='inbox'),int(time.time()),to_addr,headers.get('Cc',''),json.dumps(labels),json.dumps([{'name':k,'value':v} for k,v in headers.items()]),body,html,len(raw),peer,peer_name,1,account_id,int(kind=='sent')))
+                turned = gmail_web.attachment_rotations(db,user_id,mid)
                 db.execute('DELETE FROM gmail_attachments WHERE user_id=? AND message_id=?',(user_id,mid))
                 for n,(filename,mime,size,content) in enumerate(attachments):
-                    db.execute('INSERT INTO gmail_attachments(user_id,message_id,part_id,filename,mime_type,size_bytes,content,skipped_reason) VALUES(?,?,?,?,?,?,?,?)',(user_id,mid,str(n),filename,mime,size,content,'' if content is not None else 'larger than the size limit'))
+                    db.execute('INSERT INTO gmail_attachments(user_id,message_id,part_id,filename,mime_type,size_bytes,content,skipped_reason,rotation) VALUES(?,?,?,?,?,?,?,?,?)',(user_id,mid,str(n),filename,mime,size,content,'' if content is not None else 'larger than the size limit',turned.get(str(n),0)))
                 db.commit()  # Release the writer lock before the next network fetch.
                 done+=1; report(done=done)
             if kind=='inbox':
