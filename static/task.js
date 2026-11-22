@@ -113,12 +113,18 @@ function renderTask(task) {
   check.addEventListener('click', () => { check.disabled = true; changeStatus(task, finished ? 'new' : 'done'); });
   const title = el('h1', task.title);
   head.append(check, title);
-  if (task.priority === 'high' && !finished) { const high = el('span', 'High', 'task-pill'); high.dataset.tone = 'warning'; head.append(high); }
   card.append(head);
 
   const due = el('p', dueText(task), 'task-due');
   due.dataset.state = finished ? 'done' : task.deadline_state;
   card.append(due);
+  const chips = el('div', undefined, 'task-chips');
+  if (task.priority === 'high' && !finished) chips.dataset.tone = 'high';
+  for (const [name, value] of [['Priority', task.priority + ' priority'], ['Owner', task.owner], ['Project', task.project_label], ['Customer', task.customer_label],
+      ['Agent', task.assigned_agent ? task.assigned_agent + ' (' + task.agent_status + ')' : '']]) {
+    if (value) chips.append(el('span', name === 'Priority' ? value : name + ': ' + value, 'task-pill'));
+  }
+  card.append(chips);
   if (task.description) card.append(el('p', task.description, 'task-body'));
 
   // Big buttons: the things a person does with a task, one press each.
@@ -144,37 +150,53 @@ function renderTask(task) {
     actions.append(open);
   }
   const edit = big('pencil', 'Edit');
-  edit.addEventListener('click', () => { const f = document.getElementById('task-edit'); f.scrollIntoView({behavior: 'smooth', block: 'start'}); f.querySelector('input').focus({preventScroll: true}); });
+  edit.addEventListener('click', () => { const f = document.getElementById('task-edit'); f.open = true; f.scrollIntoView({behavior: 'smooth', block: 'start'}); f.querySelector('input').focus({preventScroll: true}); });
   actions.append(edit);
   card.append(actions);
   detailBox.append(card);
-  if (lastPlan) detailBox.append(planPanel(lastPlan, task));
-
-  const facts = el('dl', undefined, 'task-facts');
-  facts.append(
-    fact('Priority', task.priority), fact('Owner', task.owner), fact('Project', task.project_label),
-    fact('Customer', task.customer_label),
-    fact('Deadline', task.due_date ? task.due_date + (task.due_time ? ' ' + task.due_time : '') + ' ' + (task.due_timezone || '') : 'No deadline'),
-    fact('Source', task.source_provider === 'demo' ? 'Demo data' : (task.source_provider || 'Manual')),
-    fact('Created', task.created_at ? new Date(task.created_at).toLocaleString() : ''),
-    fact('Updated', task.updated_at ? new Date(task.updated_at).toLocaleString() : ''));
-  if (task.assigned_agent) facts.append(fact('AI agent', task.assigned_agent + ' (' + task.agent_status + ')'));
-  detailBox.append(section('Details', facts));
-
-  const editBox = section('Edit', makeEditForm(task));
-  editBox.id = 'task-edit';
-  detailBox.append(editBox);
-  const history = taskHistoryDetails(task);
-  history.open = true;
-  detailBox.append(section('History', history));
+  // Two columns on a wide screen: the work (plan, images, edit) on the left, context (email, history) on the right.
+  const columns = el('div', undefined, 'task-columns');
+  const mainCol = el('div', undefined, 'task-main');
+  const side = el('aside', undefined, 'task-side');
+  columns.append(mainCol, side);
+  detailBox.append(columns);
+  if (lastPlan) mainCol.append(planPanel(lastPlan, task));
   if (task.image_count) {
     const images = taskImageDetails(task);
-    detailBox.append(section('Images', images));
+    mainCol.append(section('Images', images));
     images.open = true;
   }
+  const editBox = el('details', undefined, 'panel task-section task-edit');
+  editBox.id = 'task-edit';
+  const editSummary = el('summary', 'Edit task');
+  editBox.append(editSummary, makeEditForm(task));
+  mainCol.append(editBox);
   if (task.agentsteers_job_id || task.assigned_agent || task.agent_status === 'dispatch_error') {
-    detailBox.append(section('AgentSteers mock handoff', makeAgentSteersControls(task)));
+    mainCol.append(section('AgentSteers mock handoff', makeAgentSteersControls(task)));
   }
+  if (task.source_provider === 'gmail' && task.message_id) side.append(emailCard(task));
+  const history = taskHistoryDetails(task);
+  history.open = true;
+  const stamps = el('p', 'Created ' + (task.created_at ? new Date(task.created_at).toLocaleString() : '—') + ' · Updated ' + (task.updated_at ? new Date(task.updated_at).toLocaleString() : '—'), 'meta');
+  side.append(section('History', history, stamps));
+}
+
+// What the task came from: subject, sender and the start of the email. Quiet if the email cannot be loaded.
+let emailContext = null;
+function emailCard(task) {
+  const box = section('From this email');
+  const fill = m => {
+    box.append(el('strong', m.subject || '(No subject)'), el('p', 'From ' + (m.from || 'unknown') + ' · ' + formatWhen(m.internal_date, m.date || ''), 'meta'));
+    const text = (m.body_text || m.snippet || '').replace(/\s+/g, ' ').trim();
+    if (text) box.append(el('p', text.length > 360 ? text.slice(0, 360) + '…' : text, 'email-excerpt'));
+    const more = el('a', 'Read the full email'); more.href = '/user/mail/' + encodeURIComponent(task.message_id); box.append(more);
+  };
+  if (emailContext && emailContext.id === task.message_id) { fill(emailContext); return box; }
+  box.hidden = true;   // Shown only once the email is loaded.
+  request('/api/connectors/gmail/messages/' + encodeURIComponent(task.message_id))
+    .then(result => { emailContext = result.message; fill(emailContext); box.hidden = false; })
+    .catch(() => {});
+  return box;
 }
 
 // Same name as on the list page: the edit form and image tools call it after a change.

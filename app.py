@@ -39,7 +39,7 @@ PAGES = {
     'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', ('/static/login.js',), None, False),
     'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js','/static/vendor/chartjs/chart.umd.min.js','/static/stats.js'), 'inbox', True),
     'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/task-parts.js','/static/tasks.js'), 'tasks', True),
-    'task': ('Task · Inbox Tend', 'One follow-up task: details, deadline, history and images.', ('/static/common.js','/static/task-parts.js','/static/task.js'), 'tasks', True),
+    'task': ('Task · Inbox Tend', 'One follow-up task: details, deadline, history and images.', ('/static/common.js','/static/task-parts.js','/static/task.js','/static/zh.js'), 'tasks', True),
     'mail': ('Email · Inbox Tend', 'Read one email with its conversation, attachments and task.', ('/static/common.js','/static/mail.js'), 'inbox', True),
     'settings': ('Settings · Inbox Tend', 'Timezone, display, mail sync and account settings.', ('/static/common.js','/static/settings.js'), 'settings', True),
     'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), None, False),
@@ -47,7 +47,7 @@ PAGES = {
 VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.js':'text/javascript','.svg':'image/svg+xml'}
 SCREEN_TYPES = {'.jpg':'image/jpeg','.png':'image/png'}   # Screenshots of the demo data, shown on the public home page
 STATIC_FILES = {'/static/icons/favicon.svg':'image/svg+xml','/static/icons/favicon-32.png':'image/png','/static/icons/apple-touch-icon.png':'image/png',
-                '/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/task-parts.js':'text/javascript','/static/task.js':'text/javascript','/static/mail.js':'text/javascript','/static/stats.js':'text/javascript',
+                '/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/task-parts.js':'text/javascript','/static/task.js':'text/javascript','/static/zh.js':'text/javascript','/static/mail.js':'text/javascript','/static/stats.js':'text/javascript',
                 '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript',
                 '/static/dev-reload.js':'text/javascript','/static/stimulus-app.js':'text/javascript'}
 

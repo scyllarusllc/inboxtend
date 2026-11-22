@@ -385,6 +385,19 @@
   .review-progress { @apply grid gap-1; }
   .progress-track { @apply h-3 w-full overflow-hidden rounded-full bg-slate-200; }
   .progress-fill { @apply h-full w-0 rounded-full bg-indigo-600 transition-[width] duration-500 ease-out; }
+  .task-chips { @apply flex flex-wrap gap-2 sm:pl-10; }
+  .task-columns { @apply grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_21rem]; }
+  .task-main, .task-side { @apply grid min-w-0 gap-4; }
+  .task-edit > summary { @apply cursor-pointer text-sm font-bold uppercase tracking-wider text-slate-500; }
+  .task-edit[open] > summary { @apply mb-3; }
+  .email-excerpt { @apply m-0 text-sm text-slate-600; }
+  .task-side ol { @apply m-0 grid list-none gap-3 p-0; }
+  .task-side ol li { @apply grid gap-0.5; }
+  .zh { @apply ml-2 text-[0.8em] font-normal opacity-80; }
+  .big-action .zh, .task-pill .zh { @apply ml-1; }
+  h1 .zh, h2 .zh { @apply block ml-0 text-sm font-medium normal-case tracking-normal; }
+  .task-hero h1 .zh { @apply sm:ml-0; }
+  .meta .zh { @apply block ml-0; }
   .task-title-link { @apply text-inherit no-underline hover:underline; }
   .task-actions { @apply flex flex-wrap items-center gap-x-4 gap-y-2 sm:pl-10; }
   .task-actions > label { @apply flex items-center gap-2; }

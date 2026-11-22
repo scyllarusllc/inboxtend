@@ -282,6 +282,25 @@ function dueText(task) {
   return 'Due in ' + days + ' days · ' + task.due_date;
 }
 
+// "updated {status: waiting}" becomes "Status changed to waiting".
+const EVENT_FIELDS = {status: 'Status', owner: 'Owner', priority: 'Priority', title: 'Title', description: 'Description', due_date: 'Due date',
+  due_time: 'Due time', due_timezone: 'Timezone', project_label: 'Project', customer_label: 'Customer', assigned_agent: 'AI agent'};
+function describeEvent(action, changes) {
+  if (action === 'created') return 'Task created';
+  if (action === 'ai_plan_saved') return 'AI plan saved';
+  if (action === 'images_reviewed') return 'Images translated and explained';
+  if (action === 'updated' && changes && typeof changes === 'object' && !Array.isArray(changes)) {
+    const parts = Object.entries(changes).map(([key, value]) => {
+      const label = EVENT_FIELDS[key] || key.replaceAll('_', ' ');
+      if (value === null || value === '') return label + ' cleared';
+      if (key === 'description') return label + ' edited';
+      return label + ' → ' + String(value).replaceAll('_', ' ');
+    });
+    if (parts.length) return parts.join(' · ');
+  }
+  return action.replaceAll('_', ' ');
+}
+
 function taskHistoryDetails(task) {
   const history = el('details');
   const historySummary = document.createElement('summary'); historySummary.append(icon('history'), document.createTextNode(' History'));
@@ -302,12 +321,11 @@ function taskHistoryDetails(task) {
         const timestamp = new Date(event.created_at);
         const when = Number.isNaN(timestamp.getTime()) ? event.created_at : timestamp.toLocaleString();
         const isMock = event.action === 'agent_status_updated' && changes && typeof changes === 'object' && !Array.isArray(changes);
-        const line = el('li', (isMock ? (mockStates[changes.status] || 'AgentSteers mock status updated') : event.action.replaceAll('_', ' ')) + ' · ' + when);
+        const line = el('li');
+        line.append(el('strong', isMock ? (mockStates[changes.status] || 'AgentSteers mock status updated') : describeEvent(event.action, changes)), el('span', when, 'meta'));
         if (isMock) {
           if (changes.task_id) line.append(el('div', 'Mock job ID: ' + changes.task_id, 'meta'));
           line.append(el('div', 'Simulation only; no real AI worker execution is implied.', 'meta'));
-        } else if (changes !== null && changes !== undefined) {
-          line.append(el('div', typeof changes === 'string' ? changes : JSON.stringify(changes), 'meta'));
         }
         ordered.append(line);
       }
