@@ -27,7 +27,7 @@ import translation_preload
 import agentsteers_bridge
 import integration_feed
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
-from tasks import connection, DEFAULT_DB, get_task, task_for_source, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, task_work_plan, save_task_work_plan, rotate_task_image, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
+from tasks import connection, DEFAULT_DB, get_task, task_for_source, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, task_work_plan, save_task_work_plan, rotate_task_image, task_image_review, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
 ROOT = Path(__file__).resolve().parent
 _TRANSLATION_TIMINGS = {}
@@ -589,6 +589,8 @@ class Handler:
                 with self._db() as db:
                     task = get_task(db,task_id,user_id=session['id'])
                     if not task: raise RequestError(404,'Task not found')
+                    kept = task_image_review(db,task_id,session['id'])
+                    if kept and data.get('refresh') is not True: return self._json(200,{'review':kept})   # Done before: no second AI run unless asked.
                     user = prefs.effective(db,session['id'],self.gmail_config)
                     if not user['ai_enabled']: raise RequestError(403,'The AI assistant is turned off in Settings')
                     files = task_images(db,task_id,session['id'])

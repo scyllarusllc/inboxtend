@@ -60,15 +60,17 @@ function taskImageDetails(task) {
         body.append(row);
       }
       const reviewBox=el('div',undefined,'task-image-review');
-      const run=iconButton('language','Translate and explain all '+result.images.length+' images in Chinese');
-      body.prepend(run);
-      body.append(reviewBox);
+      let saved=result.review;   // The saved answer lives in the database: it is shown on every visit, no new AI run needed.
+      const count=result.images.length;
+      const runLabel=()=>saved?'Translate again (replaces the saved result)':'Translate and explain all '+count+' images in Chinese';
+      const run=iconButton('language',runLabel());
+      body.prepend(reviewBox);body.prepend(run);
       const showReview=review=>{
         reviewBox.replaceChildren();
         if(!review)return;
         const section=el('section',undefined,'image-review');
         section.append(el('h4','Chinese translation and image interpretation'),
-          el('p',review.provider+' · '+review.model+' · AI guesses may be wrong; check the images.','meta'));
+          el('p','Saved '+(review.created_at?new Date(review.created_at).toLocaleString():'')+' · '+review.provider+' · '+review.model+' · AI guesses may be wrong; check the images.','meta'));
         for(const item of review.images) {
           const part=el('div',undefined,'image-review-item');
           part.append(el('strong',item.number+'. '+item.name),
@@ -89,21 +91,20 @@ function taskImageDetails(task) {
         });
         section.append(apply);reviewBox.append(section);
       };
-      showReview(result.review);
+      showReview(saved);
       run.addEventListener('click',async()=>{
         run.disabled=true;
-        const count=result.images.length;
         const progress=reviewProgress(count);
         run.after(progress.node);
         run.replaceChildren(icon('language'),document.createTextNode(' Translating and explaining images…'));
         try {
-          const answer=await request('/api/tasks/'+task.id+'/images/review','POST',{});
+          const answer=await request('/api/tasks/'+task.id+'/images/review','POST',{refresh:true});
           progress.finish(true);
-          showReview(answer.review);
+          saved=answer.review;showReview(saved);
           notify('Image review saved with this task.');
         } catch(error) {progress.finish(false);notify(error.message,true);}
         finally {
-          run.replaceChildren(icon('language'),document.createTextNode('Translate and explain all '+count+' images in Chinese'));
+          run.replaceChildren(icon('language'),document.createTextNode(runLabel()));
           run.disabled=false;
         }
       });
