@@ -36,9 +36,20 @@ async function startWorking(task, button, refresh = false) {
   }
 }
 
+// Plan text comes as {en, zh} (older saved plans: a plain string). English first, Chinese right under it.
+function biNode(tag, value, cls) {
+  const node = el(tag, undefined, cls);
+  if (value && typeof value === 'object') {
+    node.append(document.createTextNode(value.en || value.zh || ''));
+    if (value.en && value.zh) { const zh = el('span', value.zh, 'zh-line'); zh.lang = 'zh'; node.append(zh); }
+  } else node.textContent = value || '';
+  return node;
+}
+const hasText = value => value && (typeof value === 'object' ? (value.en || value.zh) : value);
+
 function planList(tag, items, cls) {
   const list = el(tag, undefined, cls);
-  for (const item of items) list.append(el('li', item));
+  for (const item of items) list.append(biNode('li', item));
   return list;
 }
 
@@ -51,15 +62,15 @@ function planPanel(plan, task) {
     el('span', p.confidence + ' confidence', 'task-pill'));
   box.append(head, el('p', 'Saved ' + new Date(plan.created_at).toLocaleString() + ' · ' + plan.provider + ' · ' + plan.model + ' · A guess, not a fact: check it against the email.' +
     (plan.email_used ? '' : ' ' + (plan.note || 'Based on the task text only.')), 'meta'));
-  if (p.summary) box.append(el('p', p.summary, 'ai-summary'));
-  if (p.approach) box.append(el('p', p.approach));
+  if (hasText(p.summary)) box.append(biNode('p', p.summary, 'ai-summary'));
+  if (hasText(p.approach)) box.append(biNode('p', p.approach));
   if (p.steps.length) {
     box.append(el('h3', 'Steps'));
     const steps = el('ol', undefined, 'ai-steps');
     for (const step of p.steps) {
       const li = el('li');
-      li.append(el('strong', step.title));
-      if (step.detail) li.append(el('span', step.detail, 'meta'));
+      li.append(biNode('strong', step.title));
+      if (hasText(step.detail)) li.append(biNode('span', step.detail, 'meta'));
       steps.append(li);
     }
     box.append(steps);
@@ -69,6 +80,7 @@ function planPanel(plan, task) {
   if (p.reply_draft) {
     box.append(el('h3', 'Reply draft (not sent)'));
     box.append(el('pre', p.reply_draft, 'ai-draft'));
+    if (p.reply_draft_zh) { const zh = el('pre', p.reply_draft_zh, 'ai-draft ai-draft-zh'); zh.lang = 'zh'; box.append(zh); }
     const copy = iconButton('copy', 'Copy the draft');
     copy.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(p.reply_draft); notify('Draft copied.'); } catch (_) { notify('Copy failed; select the text instead.', true); }
