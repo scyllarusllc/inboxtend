@@ -36,21 +36,28 @@ async function startWorking(task, button, refresh = false) {
   }
 }
 
-// Plan text comes as {en, zh} (older saved plans: a plain string). English first, Chinese right under it.
-function biNode(tag, value, cls) {
-  const node = el(tag, undefined, cls);
-  if (value && typeof value === 'object') {
-    node.append(document.createTextNode(value.en || value.zh || ''));
-    if (value.en && value.zh) { const zh = el('span', value.zh, 'zh-line'); zh.lang = 'zh'; node.append(zh); }
-  } else node.textContent = value || '';
-  return node;
-}
+// Plan text comes as {en, zh} (older saved plans: a plain string). English on the left, Chinese on the right
+// (one above the other on a narrow screen).
 const hasText = value => value && (typeof value === 'object' ? (value.en || value.zh) : value);
+const enOf = value => (value && typeof value === 'object') ? (value.en || '') : (value || '');
+const zhOf = value => (value && typeof value === 'object') ? (value.zh || '') : '';
 
-function planList(tag, items, cls) {
-  const list = el(tag, undefined, cls);
-  for (const item of items) list.append(biNode('li', item));
-  return list;
+// One row: the English node and the Chinese node side by side.
+function biRow(enNode, zhNode, cls) {
+  const row = el('div', undefined, 'bi-row' + (cls ? ' ' + cls : ''));
+  const left = el('div', undefined, 'bi-en'); left.append(...enNode);
+  row.append(left);
+  if (zhNode.length) { const right = el('div', undefined, 'bi-zh'); right.lang = 'zh'; right.append(...zhNode); row.append(right); }
+  else row.classList.add('bi-single');
+  return row;
+}
+// A paragraph-like row from one {en, zh} value; `prefix` (a number or bullet) goes in front of both sides.
+function biLine(value, cls, prefix = '') {
+  const side = text => text ? [el('p', prefix + text, cls)] : [];
+  return biRow(side(enOf(value)), side(zhOf(value)));
+}
+function biHeading(en, withChinese = true) {
+  return biRow([el('h3', en)], withChinese && ZH[en] ? [el('h3', ZH[en])] : [], 'bi-heading');
 }
 
 function planPanel(plan, task) {
@@ -62,25 +69,37 @@ function planPanel(plan, task) {
     el('span', p.confidence + ' confidence', 'task-pill'));
   box.append(head, el('p', 'Saved ' + new Date(plan.created_at).toLocaleString() + ' · ' + plan.provider + ' · ' + plan.model + ' · A guess, not a fact: check it against the email.' +
     (plan.email_used ? '' : ' ' + (plan.note || 'Based on the task text only.')), 'meta'));
-  if (hasText(p.summary)) box.append(biNode('p', p.summary, 'ai-summary'));
-  if (hasText(p.approach)) box.append(biNode('p', p.approach));
+  const body = el('div', undefined, 'bi-grid');
+  const bilingualPlan = [p.summary, p.approach].some(v => zhOf(v));   // Older saved plans have English only: no right-hand column.
+  if (bilingualPlan) body.append(biRow([el('h3', 'English')], [el('h3', '中文')], 'bi-heading bi-columns'));
+  if (hasText(p.summary)) body.append(biLine(p.summary, 'ai-summary'));
+  if (hasText(p.approach)) body.append(biLine(p.approach));
   if (p.steps.length) {
-    box.append(el('h3', 'Steps'));
-    const steps = el('ol', undefined, 'ai-steps');
-    for (const step of p.steps) {
-      const li = el('li');
-      li.append(biNode('strong', step.title));
-      if (hasText(step.detail)) li.append(biNode('span', step.detail, 'meta'));
-      steps.append(li);
-    }
-    box.append(steps);
+    body.append(biHeading('Steps', bilingualPlan));
+    p.steps.forEach((step, index) => {
+      const side = pick => {
+        const title = pick(step.title), detail = pick(step.detail);
+        const nodes = [];
+        if (title) nodes.push(el('strong', (index + 1) + '. ' + title, 'ai-step-title'));
+        if (detail) nodes.push(el('span', detail, 'meta'));
+        if (!nodes.length) return [];
+        const wrap = el('div', undefined, 'ai-step'); wrap.append(...nodes);
+        return [wrap];
+      };
+      body.append(biRow(side(enOf), side(zhOf)));
+    });
   }
-  if (p.questions.length) box.append(el('h3', 'Confirm first'), planList('ul', p.questions, 'ai-list'));
-  if (p.risks.length) box.append(el('h3', 'Watch out for'), planList('ul', p.risks, 'ai-list'));
+  for (const [heading, items] of [['Confirm first', p.questions], ['Watch out for', p.risks]]) {
+    if (!items.length) continue;
+    body.append(biHeading(heading, bilingualPlan));
+    for (const item of items) body.append(biLine(item, 'ai-item', '• '));
+  }
   if (p.reply_draft) {
-    box.append(el('h3', 'Reply draft (not sent)'));
-    box.append(el('pre', p.reply_draft, 'ai-draft'));
-    if (p.reply_draft_zh) { const zh = el('pre', p.reply_draft_zh, 'ai-draft ai-draft-zh'); zh.lang = 'zh'; box.append(zh); }
+    body.append(biHeading('Reply draft (not sent)', bilingualPlan));
+    body.append(biRow([el('pre', p.reply_draft, 'ai-draft')], p.reply_draft_zh ? [el('pre', p.reply_draft_zh, 'ai-draft ai-draft-zh')] : []));
+  }
+  box.append(body);
+  if (p.reply_draft) {
     const copy = iconButton('copy', 'Copy the draft');
     copy.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(p.reply_draft); notify('Draft copied.'); } catch (_) { notify('Copy failed; select the text instead.', true); }

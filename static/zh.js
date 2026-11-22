@@ -64,7 +64,7 @@ function bilingual(root) {
   const found = [];
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const parent = node.parentElement;
-    if (!parent || ZH_SKIP.test(parent.tagName) || parent.classList.contains('zh') || parent.closest('.message-body, .ai-draft, .task-body, .email-excerpt, .image-review-item')) continue;
+    if (!parent || ZH_SKIP.test(parent.tagName) || parent.classList.contains('zh') || parent.closest('.message-body, .bi-row, .ai-draft, .task-body, .email-excerpt, .image-review-item')) continue;
     const text = node.nodeValue.trim();
     if (!text) continue;
     const next = node.nextSibling;

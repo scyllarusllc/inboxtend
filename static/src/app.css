@@ -398,8 +398,18 @@
   h1 .zh, h2 .zh { @apply block ml-0 text-sm font-medium normal-case tracking-normal; }
   .task-hero h1 .zh { @apply sm:ml-0; }
   .meta .zh { @apply block ml-0; }
-  .zh-line { @apply mt-0.5 block text-[0.92em] font-normal text-slate-600; }
   .ai-draft-zh { @apply bg-slate-50 text-slate-600; }
+  .bi-grid { @apply grid gap-3; }
+  .bi-row { @apply grid gap-1 md:grid-cols-2 md:gap-6; }
+  .bi-row.bi-single { @apply md:grid-cols-1; }
+  .bi-row p, .bi-row h3 { @apply m-0; }
+  .bi-zh { @apply border-l-2 border-indigo-200 pl-3 text-slate-700 md:border-l-2; }
+  .bi-heading { @apply mt-1; }
+  .bi-heading h3 { @apply text-xs font-bold uppercase tracking-wider text-slate-500; }
+  .bi-columns { @apply border-b border-indigo-100 pb-1; }
+  .ai-step { @apply grid gap-0.5; }
+  .ai-step-title { @apply text-slate-900; }
+  .ai-item { @apply text-sm text-slate-700; }
   .task-title-link { @apply text-inherit no-underline hover:underline; }
   .task-actions { @apply flex flex-wrap items-center gap-x-4 gap-y-2 sm:pl-10; }
   .task-actions > label { @apply flex items-center gap-2; }
