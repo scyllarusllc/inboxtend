@@ -397,6 +397,10 @@
   .task-edit[open] > summary { @apply mb-3; }
   .email-excerpt { @apply m-0 text-sm text-slate-600; }
   .project-actions { @apply flex flex-wrap gap-3; }
+  .project-previews { @apply grid gap-3 pt-3; }
+  .project-previews[hidden] { display: none; }
+  .project-previews > h3 { @apply m-0 text-sm font-bold uppercase tracking-wider text-slate-500; }
+  .project-attachment { @apply min-w-0; }
   .task-project { @apply grid gap-2 border-t border-slate-200 pt-4 sm:ml-10; }
   .task-project > h2 { @apply m-0 text-sm font-bold uppercase tracking-wider text-slate-500; }
   .task-project > p { @apply m-0; }

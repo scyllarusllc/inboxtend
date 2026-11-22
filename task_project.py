@@ -58,7 +58,7 @@ def export_task(db_path, user_id: int, task_id: int):
                         name = f'{index:04d}-{_safe_name(row["filename"])}'
                         while name in used: name = f'{index:04d}-copy-{name}'
                         used.add(name)
-                        item = {'message_id': mail['message_id'], 'name': row['filename'], 'file': name if row['content'] is not None else None,
+                        item = {'message_id': mail['message_id'], 'name': row['filename'], 'mime_type': row['mime_type'], 'file': name if row['content'] is not None else None,
                                 'size_bytes': row['size_bytes'], 'skipped_reason': row['skipped_reason'] if row['content'] is None else ''}
                         manifest.append(item)
                         if row['content'] is not None:
@@ -73,7 +73,7 @@ def export_task(db_path, user_id: int, task_id: int):
                     name = f'task-{_safe_name(row["filename"])}'
                     while name in used: name = 'copy-' + name
                     used.add(name)
-                    manifest.append({'message_id': task['message_id'], 'name': row['filename'], 'file': name if row['content'] is not None else None,
+                    manifest.append({'message_id': task['message_id'], 'name': row['filename'], 'mime_type': row['mime_type'], 'file': name if row['content'] is not None else None,
                                      'size_bytes': row['size_bytes'], 'skipped_reason': row['skipped_reason'] if row['content'] is None else ''})
                     if row['content'] is not None:
                         (files / name).write_bytes(bytes(row['content']))

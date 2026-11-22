@@ -279,22 +279,70 @@ function projectCard(task) {
   }
   const create = iconButton('folder', 'Create as project');
   const download = iconButton('download', 'Download all attachments');
+  const preview = iconButton('eye', 'Preview all attachments');
+  preview.setAttribute('aria-expanded', 'false');
   const status = el('p', '', 'meta');
+  const previews = el('div', undefined, 'project-previews');
+  previews.hidden = true;
   const exportNow = async button => {
-    create.disabled = download.disabled = true;
+    create.disabled = download.disabled = preview.disabled = true;
     status.textContent = 'Preparing task project and attachments…';
     try {
       const result = (await request('/api/tasks/' + task.id + '/project', 'POST', {})).project;
       status.textContent = 'Saved to ' + result.path + ' · ' + result.emails + ' emails · ' + result.attachments + ' attachments' +
         (result.unavailable ? ' · ' + result.unavailable + ' unavailable in the local cache' : '') + '.';
       if (button === download) location.assign('/api/tasks/' + task.id + '/attachments.zip');
+      if (button === preview) {
+        const data = await request('/api/tasks/' + task.id + '/project/attachments');
+        previews.replaceChildren();
+        previews.append(el('h3', 'Attachments (' + data.attachments.length + ')'));
+        if (!data.attachments.length) previews.append(el('p', 'No saved attachments for this task.', 'meta'));
+        for (const file of data.attachments) {
+          const row = el('div', undefined, 'attachment-row project-attachment');
+          const heading = el('div', undefined, 'attachment-meta');
+          heading.append(el('strong', file.name || 'Unnamed attachment'),
+            el('span', (file.size_bytes / 1048576).toFixed(1) + ' MB · ' + (file.mime_type || 'File'), 'meta'));
+          row.append(heading);
+          if (file.kind === 'missing') row.append(el('p', 'Not stored locally: ' + (file.skipped_reason || 'unavailable'), 'meta'));
+          else {
+            const base = '/api/tasks/' + task.id + '/project/attachments/' + file.id;
+            const link = el('a', 'Download', 'icon-button');
+            link.href = base + '/download';
+            link.setAttribute('download', file.name);
+            row.append(link);
+            if (file.kind === 'image') {
+              const img = el('img', undefined, 'attachment-image');
+              img.src = base + '/preview';
+              img.alt = 'Preview of ' + file.name;
+              img.loading = 'lazy';
+              row.append(img);
+            } else if (file.kind === 'text') {
+              const text = el('pre', 'Loading text preview…', 'attachment-preview');
+              row.append(text);
+              request(base + '/preview').then(data => { text.textContent = data.content + (data.truncated ? '\n…' : ''); })
+                .catch(error => { text.textContent = 'Preview unavailable: ' + error.message; });
+            }
+          }
+          previews.append(row);
+        }
+        previews.hidden = false;
+        preview.setAttribute('aria-expanded', 'true');
+        preview.replaceChildren(icon('eye'), document.createTextNode(' Hide attachment previews'));
+      }
     } catch (error) { status.textContent = error.message; notify(error.message, true); }
-    finally { create.disabled = download.disabled = false; }
+    finally { create.disabled = download.disabled = preview.disabled = false; }
   };
   create.addEventListener('click', () => exportNow(create));
   download.addEventListener('click', () => exportNow(download));
-  actions.append(create, download);
-  box.append(actions, status);
+  preview.addEventListener('click', () => {
+    if (!previews.hidden) {
+      previews.hidden = true;
+      preview.setAttribute('aria-expanded', 'false');
+      preview.replaceChildren(icon('eye'), document.createTextNode(' Preview all attachments'));
+    } else exportNow(preview);
+  });
+  actions.append(create, download, preview);
+  box.append(actions, status, previews);
   if (lastPlan) {
     const ready = el('div', undefined, 'review-progress ai-work-progress is-complete');
     const track = el('div', undefined, 'progress-track');

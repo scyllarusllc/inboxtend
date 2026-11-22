@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -157,6 +158,65 @@ def download_all_attachments(request: Request, task_id: int, user=Depends(curren
     if not archive.is_file(): raise HTTPException(404, 'Create the task project first')
     return FileResponse(archive, media_type='application/zip', filename=f'task-{task_id}-attachments.zip',
                         headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+def _project_attachment(request: Request, task_id: int, user_id: int, attachment_id: int | None = None):
+    path = getattr(request.app.state, 'db_path', DEFAULT_DB)
+    with model_session(path) as db:
+        exists = db.exec(select(Task.id).where(Task.id == task_id, Task.user_id == user_id)).first()
+    if exists is None: raise HTTPException(404, 'Task not found')
+    folder = project_path(task_id)
+    if folder.is_symlink(): raise HTTPException(404, 'Project unavailable')
+    try: manifest = json.loads((folder / 'manifest.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError): raise HTTPException(404, 'Create the task project first') from None
+    if not isinstance(manifest, list): raise HTTPException(404, 'Project manifest unavailable')
+    if attachment_id is None: return manifest, None
+    if not 0 <= attachment_id < len(manifest): raise HTTPException(404, 'Attachment not found')
+    item = manifest[attachment_id]
+    if not isinstance(item, dict): raise HTTPException(404, 'Attachment not found')
+    filename = item.get('file')
+    if not isinstance(filename, str) or not filename or Path(filename).name != filename:
+        raise HTTPException(404, 'Attachment is not stored')
+    attachments_dir = folder / 'attachments'
+    file = attachments_dir / filename
+    if attachments_dir.is_symlink() or file.is_symlink() or not file.is_file() or not file.resolve().is_relative_to(folder.resolve()):
+        raise HTTPException(404, 'Attachment is not stored')
+    return item, file
+
+
+@router.get('/{task_id:int}/project/attachments')
+def project_attachments(request: Request, task_id: int, user=Depends(current_user)):
+    manifest, _ = _project_attachment(request, task_id, user['id'])
+    items = []
+    for index, item in enumerate(manifest):
+        if not isinstance(item, dict): continue
+        mime = item.get('mime_type', '')
+        size = item.get('size_bytes', 0)
+        kind = 'missing'
+        if item.get('file'):
+            kind = 'image' if mime in ('image/jpeg', 'image/png', 'image/gif', 'image/webp') and size <= 2 * 1024 * 1024 else (
+                'text' if mime in ('text/plain', 'text/csv') or str(item.get('name', '')).lower().endswith(('.txt', '.csv', '.md')) else 'download')
+        items.append({'id': index, 'name': item.get('name', ''), 'mime_type': mime, 'size_bytes': size,
+                      'kind': kind, 'message_id': item.get('message_id', ''),
+                      'skipped_reason': item.get('skipped_reason', '')})
+    return json_result({'attachments': items})
+
+
+@router.get('/{task_id:int}/project/attachments/{attachment_id:int}/{action}')
+def project_attachment_file(request: Request, task_id: int, attachment_id: int, action: str, user=Depends(current_user)):
+    if action not in ('preview', 'download'): raise HTTPException(404, 'Not found')
+    item, file = _project_attachment(request, task_id, user['id'], attachment_id)
+    headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer'}
+    if action == 'download':
+        return FileResponse(file, media_type='application/octet-stream', filename=str(item.get('name') or file.name), headers=headers)
+    if file.stat().st_size > 2 * 1024 * 1024: raise HTTPException(415, 'Preview is limited to 2 MiB')
+    content = file.read_bytes()
+    mime = raster_preview_mime(item.get('mime_type', ''), content)
+    if mime:
+        return Response(content, media_type=mime, headers={**headers, 'Content-Disposition': 'inline'})
+    if item.get('mime_type') in ('text/plain', 'text/csv') or str(item.get('name', '')).lower().endswith(('.txt', '.csv', '.md')):
+        return json_result({'content': content[:65536].decode('utf-8', 'replace'), 'truncated': len(content) > 65536})
+    raise HTTPException(415, 'Preview unavailable for this file type')
 
 
 @router.get('/{task_id:int}/plan')

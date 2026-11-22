@@ -101,18 +101,25 @@ class StackTests(unittest.TestCase):
                 self.assertEqual(data['messages'][1]['direction'], 'sent')
                 self.assertTrue(data['messages'][2]['is_source'])
                 with connection(path) as db:
-                    db.execute("INSERT INTO gmail_attachments(user_id,message_id,filename,mime_type,size_bytes,content) VALUES(1,'source','image.jpg','image/jpeg',3,?)", (b'abc',))
+                    db.execute("INSERT INTO gmail_attachments(user_id,message_id,filename,mime_type,size_bytes,content) VALUES(1,'source','note.txt','text/plain',3,?)", (b'abc',))
+                    db.execute("INSERT INTO gmail_attachments(user_id,message_id,filename,mime_type,size_bytes,content) VALUES(1,'source','image.jpg','image/jpeg',6,?)", (b'\xff\xd8\xffabc',))
                     db.commit()
                 with tempfile.TemporaryDirectory() as projects, patch.dict(os.environ, {'INBOX_TEND_TASKS_DIR': projects}):
                     self.assertEqual(client.post(f"/api/tasks/{created['id']}/project", headers=headers).status_code, 403)
                     self.assertEqual(client.post(f"/api/tasks/{created['id']}/project", headers={**headers, 'X-CSRF-Token': 'csrf', 'Origin': 'https://evil.example.org'}).status_code, 403)
                     exported = client.post(f"/api/tasks/{created['id']}/project", headers={**headers, 'X-CSRF-Token': 'csrf', 'Origin': 'https://mail.example.org'})
                     self.assertEqual(exported.status_code, 200)
-                    self.assertEqual(exported.json()['project']['attachments'], 1)
+                    self.assertEqual(exported.json()['project']['attachments'], 2)
                     archive = client.get(f"/api/tasks/{created['id']}/attachments.zip", headers=headers)
                     self.assertEqual(archive.status_code, 200)
                     with zipfile.ZipFile(BytesIO(archive.content)) as bundle:
                         self.assertEqual(bundle.read(bundle.namelist()[0]), b'abc')
+                    listing = client.get(f"/api/tasks/{created['id']}/project/attachments", headers=headers).json()['attachments']
+                    self.assertEqual([item['kind'] for item in listing], ['text', 'image'])
+                    self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/0/preview", headers=headers).json()['content'], 'abc')
+                    self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/1/preview", headers=headers).content, b'\xff\xd8\xffabc')
+                    self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/1/download", headers=headers).content, b'\xff\xd8\xffabc')
+                    self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/2/preview", headers=headers).status_code, 404)
                     project = read_project(created['id'])
                     self.assertIn('3 saved emails', project['text'])
                     self.assertIn('image.jpg', project['text'])
