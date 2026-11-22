@@ -37,7 +37,7 @@
       </div>
     </section>
 
-    <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
+    <div id="notice" class="notice-banner app-toast" role="status" aria-live="polite"></div>
 
     <section id="inbox-workspace" class="workspace-section" aria-labelledby="inbox-heading">
       <h2 id="inbox-heading" class="sr-only">Gmail</h2>
@@ -51,7 +51,7 @@
       <div id="inbox-grid" class="workspace-grid">
         <section class="panel inbox-panel" aria-labelledby="messages-heading">
           <div class="panel-heading"><h3 id="messages-heading"><i class="fa-regular fa-envelope text-indigo-500" aria-hidden="true"></i>Mail</h3><div class="folder-tabs" role="group" aria-label="Folder"><button id="folder-inbox" type="button" aria-pressed="true">Inbox</button><button id="folder-sent" type="button" aria-pressed="false">Sent</button></div></div>
-          <div class="folder-tabs view-tabs mb-4" role="group" aria-label="Group mail by"><button id="view-threads" type="button" aria-pressed="true" title="One row per conversation">Conversations</button><button id="view-messages" type="button" aria-pressed="false" title="One row per message">Messages</button><button id="view-people" type="button" aria-pressed="false" title="One row per person you correspond with: the sender of mail you received, the recipient of mail you sent">People</button></div>
+          <div class="folder-tabs view-tabs mb-4" role="group" aria-label="Group mail by"><button id="view-people" type="button" aria-pressed="true" title="One row per person you correspond with: the sender of mail you received, the recipient of mail you sent">People</button><button id="view-threads" type="button" aria-pressed="false" title="One row per conversation">Conversations</button><button id="view-messages" type="button" aria-pressed="false" title="One row per message">Messages</button></div>
           <label id="account-filter-label" class="account-filter" hidden><span class="sr-only">Show mail from</span><select id="account-filter" aria-label="Show mail from"></select></label>
           <div class="search-box">
             <div class="relative"><i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true"></i><input id="mail-search" class="pl-9" type="search" placeholder="Search mail…" aria-label="Search mail" maxlength="200" autocomplete="off" spellcheck="false" title="Words match subject, people and text. Operators: from:  to:  subject:&quot;a phrase&quot;  is:unread  has:attachment. Press / to search."></div>
@@ -65,6 +65,7 @@
           <div class="panel-heading"><h3 id="review-heading"><i class="fa-regular fa-envelope-open text-indigo-500" aria-hidden="true"></i>Message review</h3><span class="panel-caption"><a id="message-website-link" target="_blank" rel="noopener noreferrer" class="underline mr-2" hidden>Likely official website ↗</a><span id="review-caption">Nothing is sent automatically</span></span></div>
           <div id="detail" class="text-sm text-slate-500">Choose a message to see its details.</div>
           <div id="draft"></div>
+          <div id="related-messages"></div>
         </section>
         <section id="translation-panel" class="panel translation-panel" aria-labelledby="translation-heading" hidden>
           <div class="panel-heading"><h3 id="translation-heading"><i class="fa-solid fa-language text-indigo-500" aria-hidden="true"></i>Translation</h3><span id="translation-caption" class="panel-caption"></span></div>

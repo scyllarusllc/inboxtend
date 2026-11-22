@@ -35,12 +35,13 @@
       </div>
     </section>
 
-    <div id="notice" class="notice-banner" role="status" aria-live="polite"></div>
+    <div id="notice" class="notice-banner app-toast" role="status" aria-live="polite"></div>
 
     <div class="grid items-start gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
       <nav class="min-w-0 lg:sticky lg:top-24" aria-label="Settings sections">
         <ul class="flex gap-1 overflow-x-auto lg:flex-col">
           <li><a class="nav-link" href="#gmail"><i class="fa-solid fa-plug fa-fw" aria-hidden="true"></i><span>Gmail accounts</span></a></li>
+          <li><a class="nav-link" href="#imap"><i class="fa-solid fa-envelope fa-fw" aria-hidden="true"></i><span>IMAP accounts</span></a></li>
           <li><a class="nav-link" href="#time"><i class="fa-regular fa-clock fa-fw" aria-hidden="true"></i><span>Time and tasks</span></a></li>
           <li><a class="nav-link" href="#sync"><i class="fa-solid fa-rotate fa-fw" aria-hidden="true"></i><span>Mail sync</span></a></li>
           <li><a class="nav-link" href="#ai"><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i><span>AI assistant</span></a></li>
@@ -70,6 +71,19 @@
             </div>
             <p class="meta"><strong>Remove</strong> deletes that account&rsquo;s sign-in from this server together with its saved messages, attachments, topics and translations; the other accounts and your tasks are kept. It does not revoke Google&rsquo;s permission; do that at <code>myaccount.google.com/permissions</code>.</p>
           </section>
+          <section id="imap" class="panel settings-section scroll-mt-24" aria-labelledby="imap-heading">
+            <h2 id="imap-heading">IMAP accounts</h2>
+            <p id="imap-status" role="status" class="font-medium text-slate-800">Checking…</p>
+            <ul id="imap-accounts" class="account-list" aria-label="Connected IMAP accounts"></ul>
+            <p>For iCloud Mail, create an app-specific password in your Apple Account. Mail is copied to this server. Marking it read or unread here updates the same flag on the IMAP server; Inbox Tend does not send or delete mail.</p>
+            <div id="imap-form" class="task-form">
+              <label>Email address <input name="email" type="email" required autocomplete="email" placeholder="you@icloud.com"></label>
+              <label>IMAP server <input name="host" required value="imap.mail.me.com" autocomplete="off"></label>
+              <label>IMAP username <input name="username" required autocomplete="username" placeholder="you"></label>
+              <label>App-specific password <input name="password" type="password" required autocomplete="new-password"></label>
+              <button id="connect-imap" type="button">Connect IMAP</button>
+            </div>
+          </section>
 
           <section id="time" class="panel settings-section scroll-mt-24" aria-labelledby="time-heading">
             <h2 id="time-heading"><i class="fa-regular fa-clock" aria-hidden="true"></i>Time and tasks</h2>
@@ -87,7 +101,7 @@
                 <select name="default_priority"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
               </label>
               <label class="wide">Group Inbox mail by
-                <select name="inbox_view"><option value="threads">Conversations</option><option value="messages">Messages</option><option value="people">People</option></select>
+                <select name="inbox_view"><option value="people">People</option><option value="threads">Conversations</option><option value="messages">Messages</option></select>
                 <span class="meta">Also switchable on the Inbox page. People groups by the other party: the sender of mail you received, the first recipient of mail you sent.</span>
               </label>
               <label>Dismiss read people from Unread after
@@ -121,7 +135,7 @@
 
           <section id="ai" class="panel settings-section scroll-mt-24" aria-labelledby="ai-heading">
             <h2 id="ai-heading"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>AI assistant</h2>
-            <p>Uses an AI command-line tool installed on this server to suggest tasks (with quoted evidence from the message) and to draft replies. <strong>Off by default.</strong> When on, pressing an AI button sends that one message&rsquo;s sender, date, subject and text, and optionally small text attachments, to the provider&rsquo;s service (OpenAI for Codex, Anthropic for Claude) through this server&rsquo;s login for that tool. Nothing is sent automatically, no reply is ever sent, and every result is only a suggestion you review.</p>
+            <p>Uses an AI command-line tool installed on this server to suggest tasks, draft replies, or translate and explain image attachments in Chinese. <strong>Off by default.</strong> Pressing a text AI button sends that message&rsquo;s sender, date, subject and text, and optionally small text attachments. Pressing the image button on the Tasks page sends up to eight stored images (2 MiB each) to the selected provider (OpenAI for Codex, Anthropic for Claude). Nothing is sent automatically, no reply is ever sent, and every result is only a suggestion you review.</p>
             <div class="task-form">
               <label class="check"><input name="ai_enabled" type="checkbox"><span class="font-medium text-slate-800">Enable the AI assistant</span></label>
               <label>Provider

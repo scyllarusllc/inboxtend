@@ -961,6 +961,8 @@ async function init() {
     document.getElementById('inbox-grid').classList.add('has-translation');
   }
   try { await refreshGmail(); } catch (error) { gmailStatus.textContent = error.message; list.textContent = ''; }
+  const wanted = new URLSearchParams(location.search).get('message');   // "Open the email" on a task
+  if (wanted) { history.replaceState(null, '', location.pathname); currentGroup = null; selectMessage(wanted); }
   // The server syncs on a timer. While this page is open and visible, look once a minute and redraw only if mail was synced.
   let seen = null;
   setInterval(async () => {
