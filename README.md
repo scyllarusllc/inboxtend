@@ -74,9 +74,9 @@ Sign in as `demo@example.org` / `demo-password-123`. The demo never calls an AI.
 - `asgi.py` and `app.py`: FastAPI/Uvicorn entry point and authenticated routes. The existing route dispatcher is retained behind an ASGI adapter during the endpoint migration. Writes still require a per-session CSRF token, loopback Host, same-origin request, JSON content type and a 16 KiB body limit.
 - `tasks.py` and `db_models.py`: SQLModel engine and task mappings on the existing SQLite file. Existing SQL queries and migrations remain in `tasks.py` during the data-layer migration.
 - `cli.py`: Typer commands for serving the API and backing up SQLite.
-- `frontend/`: Next.js App Router page shell. The current page markup and browser scripts are reused while their interactions move into React components.
+- `frontend/`: optional Next.js App Router page shell for comparison. The default development workflow serves the existing pages directly from FastAPI.
 
-To run the Next.js frontend locally, use `make dev-next`, then open `http://127.0.0.1:3000`. The FastAPI backend listens on `127.0.0.1:8765`; Next.js proxies `/api`, `/static`, and `/LICENSE` to it. `make dev` runs the backend alone. Existing SQLite data is used in place; no export or import is needed.
+Run `make dev`, then open `http://127.0.0.1:8765`. One FastAPI server provides pages, API and static files; Python changes restart the server and page or asset changes refresh the browser. Next.js remains available with `make dev-next` for comparison. Existing SQLite data is used in place; no export or import is needed.
 - `static/`: existing page markup and browser scripts reused by the Next.js shell, styled with compiled Tailwind CSS and self-hosted Font Awesome; see [docs/frontend.md](docs/frontend.md). Running Next.js requires Node.js.
 - `gmail_web.py` and `connectors/gmail_readonly.py`: session-bound Web OAuth and read-only Gmail inbox panel, documented in [docs/gmail-web.md](docs/gmail-web.md). `gmail_oauth_local.py` remains a separate one-shot Desktop prototype.
 - `tests/`: local HTTP, persistence, migration, validation and connector tests.

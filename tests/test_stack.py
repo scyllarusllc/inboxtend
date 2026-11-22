@@ -6,7 +6,7 @@ from sqlmodel import select
 
 from asgi import app, RequestAdapter
 from db_models import Task, session
-from tasks import connection, create_task
+from tasks import connection, create_task, list_tasks
 
 
 class StackTests(unittest.TestCase):
@@ -33,6 +33,34 @@ class StackTests(unittest.TestCase):
             with session(path) as db_session:
                 task = db_session.exec(select(Task).where(Task.id == created['id'])).one()
                 self.assertEqual((task.title, task.source_provider), ('Review images', 'gmail'))
+
+    def test_native_task_routes_keep_existing_response_and_user_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = directory + '/tasks.sqlite3'
+            db = connection(path)
+            created = create_task(db, {'id': 'mail-2', 'provider': 'gmail'},
+                {'title': 'Inspect images', 'description': 'Translate them', 'priority': 'high'}, user_id=1)
+            db.execute("INSERT INTO task_attachments(task_id,filename,mime_type,size_bytes,content) VALUES(?, 'one.jpg','image/jpeg',4,?)",
+                       (created['id'], b'\xff\xd8\xff\x00'))
+            db.commit()
+            expected = list_tasks(db, user_id=1)
+            db.close()
+            old_manager = getattr(app.state, 'auth_manager', None)
+            old_path = getattr(app.state, 'db_path', None)
+            token = 't' * 40
+            app.state.auth_manager = type('Manager', (), {'session': lambda self, value: {'id': 1} if value == token else None})()
+            app.state.db_path = path
+            try:
+                client = TestClient(app)
+                headers = {'Host': 'localhost:8765', 'Cookie': 'it_session=' + token}
+                self.assertEqual(client.get('/api/tasks', headers=headers).json()['tasks'], expected)
+                self.assertEqual(client.get('/api/tasks/summary', headers=headers).json()['summary']['total'], 1)
+                self.assertEqual(client.get(f"/api/tasks/{created['id']}/images", headers=headers).json()['images'][0]['name'], 'one.jpg')
+                self.assertEqual(client.get(f"/api/tasks/{created['id']}/images/1/thumbnail", headers=headers).content, b'\xff\xd8\xff\x00')
+                self.assertEqual(client.get('/api/tasks', headers={'Host': 'localhost:8765'}).status_code, 401)
+            finally:
+                app.state.auth_manager = old_manager
+                app.state.db_path = old_path
 
 
 if __name__ == '__main__':

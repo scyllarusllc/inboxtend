@@ -1,6 +1,7 @@
 __pycache__/
 node_modules/
 frontend/.next/
+frontend/AGENTS.md
 *.py[cod]
 .venv/
 .env

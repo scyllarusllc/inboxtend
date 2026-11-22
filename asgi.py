@@ -7,15 +7,22 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from io import BytesIO
+import os
+import secrets
+import sqlite3
+import traceback
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import Response
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app import Handler, ROOT
 from auth import AuthManager, read_config
 from tasks import DEFAULT_DB
 import gmail_web
 import translation_preload
+from task_api import router as task_router
 
 
 class RequestAdapter(Handler):
@@ -57,12 +64,40 @@ async def lifespan(_app: FastAPI):
     RequestAdapter.auth_manager = AuthManager(DEFAULT_DB,
         username=config.get('INBOX_TEND_ADMIN_USERNAME', ''),
         password_hash=config.get('INBOX_TEND_ADMIN_PASSWORD_HASH', ''))
+    _app.state.auth_manager = RequestAdapter.auth_manager
+    _app.state.db_path = DEFAULT_DB
     gmail_web.start_auto_sync(DEFAULT_DB, config)
     translation_preload.start(DEFAULT_DB, config)
     yield
 
 
 app = FastAPI(title='Inbox Tend', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app.include_router(task_router)
+_dev_boot = secrets.token_hex(8)
+
+
+@app.get('/api/dev/version')
+def dev_version():
+    if os.environ.get('INBOX_TEND_DEV_RELOAD') != '1':
+        return Response(status_code=404)
+    files = list(ROOT.glob('*.py')) + list((ROOT / 'static').rglob('*.html')) + \
+        list((ROOT / 'static').rglob('*.js')) + list((ROOT / 'static').rglob('*.css'))
+    latest = max((path.stat().st_mtime_ns for path in files if path.is_file()), default=0)
+    return JSONResponse({'version': f'{_dev_boot}-{latest}'}, headers={'Cache-Control': 'no-store'})
+
+
+@app.exception_handler(HTTPException)
+async def api_error(_request: Request, exc: HTTPException):
+    return JSONResponse({'error': exc.detail}, status_code=exc.status_code,
+                        headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+@app.exception_handler(sqlite3.Error)
+@app.exception_handler(SQLAlchemyError)
+async def database_error(_request: Request, _exc):
+    traceback.print_exc()
+    return JSONResponse({'error': 'Task database unavailable'}, status_code=503,
+                        headers={'Cache-Control': 'no-store'})
 
 
 @app.api_route('/{path:path}', methods=['GET', 'POST', 'PATCH', 'DELETE'])

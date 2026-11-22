@@ -7,10 +7,11 @@ cli = typer.Typer(help='Run and maintain Inbox Tend.')
 
 
 @cli.command()
-def serve(port: int = typer.Option(8765, min=1, max=65535), host: str = '127.0.0.1'):
+def serve(port: int = typer.Option(8765, min=1, max=65535), host: str = '127.0.0.1',
+          reload: bool = typer.Option(False, help='Reload Python code during development.')):
     """Run the FastAPI application with Uvicorn."""
     import uvicorn
-    uvicorn.run('asgi:app', host=host, port=port)
+    uvicorn.run('asgi:app', host=host, port=port, reload=reload)
 
 
 @cli.command()

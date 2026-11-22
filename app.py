@@ -26,7 +26,7 @@ import translation_preload
 import agentsteers_bridge
 import integration_feed
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
-from tasks import connection, DEFAULT_DB, list_tasks, task_summary, get_task, task_for_source, create_task, update_task, events, delete_task, task_images, task_image, task_image_review, save_task_image_review, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
+from tasks import connection, DEFAULT_DB, get_task, task_for_source, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
 ROOT = Path(__file__).resolve().parent
 _TRANSLATION_TIMINGS = {}
@@ -45,7 +45,8 @@ VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.js':'te
 SCREEN_TYPES = {'.jpg':'image/jpeg','.png':'image/png'}   # Screenshots of the demo data, shown on the public home page
 STATIC_FILES = {'/static/icons/favicon.svg':'image/svg+xml','/static/icons/favicon-32.png':'image/png','/static/icons/apple-touch-icon.png':'image/png',
                 '/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/stats.js':'text/javascript',
-                '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript'}
+                '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript',
+                '/static/dev-reload.js':'text/javascript'}
 
 def _nav_link(href, label, icon, current):
     return ('<a href="%s"%s class="nav-link"><i class="fa-solid fa-%s fa-fw" aria-hidden="true"></i><span>%s</span></a>'
@@ -68,7 +69,8 @@ def render_page(name, session=False):
     replacements = {
         '{{TITLE}}': escape(title, quote=True),
         '{{DESCRIPTION}}': escape(description, quote=True),
-        '{{SCRIPT}}': ''.join(f'<script src="{src}" defer></script>' for src in scripts),
+        '{{SCRIPT}}': ''.join(f'<script src="{src}" defer></script>' for src in scripts +
+                              (('/static/dev-reload.js',) if os.environ.get('INBOX_TEND_DEV_RELOAD') == '1' else ())),
         '{{NAV}}': nav_html(active, signed_in),
         '{{BRAND_HREF}}': '/user/inbox' if inside else '/',
         '{{BRAND_LABEL}}': 'Inbox Tend: open my inbox' if inside else 'Inbox Tend home',
@@ -750,41 +752,6 @@ class Handler:
         if path == '/api/agentsteers/status':
             # Only reached after login; never disclose private tokens or endpoint URLs.
             return self._json(200,{'bridge':agentsteers_bridge.readiness()})
-        if path == '/api/tasks/summary':
-            with self._db() as db:
-                summary = task_summary(db,user_id=session['id'])
-                zone = prefs.effective(db,session['id'],self.gmail_config)['timezone']
-            return self._json(200,{'summary':summary,'timezone':zone})
-        if path == '/api/tasks':
-            with self._db() as db:
-                rows = list_tasks(db,user_id=session['id'])
-                zone = prefs.effective(db,session['id'],self.gmail_config)['timezone']
-            return self._json(200,{'tasks':rows,'timezone':zone})
-        if len(parts) >= 4 and parts[:2]==['api','tasks'] and parts[2].isdigit() and parts[3]=='images':
-            task_id = int(parts[2])
-            with self._db() as db:
-                if len(parts)==4:
-                    images = task_images(db,task_id,session['id'])
-                    if images is None: raise RequestError(404,'Task not found')
-                    return self._json(200,{'images':images,'review':task_image_review(db,task_id,session['id'])})
-                if len(parts)==6 and parts[4].isdigit() and parts[5] in ('thumbnail','download'):
-                    row = task_image(db,task_id,int(parts[4]),session['id'])
-                    if row is None: raise RequestError(404,'Task image not found')
-                    if row['content'] is None: raise RequestError(404,'Task image was not stored')
-                    content = bytes(row['content'])
-                    if parts[5]=='thumbnail':
-                        mime = raster_preview_mime(row['mime_type'],content)
-                        if not mime: raise RequestError(415,'Image preview unavailable')
-                        return self._send(200,content,mime,(('Content-Disposition','inline'),))
-                    safe = ''.join(c if c.isalnum() or c in '._-' else '_' for c in row['filename'])[:100] or 'image'
-                    disposition = f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(row['filename'])}"
-                    return self._send(200,content,'application/octet-stream',(('Content-Disposition',disposition),))
-        if len(parts) in (3,4) and parts[:2]==['api','tasks'] and parts[2].isdigit():
-            with self._db() as db:
-                task = get_task(db,int(parts[2]),user_id=session['id'])
-                if not task: raise RequestError(404,'Task not found')
-                if len(parts)==4 and parts[3]=='events': return self._json(200,{'events':events(db,task['id'],session['id'])})
-                if len(parts)==3: return self._json(200,{'task':task})
         raise RequestError(404,'Not found')
 
     def _handle(self,write=False):

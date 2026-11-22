@@ -1,9 +1,10 @@
-"""Stop an older Inbox Tend dev process listening on the requested TCP port."""
+"""Stop an older Inbox Tend API or Next.js dev process on the requested port."""
 from __future__ import annotations
 
 import argparse
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -21,7 +22,19 @@ def listeners(port: int) -> set[int]:
         raise RuntimeError('lsof is required to check the dev port') from None
     if result.returncode not in (0, 1):
         raise RuntimeError(result.stderr.strip() or 'Could not inspect the dev port')
-    return {int(line) for line in result.stdout.splitlines() if line.isdecimal()}
+    found = {int(line) for line in result.stdout.splitlines() if line.isdecimal()}
+    # lsof may omit Node's IPv6 listener on some systems; ss reports its PID.
+    if not found:
+        try:
+            status = subprocess.run(['ss', '-H', '-ltnp'], capture_output=True, text=True, check=False)
+        except FileNotFoundError:
+            status = None
+        if status and status.returncode == 0:
+            for line in status.stdout.splitlines():
+                fields = line.split()
+                if len(fields) >= 4 and fields[3].rsplit(':', 1)[-1] == str(port):
+                    found.update(int(pid) for pid in re.findall(r'pid=(\d+)', line))
+    return found
 
 
 def inbox_dev_process(pid: int) -> bool:
@@ -30,13 +43,20 @@ def inbox_dev_process(pid: int) -> bool:
         cwd = Path(f'/proc/{pid}/cwd').resolve()
     except (OSError, RuntimeError):
         return False
-    if not args or not Path(os.fsdecode(args[0])).name.startswith('python'):
+    if not args:
+        return False
+    program = Path(os.fsdecode(args[0])).name
+    if program.startswith('next-server'):
+        return cwd == PROJECT
+    if not program.startswith('python'):
         return False
     scripts = [Path(os.fsdecode(arg)) for arg in args[1:] if arg]
-    if not scripts or scripts[0].name != 'app.py':
+    if not scripts or scripts[0].name not in ('app.py', 'cli.py'):
         return False
     app = (cwd / scripts[0]).resolve()
-    return app == PROJECT / 'app.py' or app.is_relative_to('/srv/inboxtend/releases')
+    if app != PROJECT / scripts[0].name and not app.is_relative_to('/srv/inboxtend/releases'):
+        return False
+    return scripts[0].name == 'app.py' or (len(args) > 2 and args[2] == b'serve')
 
 
 def main() -> int:

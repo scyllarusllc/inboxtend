@@ -1,6 +1,6 @@
 # Front end: Tailwind CSS and Font Awesome
 
-The UI runs in a **Next.js App Router** shell, styled with **Tailwind CSS v4** and **Font Awesome Free**. The shell currently reuses page bodies and vanilla JavaScript from `static/` while those interactions are moved into React components. Next.js requires Node.js at runtime; FastAPI serves the API and existing static files.
+The default development UI is served by **FastAPI** from the page bodies and vanilla JavaScript in `static/`, styled with **Tailwind CSS v4** and **Font Awesome Free**. `make dev` uses one server and refreshes the browser when page or asset files change. The optional Next.js shell can be run with `make dev-next`; it requires Node.js.
 
 | What | Where |
 |---|---|
