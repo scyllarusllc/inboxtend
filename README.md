@@ -16,7 +16,7 @@ Copy `.env.example` to `.env`, configure an administrator and keep that file pri
 make dev
 ```
 
-Open `http://127.0.0.1:8765`. One FastAPI server serves the pages, API and static files. Python edits restart the development server; page and asset edits refresh the browser. `make dev` stops an earlier Inbox Tend process on that port before starting and refuses to stop unrelated programs. The default workflow does not need a separate frontend server. Next.js remains available for comparison with `make dev-next`; editing Tailwind source styles still requires `make css`.
+Open `http://127.0.0.1:8765`. One FastAPI server serves the pages, API and static files. Python edits restart the development server; page and script edits show a refresh prompt so reading is not interrupted, while compiled CSS updates without a page reload. `make dev` stops an earlier Inbox Tend process on that port before starting and refuses to stop unrelated programs. The default workflow does not need a separate frontend server. Next.js remains available for comparison with `make dev-next`; editing Tailwind source styles still requires `make css`.
 
 ## Features
 
@@ -88,11 +88,11 @@ Sign in as `demo@example.org` / `demo-password-123`. The demo never calls an AI.
 - `cli.py`: Typer commands for serving the API and backing up SQLite.
 - `frontend/`: optional Next.js App Router page shell for comparison. The default development workflow serves the existing pages directly from FastAPI.
 
-- `static/`: page markup and browser scripts served directly by FastAPI, styled with compiled Tailwind CSS and self-hosted Font Awesome; see [docs/frontend.md](docs/frontend.md). Next.js requires Node.js when used.
+- `static/`: page markup and browser scripts served directly by FastAPI, with small Stimulus controllers for shared interactions, compiled Tailwind CSS and self-hosted Font Awesome; see [docs/frontend.md](docs/frontend.md). Next.js requires Node.js when used.
 - `gmail_web.py` and `connectors/gmail_readonly.py`: session-bound Web OAuth and read-only Gmail inbox panel, documented in [docs/gmail-web.md](docs/gmail-web.md). `gmail_oauth_local.py` remains a separate one-shot Desktop prototype.
 - `tests/`: local HTTP, persistence, migration, validation and connector tests.
 
-Run `make dev`, then open `http://127.0.0.1:8765`. One FastAPI server provides pages, API and static files; Python changes restart the server and page or asset changes refresh the browser. Next.js remains available with `make dev-next` for comparison. Existing SQLite data is used in place; no export or import is needed.
+Run `make dev`, then open `http://127.0.0.1:8765`. One FastAPI server provides pages, API and static files; Python changes restart the server, compiled CSS changes update without a page reload, and other page changes offer a manual refresh. Next.js remains available with `make dev-next` for comparison. Existing SQLite data is used in place; no export or import is needed.
 
 ## Security boundary
 

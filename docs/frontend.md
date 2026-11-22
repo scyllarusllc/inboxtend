@@ -1,6 +1,6 @@
 # Front end: Tailwind CSS and Font Awesome
 
-The default development UI is served by **FastAPI** from the page bodies and vanilla JavaScript in `static/`, styled with **Tailwind CSS v4** and **Font Awesome Free**. `make dev` uses one server and refreshes the browser when page or asset files change. The optional Next.js shell can be run with `make dev-next`; it requires Node.js.
+The default development UI is served by **FastAPI** from the page bodies and JavaScript in `static/`, styled with **Tailwind CSS v4** and **Font Awesome Free**. Shared interactions are moving into self-hosted **Stimulus** controllers without adding a frontend server. `make dev` offers a refresh when page or script files change and swaps compiled CSS without reloading the page. The optional Next.js shell can be run with `make dev-next`; it requires Node.js.
 
 | What | Where |
 |---|---|
@@ -10,6 +10,7 @@ The default development UI is served by **FastAPI** from the page bodies and van
 | Icons (committed copy) | `static/vendor/fontawesome/` |
 | Country flags (committed copy, 257 SVGs) | `static/vendor/flag-icons/`; the accepted codes are generated into `countries.py` |
 | Next.js navigation | `frontend/app/[[...segments]]/page.jsx` |
+| Shared interaction controllers | `static/stimulus-app.js`, `static/vendor/stimulus/` |
 | Build tooling | `package.json`, `package-lock.json` |
 
 ## Working on the styles
