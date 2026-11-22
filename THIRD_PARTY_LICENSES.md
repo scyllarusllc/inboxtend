@@ -1,8 +1,12 @@
 # Third-party notices
 
-Inbox Tend itself is licensed under the GNU Affero General Public License v3.0 or later (see `LICENSE`). The user interface uses three third-party
+Inbox Tend itself is licensed under the GNU Affero General Public License v3.0 or later (see `LICENSE`). The user interface uses several third-party
 components. All are used as self-hosted static files: the running app contacts no CDN or other external service
 for them.
+
+## Stimulus 3.2.2 (shared interface controllers)
+
+`static/vendor/stimulus/stimulus.js` is the self-hosted ES module from `@hotwired/stimulus`, licensed under the MIT License. Its complete license is in `static/vendor/stimulus/LICENSE.md`.
 
 ## Font Awesome Free 7.3.1 (icons)
 

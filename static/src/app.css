@@ -350,6 +350,22 @@
   .task-due[data-state="due_soon"] { @apply text-indigo-700; }
   .task-description { @apply m-0 line-clamp-2 cursor-pointer text-sm text-slate-700 sm:pl-10; }
   .task-description.expanded { @apply line-clamp-none; }
+  .back-link { @apply mb-1 inline-block text-sm font-semibold text-slate-600 no-underline hover:text-slate-900; }
+  .task-hero { @apply gap-3; }
+  .task-hero .task-header h1 { @apply m-0 min-w-0 flex-1 text-xl; }
+  .task-hero[data-status="done"] .task-header h1 { @apply text-slate-500 line-through; }
+  .task-hero > .task-due, .task-hero > .task-body { @apply sm:pl-10; }
+  .task-body { @apply m-0 whitespace-pre-wrap break-words text-sm text-slate-700; }
+  #task-detail { @apply grid gap-4; }
+  .task-section > h2 { @apply mb-3 text-sm font-bold uppercase tracking-wider text-slate-500; }
+  .task-facts { @apply m-0 grid gap-x-6 gap-y-3 sm:grid-cols-2; }
+  .task-fact dt { @apply text-xs font-semibold uppercase tracking-wide text-slate-500; }
+  .task-fact dd { @apply m-0 break-words text-sm text-slate-800; }
+  .task-section > details > summary { @apply hidden; }
+  .mail-card { @apply grid gap-2; }
+  .mail-card h1 { @apply m-0 text-xl; }
+  .conversation-thread a.message { @apply block no-underline; }
+  .task-title-link { @apply text-inherit no-underline hover:underline; }
   .task-actions { @apply flex flex-wrap items-center gap-x-4 gap-y-2 sm:pl-10; }
   .task-actions > label { @apply flex items-center gap-2; }
   .task-link { @apply inline-flex items-center gap-1.5 text-sm font-medium text-indigo-700 no-underline hover:underline; }

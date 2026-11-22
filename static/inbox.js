@@ -130,60 +130,6 @@ async function showProposal(messageId, prepared) {
   (detail.querySelector('.task-slot') || detail).append(form);
   form.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
-function formatBytes(n) {
-  return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
-}
-function renderAttachments(message) {
-  if (!message.attachments.length) return null;
-  const block = el('section', undefined, 'attachment-section');
-  const heading = el('h5', undefined, 'attachment-heading');
-  heading.append(icon('paperclip'), document.createTextNode(' Attachments (' + message.attachments.length + ')'));
-  block.append(heading);
-  for (const file of message.attachments) {
-    const row = el('div', undefined, 'attachment-row');
-    const meta = el('div', undefined, 'attachment-meta');
-    const kind = file.mime_type.startsWith('image/') ? 'Image' : file.mime_type === 'application/pdf' ? 'PDF document' :
-      (file.mime_type.startsWith('text/') || /\.(txt|csv)$/i.test(file.name)) ? 'Text document' : 'File';
-    meta.append(el('strong', file.name || 'Unnamed attachment'), el('span', kind + ' · ' + formatBytes(file.size_bytes) +
-      (file.stored ? '' : ' · not stored (' + (file.skipped_reason || 'unavailable') + ')'), 'meta'));
-    row.append(meta);
-    if (file.stored) {
-      const base = '/api/connectors/gmail/messages/' + encodeURIComponent(message.id) + '/attachments/' + file.id;
-      const download = el('a', 'Download', 'icon-button'); download.href = base; download.setAttribute('download', file.name); download.prepend(icon('download'));
-      row.append(download);
-      if (file.mime_type === 'text/plain' || file.mime_type === 'text/csv' || /\.(txt|csv)$/i.test(file.name)) {
-        const preview = el('pre', 'Loading text preview…', 'attachment-preview');
-        row.append(preview);
-        request(base + '/preview').then(result => {
-          const content = result.content || '';
-          const short = content.length > 800;
-          preview.textContent = short ? content.slice(0,800) + '\n…' : content || '(Empty text file)';
-          if (short) {
-            const expand = iconButton('eye', 'Show more');
-            expand.addEventListener('click', () => {
-              const open = expand.getAttribute('aria-expanded') === 'true';
-              expand.setAttribute('aria-expanded',String(!open));
-              expand.lastChild.textContent = open ? 'Show more' : 'Show less';
-              preview.textContent = open ? content.slice(0,800) + '\n…' : content + (result.truncated ? '\n… (preview truncated)' : '');
-            });
-            row.append(expand);
-          }
-        }).catch(error => { preview.textContent = 'Preview unavailable: ' + error.message; });
-      } else if (['image/png','image/jpeg','image/gif','image/webp'].includes(file.mime_type) && file.size_bytes <= 2 * 1024 * 1024) {
-        const image = document.createElement('img');
-        image.className = 'attachment-image'; image.alt = 'Preview of ' + (file.name || 'image attachment');
-        image.loading = 'lazy'; image.src = base + '/thumbnail';
-        image.addEventListener('error', () => image.replaceWith(el('p', 'Image preview unavailable.', 'meta')));
-        row.append(image);
-      }
-    } else {
-      row.append(el('p', 'Preview unavailable because this file was not saved on the server.', 'meta'));
-    }
-    block.append(row);
-  }
-  block.append(el('p', 'Only plain text and verified raster images are previewed. Other files are downloads.', 'meta'));
-  return block;
-}
 // "Synced x of y" next to what Gmail itself reports, so it is clear how much of the mailbox is here.
 function showTotals(state) {
   const line = document.getElementById('gmail-counts'), remote = state.remote, n = value => Number(value).toLocaleString();

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import os
+import re
 import secrets
 import time
 import sqlite3
@@ -37,16 +38,18 @@ PAGES = {
     'home': ('Inbox Tend · Gmail and IMAP mail to tasks', 'Review Gmail and IMAP mail, translate text, and track follow-up tasks on your own server.', (), 'home', False),
     'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', ('/static/login.js',), None, False),
     'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js','/static/vendor/chartjs/chart.umd.min.js','/static/stats.js'), 'inbox', True),
-    'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/tasks.js'), 'tasks', True),
+    'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/task-parts.js','/static/tasks.js'), 'tasks', True),
+    'task': ('Task · Inbox Tend', 'One follow-up task: details, deadline, history and images.', ('/static/common.js','/static/task-parts.js','/static/task.js'), 'tasks', True),
+    'mail': ('Email · Inbox Tend', 'Read one email with its conversation, attachments and task.', ('/static/common.js','/static/mail.js'), 'inbox', True),
     'settings': ('Settings · Inbox Tend', 'Timezone, display, mail sync and account settings.', ('/static/common.js','/static/settings.js'), 'settings', True),
     'privacy': ('Privacy · Inbox Tend', 'What Inbox Tend reads, keeps and never does.', (), None, False),
 }
 VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.js':'text/javascript','.svg':'image/svg+xml'}
 SCREEN_TYPES = {'.jpg':'image/jpeg','.png':'image/png'}   # Screenshots of the demo data, shown on the public home page
 STATIC_FILES = {'/static/icons/favicon.svg':'image/svg+xml','/static/icons/favicon-32.png':'image/png','/static/icons/apple-touch-icon.png':'image/png',
-                '/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/stats.js':'text/javascript',
+                '/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/task-parts.js':'text/javascript','/static/task.js':'text/javascript','/static/mail.js':'text/javascript','/static/stats.js':'text/javascript',
                 '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript',
-                '/static/dev-reload.js':'text/javascript'}
+                '/static/dev-reload.js':'text/javascript','/static/stimulus-app.js':'text/javascript'}
 
 def _nav_link(href, label, icon, current):
     return ('<a href="%s"%s class="nav-link"><i class="fa-solid fa-%s fa-fw" aria-hidden="true"></i><span>%s</span></a>'
@@ -69,7 +72,8 @@ def render_page(name, session=False):
     replacements = {
         '{{TITLE}}': escape(title, quote=True),
         '{{DESCRIPTION}}': escape(description, quote=True),
-        '{{SCRIPT}}': ''.join(f'<script src="{src}" defer></script>' for src in scripts +
+        '{{SCRIPT}}': ('<script type="module" src="/static/stimulus-app.js"></script>' if signed_in else '') +
+                      ''.join(f'<script src="{src}" defer></script>' for src in scripts +
                               (('/static/dev-reload.js',) if os.environ.get('INBOX_TEND_DEV_RELOAD') == '1' else ())),
         '{{NAV}}': nav_html(active, signed_in),
         '{{BRAND_HREF}}': '/user/inbox' if inside else '/',
@@ -311,6 +315,10 @@ class Handler:
             return self._redirect('/user/inbox')  # Legacy URL
         if not write and path in ('/user/inbox','/user/tasks','/user/settings'):
             return self._send(200,render_page(path.rsplit('/',1)[1]),'text/html; charset=utf-8')
+        if not write and re.fullmatch(r'/user/task/\d{1,12}',path):
+            return self._send(200,render_page('task'),'text/html; charset=utf-8')
+        if not write and re.fullmatch(r'/user/mail/[A-Za-z0-9._:~%-]{1,200}',path):
+            return self._send(200,render_page('mail'),'text/html; charset=utf-8')
         if write:
             self._write_ok(session)
             data = self._read_json()

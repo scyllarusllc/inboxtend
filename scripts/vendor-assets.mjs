@@ -4,6 +4,15 @@
 import {cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 const version = name => JSON.parse(readFileSync(`node_modules/${name}/package.json`, 'utf8')).version;
 
+// --- Stimulus (progressive controllers; native ES module, no runtime build)
+{
+  const from = 'node_modules/@hotwired/stimulus', to = 'static/vendor/stimulus';
+  mkdirSync(to, {recursive: true});
+  cpSync(`${from}/dist/stimulus.js`, `${to}/stimulus.js`);
+  cpSync(`${from}/LICENSE.md`, `${to}/LICENSE.md`);
+  console.log(`Stimulus ${version('@hotwired/stimulus')} -> ${to}`);
+}
+
 // --- Font Awesome Free (icons)
 {
   const from = 'node_modules/@fortawesome/fontawesome-free', to = 'static/vendor/fontawesome';

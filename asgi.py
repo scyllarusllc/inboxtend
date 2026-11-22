@@ -8,6 +8,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from io import BytesIO
 import os
+import re
 import secrets
 import sqlite3
 import traceback
@@ -80,13 +81,15 @@ _dev_boot = secrets.token_hex(8)
 def dev_version(page: str = ''):
     if os.environ.get('INBOX_TEND_DEV_RELOAD') != '1':
         return Response(status_code=404)
-    page_name = {'/': 'home', '/login': 'login', '/privacy': 'privacy',
+    page_name = 'mail' if re.fullmatch(r'/user/mail/[A-Za-z0-9._:~%-]+', page) else 'task' if re.fullmatch(r'/user/task/\d+', page) else {'/': 'home', '/login': 'login', '/privacy': 'privacy',
         '/user/inbox': 'inbox', '/user/tasks': 'tasks', '/user/settings': 'settings'}.get(page)
     if page_name is None:
         return Response(status_code=400)
     files = [ROOT / 'static' / 'layout.html', ROOT / 'static' / 'pages' / f'{page_name}.html']
     scripts = [ROOT / script.lstrip('/') for script in PAGES[page_name][2]]
     scripts.append(ROOT / 'static' / 'dev-reload.js')
+    if PAGES[page_name][4]:
+        scripts.append(ROOT / 'static' / 'stimulus-app.js')
     changed = lambda paths: max((path.stat().st_mtime_ns for path in paths if path.is_file()), default=0)
     return JSONResponse({'server': _dev_boot, 'markup': changed(files),
                          'scripts': changed(scripts),

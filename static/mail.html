@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Read one email with its conversation, attachments and task.">
+  <title>Email · Inbox Tend</title>
+  <link rel="icon" type="image/svg+xml" href="/static/icons/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/fontawesome.min.css">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/solid.min.css">
+  <link rel="stylesheet" href="/static/vendor/fontawesome/css/regular.min.css">
+  <link rel="stylesheet" href="/static/vendor/flag-icons/css/flag-icons.min.css">
+  <link rel="stylesheet" href="/static/styles.css">
+<script src="/static/common.js" defer></script><script src="/static/mail.js" defer></script>
+</head>
+<body id="top">
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/user/inbox" aria-label="Inbox Tend: open my inbox"><span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-inbox"></i></span><span class="text-lg tracking-tight">Inbox <strong>Tend</strong></span></a>
+      <nav class="primary-nav" aria-label="Main navigation"><a href="/user/inbox" aria-current="page" class="nav-link"><i class="fa-solid fa-inbox fa-fw" aria-hidden="true"></i><span>Inbox</span></a><a href="/user/tasks" class="nav-link"><i class="fa-solid fa-list-check fa-fw" aria-hidden="true"></i><span>Tasks</span></a><a href="/user/settings" class="nav-link"><i class="fa-solid fa-gear fa-fw" aria-hidden="true"></i><span>Settings</span></a><button id="logout" type="button"><i class="fa-solid fa-right-from-bracket fa-fw" aria-hidden="true"></i><span>Sign out</span></button></nav>
+      <span class="environment-badge hidden xl:inline-flex"><span class="status-dot" aria-hidden="true"></span>Preview workspace</span>
+    </div>
+  </header>
+  <main id="main" class="page-shell">
+    <div id="notice" class="notice-banner app-toast" role="status" aria-live="polite"></div>
+    <p><a href="/user/inbox" class="back-link"><i class="fa-solid fa-arrow-left fa-fw" aria-hidden="true"></i> Inbox</a></p>
+    <div id="mail-detail" aria-live="polite">Loading email…</div>
+  </main>
+
+  <footer class="site-footer"><span><i class="fa-solid fa-shield-halved mr-1.5 text-slate-400" aria-hidden="true"></i>Inbox Tend · Local-first preview</span><span><a href="/" class="underline">Official website</a> · <a href="/privacy" class="underline">Privacy</a> · Scyllarus LLC · <a href="/LICENSE" class="underline">AGPL-3.0</a> · <a href="https://github.com/scyllarusllc/inboxtend" rel="noopener" class="underline">Source code</a></span></footer>
+</body>
+</html>
