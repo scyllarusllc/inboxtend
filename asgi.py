@@ -17,7 +17,7 @@ from fastapi.responses import Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from app import Handler, ROOT
+from app import Handler, ROOT, PAGES
 from auth import AuthManager, read_config
 from tasks import DEFAULT_DB
 import gmail_web
@@ -77,13 +77,21 @@ _dev_boot = secrets.token_hex(8)
 
 
 @app.get('/api/dev/version')
-def dev_version():
+def dev_version(page: str = ''):
     if os.environ.get('INBOX_TEND_DEV_RELOAD') != '1':
         return Response(status_code=404)
-    files = list(ROOT.glob('*.py')) + list((ROOT / 'static').rglob('*.html')) + \
-        list((ROOT / 'static').rglob('*.js')) + list((ROOT / 'static').rglob('*.css'))
-    latest = max((path.stat().st_mtime_ns for path in files if path.is_file()), default=0)
-    return JSONResponse({'version': f'{_dev_boot}-{latest}'}, headers={'Cache-Control': 'no-store'})
+    page_name = {'/': 'home', '/login': 'login', '/privacy': 'privacy',
+        '/user/inbox': 'inbox', '/user/tasks': 'tasks', '/user/settings': 'settings'}.get(page)
+    if page_name is None:
+        return Response(status_code=400)
+    files = [ROOT / 'static' / 'layout.html', ROOT / 'static' / 'pages' / f'{page_name}.html']
+    scripts = [ROOT / script.lstrip('/') for script in PAGES[page_name][2]]
+    scripts.append(ROOT / 'static' / 'dev-reload.js')
+    changed = lambda paths: max((path.stat().st_mtime_ns for path in paths if path.is_file()), default=0)
+    return JSONResponse({'server': _dev_boot, 'markup': changed(files),
+                         'scripts': changed(scripts),
+                         'styles': changed([ROOT / 'static' / 'styles.css'])},
+                        headers={'Cache-Control': 'no-store'})
 
 
 @app.exception_handler(HTTPException)

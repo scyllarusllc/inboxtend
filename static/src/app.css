@@ -154,6 +154,10 @@
   #notice.app-toast:not(:empty)::before { color: #a5b4fc; }
   #notice.app-toast.error { background: #881337; color: #fff; }
   #notice.app-toast.error:not(:empty)::before { color: #fecdd3; }
+  .dev-update-banner { position: fixed; left: 50%; bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 4rem)); z-index: 49; display: flex; align-items: center; gap: .75rem; max-width: calc(100vw - 2rem); padding: .5rem .75rem; border-radius: 1rem; background: #1e293b; color: #fff; box-shadow: 0 10px 30px rgb(15 23 42 / .25); transform: translateX(-50%); font-size: .875rem; }
+  .dev-update-banner[hidden] { display: none; }
+  .dev-update-banner button { margin: 0; padding: .35rem .6rem; border: 1px solid #64748b; border-radius: .5rem; background: #334155; color: #fff; white-space: nowrap; }
+  .dev-update-banner button:hover { background: #475569; }
   @keyframes app-toast-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
   @media (prefers-reduced-motion: reduce) { #notice.app-toast { animation: none; } }
 
