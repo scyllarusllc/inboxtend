@@ -385,6 +385,11 @@
   .review-progress { @apply grid gap-1; }
   .progress-track { @apply h-3 w-full overflow-hidden rounded-full bg-slate-200; }
   .progress-fill { @apply h-full w-0 rounded-full bg-indigo-600 transition-[width] duration-500 ease-out; }
+  .ai-work-progress { flex-basis: 100%; min-width: 0; }
+  .ai-work-progress .progress-fill { width: 35%; animation: ai-work-sweep 1.8s ease-in-out infinite; }
+  .ai-work-progress.is-complete .progress-fill { width: 100%; animation: none; }
+  @keyframes ai-work-sweep { from { transform: translateX(-110%); } to { transform: translateX(310%); } }
+  @media (prefers-reduced-motion: reduce) { .ai-work-progress .progress-fill { width: 100%; opacity: .45; animation: none; } }
   .task-chips { @apply flex flex-wrap gap-2 sm:pl-10; }
   .task-columns { @apply grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_21rem]; }
   .task-main, .task-side { @apply grid min-w-0 gap-4; }

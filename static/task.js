@@ -13,13 +13,45 @@ async function changeStatus(task, status) {
   await refreshTasks();
 }
 
+function aiPlanProgress() {
+  const node = el('div', undefined, 'review-progress ai-work-progress');
+  const track = el('div', undefined, 'progress-track');
+  track.setAttribute('role', 'progressbar');
+  track.setAttribute('aria-label', 'AI plan preparation');
+  const fill = el('div', undefined, 'progress-fill');
+  const label = el('p', undefined, 'meta');
+  track.append(fill);
+  node.append(track, label);
+  const started = Date.now();
+  const tick = () => {
+    const seconds = Math.floor((Date.now() - started) / 1000);
+    label.textContent = 'AI is preparing the plan · ' + seconds + 's elapsed';
+    track.setAttribute('aria-valuetext', label.textContent);
+  };
+  tick();
+  const timer = window.setInterval(tick, 1000);
+  return {node, finish(ok) {
+    window.clearInterval(timer);
+    if (ok) {
+      node.classList.add('is-complete');
+      label.textContent = 'Plan ready in ' + Math.round((Date.now() - started) / 1000) + 's';
+      track.setAttribute('aria-valuenow', '100');
+      track.setAttribute('aria-valuetext', label.textContent);
+    } else node.remove();
+  }};
+}
+
 async function startWorking(task, button, refresh = false) {
   if (lastPlan && !refresh) { document.getElementById('ai-plan')?.scrollIntoView({behavior: 'smooth', block: 'start'}); return; }
   const label = button.lastChild.textContent;
   button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
   button.replaceChildren(icon('sparkles'), document.createTextNode(' Thinking about how to handle this…'));
+  const progress = aiPlanProgress();
+  button.after(progress.node);
   try {
     const result = await request('/api/ai/work', 'POST', refresh ? {task_id: task.id, refresh: true} : {task_id: task.id});
+    progress.finish(true);
     const first = !lastPlan;
     lastPlan = result.saved;   // Saved in the database by the server.
     // Starting work moves a new or waiting task to In progress.
@@ -30,9 +62,12 @@ async function startWorking(task, button, refresh = false) {
     await refreshTasks();
     document.getElementById('ai-plan')?.scrollIntoView({behavior: 'smooth', block: 'start'});
   } catch (error) {
+    progress.finish(false);
     notify(error.message, true);
     button.disabled = false;
     button.replaceChildren(icon('sparkles'), document.createTextNode(label));
+  } finally {
+    button.removeAttribute('aria-busy');
   }
 }
 
@@ -223,10 +258,47 @@ function renderTask(task) {
     mainCol.append(section('AgentSteers mock handoff', makeAgentSteersControls(task)));
   }
   if (task.source_provider === 'gmail' && task.message_id) side.append(emailCard(task));
+  if (task.message_id) side.append(correspondenceCard(task));
   const history = taskHistoryDetails(task);
   history.open = true;
   const stamps = el('p', 'Created ' + (task.created_at ? new Date(task.created_at).toLocaleString() : '—') + ' · Updated ' + (task.updated_at ? new Date(task.updated_at).toLocaleString() : '—'), 'meta');
   side.append(section('History', history, stamps));
+}
+
+function correspondenceCard(task) {
+  const box = section('Emails with this sender');
+  const summary = el('p', 'Loading saved emails…', 'meta');
+  const list = el('ol', undefined, 'correspondence-list');
+  const more = el('button', 'Load more emails');
+  more.type = 'button';
+  more.hidden = true;
+  box.append(summary, list, more);
+  let offset = 0;
+  const load = async () => {
+    more.disabled = true;
+    try {
+      const result = await request('/api/tasks/' + task.id + '/correspondence?offset=' + offset);
+      if (!box.isConnected) return;
+      summary.textContent = result.address ? result.total + ' saved email' + (result.total === 1 ? '' : 's') + ' with ' + result.address : 'No saved sender history for this task.';
+      for (const mail of result.messages) {
+        const item = el('li', undefined, 'correspondence-item');
+        const link = el('a', mail.subject || '(No subject)');
+        link.href = '/user/mail/' + encodeURIComponent(mail.id);
+        if (mail.is_source) link.append(el('span', ' · task source', 'meta'));
+        item.append(link, el('span', (mail.direction === 'sent' ? 'Sent' : 'Received') + ' · ' + formatWhen(mail.internal_date, mail.date || ''), 'meta'));
+        if (mail.snippet) item.append(el('p', mail.snippet, 'email-excerpt'));
+        list.append(item);
+      }
+      offset = result.next_offset;
+      more.hidden = offset === null;
+    } catch (error) {
+      summary.textContent = 'Could not load sender history: ' + error.message;
+      more.hidden = true;
+    } finally { more.disabled = false; }
+  };
+  more.addEventListener('click', load);
+  load();
+  return box;
 }
 
 // What the task came from: subject, sender and the start of the email. Quiet if the email cannot be loaded.

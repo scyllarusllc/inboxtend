@@ -13,6 +13,7 @@ from auth import cookie_token
 from db_models import Task, TaskAttachment, TaskImageReview, session as model_session
 from tasks import DEFAULT_DB, connection, decorate, _soon, events, task_work_plan
 from app import raster_preview_mime
+from gmail_web import _row as mail_row
 
 
 router = APIRouter(prefix='/api/tasks')
@@ -90,6 +91,33 @@ def task_events(request: Request, task_id: int, user=Depends(current_user)):
     if exists is None: raise HTTPException(404, 'Task not found')
     with connection(path) as db: history = events(db, task_id, user['id'])
     return json_result({'events': history})
+
+
+@router.get('/{task_id:int}/correspondence')
+def task_correspondence(request: Request, task_id: int, offset: int = 0, user=Depends(current_user)):
+    """Locally cached mail with the source message's correspondent."""
+    if offset < 0: raise HTTPException(400, 'Invalid offset')
+    path = getattr(request.app.state, 'db_path', DEFAULT_DB)
+    with model_session(path) as db:
+        task = db.exec(select(Task).where(Task.id == task_id, Task.user_id == user['id'])).first()
+        if task is None: raise HTTPException(404, 'Task not found')
+        message_id = task.message_id
+    if not message_id:
+        return json_result({'messages': [], 'total': 0, 'address': '', 'next_offset': None})
+    with connection(path) as db:
+        source = db.execute('SELECT peer_email FROM gmail_messages WHERE user_id=? AND message_id=?',
+                            (user['id'], message_id)).fetchone()
+        if source is None or not source['peer_email']:
+            return json_result({'messages': [], 'total': 0, 'address': '', 'next_offset': None})
+        address = source['peer_email']
+        params = (user['id'], address)
+        where = 'user_id=? AND peer_email=?'
+        total = db.execute('SELECT COUNT(*) FROM gmail_messages WHERE ' + where, params).fetchone()[0]
+        rows = db.execute('SELECT * FROM gmail_messages WHERE ' + where +
+                          ' ORDER BY internal_date DESC,message_id DESC LIMIT 50 OFFSET ?', (*params, offset)).fetchall()
+    messages = [dict(mail_row(row), is_source=row['message_id'] == message_id) for row in rows]
+    next_offset = offset + len(messages) if offset + len(messages) < total else None
+    return json_result({'messages': messages, 'total': total, 'address': address, 'next_offset': next_offset})
 
 
 @router.get('/{task_id:int}/plan')

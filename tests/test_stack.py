@@ -57,7 +57,42 @@ class StackTests(unittest.TestCase):
                 self.assertEqual(client.get('/api/tasks/summary', headers=headers).json()['summary']['total'], 1)
                 self.assertEqual(client.get(f"/api/tasks/{created['id']}/images", headers=headers).json()['images'][0]['name'], 'one.jpg')
                 self.assertEqual(client.get(f"/api/tasks/{created['id']}/images/1/thumbnail", headers=headers).content, b'\xff\xd8\xff\x00')
+                self.assertEqual(client.get(f"/api/tasks/{created['id']}/correspondence", headers=headers).json()['total'], 0)
                 self.assertEqual(client.get('/api/tasks', headers={'Host': 'localhost:8765'}).status_code, 401)
+            finally:
+                app.state.auth_manager = old_manager
+                app.state.db_path = old_path
+
+    def test_task_correspondence_includes_sent_and_received_from_all_accounts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = directory + '/tasks.sqlite3'
+            with connection(path) as db:
+                created = create_task(db, {'id': 'source', 'provider': 'gmail'}, {'title': 'Follow up', 'description': '', 'priority': 'medium'}, user_id=1)
+                for mid, peer, owner, labels, stamp in [
+                    ('source', 'person@example.com', 1, '[]', 100),
+                    ('reply', 'person@example.com', 1, '["SENT"]', 200),
+                    ('other-account', 'person@example.com', 1, '[]', 300),
+                    ('different', 'other@example.com', 1, '[]', 400),
+                    ('another-user', 'person@example.com', 2, '[]', 500),
+                ]:
+                    db.execute('INSERT INTO gmail_messages(user_id,message_id,peer_email,label_ids,internal_date,fetched_at,account_id) '
+                               'VALUES(?,?,?,?,?,?,?)', (owner, mid, peer, labels, stamp, stamp, 2 if mid == 'other-account' else 1))
+                db.commit()
+            old_manager = getattr(app.state, 'auth_manager', None)
+            old_path = getattr(app.state, 'db_path', None)
+            token = 't' * 40
+            app.state.auth_manager = type('Manager', (), {'session': lambda self, value: {'id': 1} if value == token else None})()
+            app.state.db_path = path
+            try:
+                client = TestClient(app)
+                headers = {'Host': 'localhost:8765', 'Cookie': 'it_session=' + token}
+                result = client.get(f"/api/tasks/{created['id']}/correspondence", headers=headers)
+                self.assertEqual(result.status_code, 200)
+                data = result.json()
+                self.assertEqual([m['id'] for m in data['messages']], ['other-account', 'reply', 'source'])
+                self.assertEqual(data['total'], 3)
+                self.assertEqual(data['messages'][1]['direction'], 'sent')
+                self.assertTrue(data['messages'][2]['is_source'])
             finally:
                 app.state.auth_manager = old_manager
                 app.state.db_path = old_path
