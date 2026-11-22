@@ -1,21 +1,25 @@
 PORT ?= 8765
+NEXT_PORT ?= 3000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 CADDY ?= caddy
 
-.PHONY: dev dev-next caddy-dev test build-pages css css-watch css-check vendor demo
+.PHONY: dev dev-api dev-next caddy-dev test build-pages css css-watch css-check vendor demo
 
 dev:
 	python3 scripts/bootstrap_dev.py
-	.venv/bin/python scripts/free_dev_port.py $(PORT)
-	INBOX_TEND_PORT=$(PORT) .venv/bin/python app.py
-
-dev-next:
-	python3 scripts/bootstrap_dev.py
 	test -d node_modules/next || npm ci
 	.venv/bin/python scripts/free_dev_port.py $(PORT)
+	.venv/bin/python scripts/free_dev_port.py $(NEXT_PORT)
 	INBOX_TEND_PORT=$(PORT) .venv/bin/python cli.py serve --port $(PORT) & backend_pid=$$!; \
 	trap 'kill $$backend_pid 2>/dev/null || true' EXIT INT TERM; \
-	INBOX_TEND_API_ORIGIN=http://127.0.0.1:$(PORT) npm run next:dev
+	INBOX_TEND_API_ORIGIN=http://127.0.0.1:$(PORT) npm run next:dev -- --port $(NEXT_PORT)
+
+dev-api:
+	python3 scripts/bootstrap_dev.py
+	.venv/bin/python scripts/free_dev_port.py $(PORT)
+	INBOX_TEND_PORT=$(PORT) .venv/bin/python cli.py serve --port $(PORT)
+
+dev-next: dev
 
 caddy-dev:
 	INBOX_TEND_PORT=$(PORT) $(CADDY) run --config deploy/Caddyfile.local
@@ -26,8 +30,7 @@ test:
 build-pages:
 	$(PYTHON) scripts/build_pages.py
 
-# Front end. Only needed when you change the look: the compiled CSS and Font Awesome files are committed,
-# so running the app needs no Node. First time: npm ci
+# Front end stylesheet and vendor assets.
 css:
 	npm run build:css
 	$(PYTHON) scripts/build_pages.py
