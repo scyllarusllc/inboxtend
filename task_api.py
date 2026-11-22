@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import subprocess
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -19,6 +20,7 @@ from auth import read_config
 from app import ROOT
 from gmail_web import _row as mail_row
 from task_project import export_task, project_path
+import website_jobs
 
 
 router = APIRouter(prefix='/api/tasks')
@@ -127,6 +129,15 @@ def task_correspondence(request: Request, task_id: int, offset: int = 0, user=De
 
 @router.post('/{task_id:int}/project')
 def create_project(request: Request, task_id: int, user=Depends(current_user)):
+    _require_write(request, user)
+    path = getattr(request.app.state, 'db_path', DEFAULT_DB)
+    try: result = export_task(path, user['id'], task_id)
+    except LookupError: raise HTTPException(404, 'Task not found') from None
+    except OSError: raise HTTPException(503, 'Could not create the task project directory') from None
+    return json_result({'project': result})
+
+
+def _require_write(request: Request, user):
     origin = request.headers.get('origin')
     host = request.headers.get('host', '')
     allowed = {f'http://{host}'}
@@ -141,11 +152,58 @@ def create_project(request: Request, task_id: int, user=Depends(current_user)):
         raise HTTPException(403, 'Cross-site write blocked')
     if not secrets.compare_digest(request.headers.get('x-csrf-token', ''), user['csrf_token']):
         raise HTTPException(403, 'CSRF token required')
+
+
+def _task_exists(request: Request, task_id: int, user_id: int):
     path = getattr(request.app.state, 'db_path', DEFAULT_DB)
-    try: result = export_task(path, user['id'], task_id)
-    except LookupError: raise HTTPException(404, 'Task not found') from None
-    except OSError: raise HTTPException(503, 'Could not create the task project directory') from None
-    return json_result({'project': result})
+    with model_session(path) as db:
+        exists = db.exec(select(Task.id).where(Task.id == task_id, Task.user_id == user_id)).first()
+    if exists is None: raise HTTPException(404, 'Task not found')
+    return path
+
+
+@router.post('/{task_id:int}/website-project')
+def start_website_project(request: Request, task_id: int, body: dict, user=Depends(current_user)):
+    _require_write(request, user)
+    path = _task_exists(request, task_id, user['id'])
+    try: job = website_jobs.start(path, user['id'], task_id, body.get('slug'))
+    except ValueError as exc: raise HTTPException(400, str(exc)) from None
+    except RuntimeError as exc: raise HTTPException(503, str(exc)) from None
+    except OSError: raise HTTPException(503, 'Could not prepare website project') from None
+    return json_result({'job': job})
+
+
+@router.get('/{task_id:int}/website-project')
+def website_project_status(request: Request, task_id: int, user=Depends(current_user)):
+    _task_exists(request, task_id, user['id'])
+    job = website_jobs.status(task_id)
+    if not job: return json_result({'job': None})
+    preview = ''
+    files = []
+    log = ''
+    if job.get('state') in ('running', 'failed', 'interrupted'):
+        try: log = (project_path(task_id) / 'website-build.log').read_text(encoding='utf-8', errors='replace')[-3000:]
+        except OSError: pass
+    if job.get('state') in ('ready', 'published'):
+        try:
+            target = Path(job['path'])
+            preview = (target / 'README.md').read_text(encoding='utf-8')[:8000]
+            files = [p.relative_to(target).as_posix() for p in target.rglob('*')
+                     if p.is_file() and '.git' not in p.relative_to(target).parts][:100]
+        except OSError: pass
+    return json_result({'job': job, 'readme': preview, 'files': files, 'log': log})
+
+
+@router.post('/{task_id:int}/website-project/publish')
+def publish_website_project(request: Request, task_id: int, body: dict, user=Depends(current_user)):
+    _require_write(request, user)
+    _task_exists(request, task_id, user['id'])
+    if body.get('confirm') != 'PUBLISH_PRIVATE': raise HTTPException(400, 'Confirm private GitHub publishing')
+    try: job = website_jobs.publish(task_id)
+    except ValueError as exc: raise HTTPException(400, str(exc)) from None
+    except RuntimeError as exc: raise HTTPException(503, str(exc)) from None
+    except (OSError, subprocess.TimeoutExpired): raise HTTPException(503, 'GitHub publishing failed') from None
+    return json_result({'job': job})
 
 
 @router.get('/{task_id:int}/attachments.zip')

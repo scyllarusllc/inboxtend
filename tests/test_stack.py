@@ -143,6 +143,15 @@ class StackTests(unittest.TestCase):
                     self.assertIn('Please review the updated context.', ai_plan.call_args.kwargs['project_text'])
                     saved = client.get(f"/api/tasks/{created['id']}/plan", headers=headers).json()['saved']
                     self.assertEqual(saved['plan']['approach']['en'], 'Use the project notes.')
+                    website_url = f"/api/tasks/{created['id']}/website-project"
+                    with patch('website_jobs.start', return_value={'state': 'running', 'slug': 'site-test'}) as start_job:
+                        self.assertEqual(client.post(website_url, headers=headers, json={'slug': 'site-test'}).status_code, 403)
+                        started = client.post(website_url, headers={**headers, 'X-CSRF-Token': 'csrf'}, json={'slug': 'site-test'})
+                        self.assertEqual(started.status_code, 200)
+                        start_job.assert_called_once_with(path, 1, created['id'], 'site-test')
+                    with patch('website_jobs.publish') as publish_job:
+                        self.assertEqual(client.post(website_url + '/publish', headers={**headers, 'X-CSRF-Token': 'csrf'}, json={}).status_code, 400)
+                        publish_job.assert_not_called()
             finally:
                 app.state.auth_manager = old_manager
                 app.state.db_path = old_path

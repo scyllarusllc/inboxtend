@@ -355,7 +355,73 @@ function projectCard(task) {
     ready.append(track, el('p', 'AI plan ready · saved ' + new Date(lastPlan.created_at).toLocaleString(), 'meta'));
     box.append(ready);
   }
+  box.append(websiteSkillCard(task));
   return box;
+}
+
+function websiteSkillCard(task) {
+  const panel = el('details', undefined, 'website-skill');
+  panel.append(el('summary', 'Create a website project (GitHub)'));
+  panel.append(el('p', 'Uses the website project skill and this task’s files. First builds a local project; publish it as a private GitHub repository only after reviewing the result.', 'meta'));
+  const label = el('label', 'Repository name');
+  const slug = el('input');
+  slug.type = 'text';
+  slug.autocomplete = 'off';
+  slug.pattern = '[a-z][a-z0-9-]{2,62}';
+  slug.value = ('site-' + task.id + '-' + task.title.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '')).slice(0, 63).replace(/-+$/, '');
+  label.append(slug);
+  const build = iconButton('sparkles', 'Build website locally');
+  const status = el('p', '', 'meta');
+  const review = el('div', undefined, 'website-review');
+  const display = data => {
+    const job = data.job;
+    review.replaceChildren();
+    if (!job) { status.textContent = 'No website project started.'; return; }
+    status.textContent = 'Website project: ' + job.state + ' · ' + job.path + (job.error ? ' · ' + job.error : '');
+    build.disabled = job.state === 'running' || job.state === 'publishing';
+    if (data.log) review.append(el('pre', data.log, 'attachment-preview'));
+    if (job.state === 'ready' || job.state === 'published') {
+      review.append(el('h3', 'Local project preview'));
+      review.append(el('pre', data.readme || 'README unavailable; inspect the project folder on the server.', 'attachment-preview'));
+      if (data.files?.length) review.append(el('p', 'Files: ' + data.files.join(' · '), 'meta'));
+      if (job.state === 'ready') {
+        const approval = el('label', undefined, 'website-publish-check');
+        const check = el('input'); check.type = 'checkbox';
+        approval.append(check, document.createTextNode(' I reviewed the local project and want to publish a private GitHub repository.'));
+        const publish = iconButton('upload', 'Publish private GitHub repository');
+        publish.disabled = true;
+        check.addEventListener('change', () => { publish.disabled = !check.checked; });
+        publish.addEventListener('click', async () => {
+          publish.disabled = true;
+          status.textContent = 'Publishing private GitHub repository…';
+          try { await request('/api/tasks/' + task.id + '/website-project/publish', 'POST', {confirm: 'PUBLISH_PRIVATE'}); await refresh(); }
+          catch (error) { notify(error.message, true); await refresh(); }
+        });
+        review.append(approval, publish);
+      } else if (job.remote_url) {
+        const link = el('a', job.remote_url); link.href = job.remote_url; link.target = '_blank'; link.rel = 'noopener noreferrer'; review.append(link);
+      }
+    }
+  };
+  const refresh = async () => {
+    if (!panel.isConnected) return;
+    try { display(await request('/api/tasks/' + task.id + '/website-project')); }
+    catch (error) { status.textContent = error.message; }
+  };
+  build.addEventListener('click', async () => {
+    if (!slug.checkValidity()) { slug.reportValidity(); return; }
+    build.disabled = true;
+    status.textContent = 'Starting website build…';
+    try { await request('/api/tasks/' + task.id + '/website-project', 'POST', {slug: slug.value}); await refresh(); }
+    catch (error) { status.textContent = error.message; build.disabled = false; notify(error.message, true); }
+  });
+  panel.addEventListener('toggle', () => { if (panel.open) refresh(); });
+  const timer = window.setInterval(() => {
+    if (!panel.isConnected) { window.clearInterval(timer); return; }
+    if (panel.open && status.textContent.includes('running')) refresh();
+  }, 3000);
+  panel.append(label, build, status, review);
+  return panel;
 }
 
 function correspondenceCard(task) {

@@ -397,6 +397,15 @@
   .task-edit[open] > summary { @apply mb-3; }
   .email-excerpt { @apply m-0 text-sm text-slate-600; }
   .project-actions { @apply flex flex-wrap gap-3; }
+  .website-skill { @apply mt-3 grid gap-3 rounded-xl border border-indigo-200 bg-indigo-50/40 p-4; }
+  .website-skill > summary { @apply cursor-pointer font-semibold text-indigo-800; }
+  .website-skill[open] > :not(summary) { @apply mt-3; }
+  .website-skill > label { @apply grid max-w-md gap-1 text-sm font-medium; }
+  .website-skill > button, .website-review > button { @apply justify-self-start; }
+  .website-review { @apply grid gap-3; }
+  .website-review > h3 { @apply m-0 text-sm font-bold; }
+  .website-review > pre { @apply max-h-96; }
+  .website-publish-check { @apply flex items-start gap-2 text-sm; }
   .project-previews { @apply grid gap-3 pt-3; }
   .project-previews[hidden] { display: none; }
   .project-previews > h3 { @apply m-0 text-sm font-bold uppercase tracking-wider text-slate-500; }

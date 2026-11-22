@@ -40,7 +40,7 @@ const ICONS = {
   search: 'fa-solid fa-magnifying-glass', refresh: 'fa-solid fa-rotate', pencil: 'fa-regular fa-pen-to-square',
   history: 'fa-solid fa-clock-rotate-left', check: 'fa-solid fa-check', 'check-double': 'fa-solid fa-check-double', plus: 'fa-solid fa-plus',
   mail: 'fa-regular fa-envelope', sent: 'fa-solid fa-paper-plane', received: 'fa-solid fa-inbox', paperclip: 'fa-solid fa-paperclip', download: 'fa-solid fa-download',
-  eye: 'fa-regular fa-eye', language: 'fa-solid fa-language', sparkles: 'fa-solid fa-wand-magic-sparkles',
+  eye: 'fa-regular fa-eye', language: 'fa-solid fa-language', sparkles: 'fa-solid fa-wand-magic-sparkles', upload: 'fa-solid fa-arrow-up-from-bracket',
   reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark', play: 'fa-solid fa-play', 'rotate-left': 'fa-solid fa-rotate-left', 'rotate-right': 'fa-solid fa-rotate-right', clock: 'fa-regular fa-clock'
 };
 // Message text with web addresses made clickable. Only http(s) links, always in a new tab and without handing the page
