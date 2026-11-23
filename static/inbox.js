@@ -121,6 +121,7 @@ async function showProposal(messageId, prepared) {
     const data = Object.fromEntries(new FormData(form).entries());
     data.message_id = messageId;
     data.scope = view;
+    if (accountFilter) data.account_id = Number(accountFilter);
     if (proposal.ai) data.ai_assisted = true;
     data.due_date = data.due_date.trim() || null;
     data.due_time = data.due_time.trim() || null;
@@ -405,7 +406,8 @@ async function selectMessage(id) {
       button.addEventListener('click',async () => {
         for (const choice of choices.querySelectorAll('button')) choice.disabled = true;
         try {
-          const result = await request('/api/tasks/from-message','POST',{message_id:id,intent,scope:view});
+          const result = await request('/api/tasks/from-message','POST',{message_id:id,intent,scope:view,
+            ...(accountFilter ? {account_id:Number(accountFilter)} : {})});
           location.assign('/user/task/' + result.task.id);
         } catch (error) {
           notify(error.message,true);

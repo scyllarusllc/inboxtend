@@ -574,7 +574,7 @@ class Handler:
             if path == '/api/tasks' and self.command == 'POST':
                 self._gmail_message(session,data.get('message_id'))
                 with self._db() as db:
-                    message = scope_source(db,session['id'],data.get('message_id'),data.get('scope','messages'))
+                    message = scope_source(db,session['id'],data.get('message_id'),data.get('scope','messages'),data.get('account_id'))
                     data.setdefault('due_timezone',prefs.effective(db,session['id'],self.gmail_config)['timezone'])
                     existing = task_for_scope(db,message,session['id'])
                     if existing:
@@ -591,7 +591,7 @@ class Handler:
                 if intent not in suggestions: raise RequestError(400,'Unknown image task suggestion')
                 self._gmail_message(session,data.get('message_id'))
                 with self._db() as db:
-                    message = scope_source(db,session['id'],data.get('message_id'),data.get('scope','messages'))
+                    message = scope_source(db,session['id'],data.get('message_id'),data.get('scope','messages'),data.get('account_id'))
                     placeholders = ','.join('?' for _ in message['source_ids'])
                     image_count = db.execute(f"SELECT COUNT(*) FROM gmail_attachments WHERE user_id=? AND message_id IN ({placeholders}) AND mime_type LIKE 'image/%'",
                                              (session['id'],*message['source_ids'])).fetchone()[0]

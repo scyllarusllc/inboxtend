@@ -30,7 +30,7 @@ def export_task(db_path, user_id: int, task_id: int):
         task = db.execute('SELECT * FROM tasks WHERE id=? AND user_id=?', (task_id, user_id)).fetchone()
         if task is None: raise LookupError('Task not found')
         task_data = dict(task)
-        messages = [dict(row) for row in db.execute('SELECT message_id,account_id,from_addr,to_addr,subject,date_header,internal_date,body_text,snippet '
+        messages = [dict(row) for row in db.execute('SELECT message_id,account_id,from_addr,to_addr,cc_addr,subject,date_header,internal_date,body_text,body_html,snippet,headers_json '
                     'FROM task_source_messages WHERE task_id=? ORDER BY internal_date,message_id', (task_id,))]
         snapshot = bool(messages)
         if not snapshot:

@@ -126,7 +126,8 @@ def task_correspondence(request: Request, task_id: int, offset: int = 0, user=De
                          'direction':'sent' if '"SENT"' in row['label_ids'] else 'received',
                          'is_source':row['message_id']==message_id} for row in rows]
             next_offset = offset + len(messages) if offset + len(messages) < snapshot_count else None
-            return json_result({'messages':messages,'total':snapshot_count,'address':task.scope_key if scope=='people' else '',
+            address = task.scope_key.split(':',1)[1] if scope=='people' and ':' in task.scope_key and not task.scope_key.startswith('single:') else ''
+            return json_result({'messages':messages,'total':snapshot_count,'address':address,
                                 'scope':scope,'next_offset':next_offset})
         source = db.execute('SELECT peer_email FROM gmail_messages WHERE user_id=? AND message_id=?',
                             (user['id'], message_id)).fetchone()
