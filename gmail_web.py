@@ -24,6 +24,7 @@ import settings as prefs
 import mailsearch
 import flags
 import topics
+from mail_content import readable_body
 
 AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 TOKEN = 'https://oauth2.googleapis.com/token'
@@ -731,7 +732,7 @@ def message(db,config,user_id,message_id,*,opener=urlopen):
 def _detail(db,user_id,row):
     detail = _row(row)
     detail.update({'to':row['to_addr'],'cc':row['cc_addr'],'labels':json.loads(row['label_ids'] or '[]'),
-                   'body_text':row['body_text'],'has_html':bool(row['body_html']),'size_estimate':row['size_estimate'],
+                   'body_text':readable_body(row['body_text'], row['body_html']),'has_html':bool(row['body_html']),'size_estimate':row['size_estimate'],
                    'headers':json.loads(row['headers_json'] or '[]'),
                    'attachments':[{'id':a['id'],'name':a['filename'],'mime_type':a['mime_type'],'size_bytes':a['size_bytes'],
                                    'stored':bool(a['has_content']),'skipped_reason':a['skipped_reason'],'rotation':a['rotation']}

@@ -30,6 +30,7 @@ from app import ROOT
 from gmail_web import _row as mail_row
 from task_project import export_task, project_path
 import website_jobs
+from mail_content import readable_body
 
 
 router = APIRouter(prefix='/api/tasks')
@@ -128,7 +129,7 @@ def task_correspondence(request: Request, task_id: int, offset: int = 0, user=De
                               (task_id,offset)).fetchall()
             messages = [{'id':row['message_id'],'from':row['from_addr'],'to':row['to_addr'],
                          'subject':row['subject'],'date':row['date_header'],'internal_date':row['internal_date'],
-                         'snippet':row['snippet'],'body_text':row['body_text'],
+                         'snippet':row['snippet'],'body_text':readable_body(row['body_text'],row['body_html']),
                          'direction':'sent' if '"SENT"' in row['label_ids'] else 'received',
                          'is_source':row['message_id']==message_id} for row in rows]
             next_offset = offset + len(messages) if offset + len(messages) < snapshot_count else None
@@ -145,7 +146,8 @@ def task_correspondence(request: Request, task_id: int, offset: int = 0, user=De
         total = db.execute('SELECT COUNT(*) FROM gmail_messages WHERE ' + where, params).fetchone()[0]
         rows = db.execute('SELECT * FROM gmail_messages WHERE ' + where +
                           ' ORDER BY internal_date DESC,message_id DESC LIMIT 50 OFFSET ?', (*params, offset)).fetchall()
-    messages = [dict(mail_row(row), is_source=row['message_id'] == message_id) for row in rows]
+    messages = [dict(mail_row(row), body_text=readable_body(row['body_text'],row['body_html']),
+                     is_source=row['message_id'] == message_id) for row in rows]
     next_offset = offset + len(messages) if offset + len(messages) < total else None
     return json_result({'messages': messages, 'total': total, 'address': address, 'scope': scope, 'next_offset': next_offset})
 

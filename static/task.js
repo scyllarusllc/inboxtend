@@ -505,16 +505,22 @@ function correspondenceCard(task) {
       summary.textContent = result.total ? result.total + ' saved email' + (result.total === 1 ? '' : 's') + (result.address ? ' with ' + result.address : '') : 'No saved source emails for this task.';
       for (const mail of result.messages) {
         const item = el('li', undefined, 'correspondence-item');
+        if (mail.is_source) item.classList.add('is-source');
         const link = el('a', mail.subject || '(No subject)');
         link.href = '/user/mail/' + encodeURIComponent(mail.id);
         if (mail.is_source) link.append(el('span', ' · task source', 'meta'));
         item.append(link, el('span', (mail.direction === 'sent' ? 'Sent' : 'Received') + ' · ' + formatWhen(mail.internal_date, mail.date || ''), 'meta'));
-        if (mail.snippet) item.append(el('p', mail.snippet, 'email-excerpt'));
-        if (mail.body_text) {
-          const full = el('details');
-          full.append(el('summary', 'Read saved content'), el('pre', mail.body_text, 'message-body'));
+        const participants = el('div', undefined, 'correspondence-people');
+        if (mail.from) participants.append(el('div', 'From  ' + mail.from));
+        if (mail.to) participants.append(el('div', 'To      ' + mail.to));
+        if (participants.childNodes.length) item.append(participants);
+        if (mail.body_text || mail.snippet) {
+          const full = el('details', undefined, 'correspondence-content');
+          full.open = Boolean(mail.is_source);
+          full.append(el('summary', mail.is_source ? 'Task source email' : 'Read email content'),
+            readableMailBody(mail.body_text || mail.snippet));
           item.append(full);
-        }
+        } else item.append(el('p', 'No saved text content. The email may contain only attachments.', 'meta'));
         list.append(item);
       }
       offset = result.next_offset;
@@ -529,6 +535,37 @@ function correspondenceCard(task) {
   return box;
 }
 
+function readableMailText(raw) {
+  const source = String(raw || '').trim();
+  // Some providers prepend the author's small HTML announcement to a much longer
+  // generated plain-text newsletter. Use that announcement as the reading view.
+  const prefix = source.match(/^(?:\s*<p\b[^>]*>[\s\S]*?<\/p>){1,20}/i);
+  if (prefix && prefix[0].length < source.length * .7) {
+    const stripped = prefix[0].replace(/<br\b[^>]*>/gi, '\n').replace(/<\/p\s*>/gi, '\n\n').replace(/<[^>]*>/g, '');
+    const decoder = document.createElement('textarea');
+    decoder.innerHTML = stripped;
+    const text = decoder.value.trim();
+    if (text.length >= 40) return text.replace(/\n{3,}/g, '\n\n');
+  }
+  return source;
+}
+
+function readableMailBody(raw) {
+  const readable = readableMailText(raw);
+  const box = el('div', undefined, 'readable-mail');
+  const content = linkedText(readable, 'message-body');
+  for (const link of content.querySelectorAll('a')) {
+    if (link.textContent.length > 100) link.textContent = 'Open link ↗';
+  }
+  box.append(content);
+  if (readable !== String(raw || '').trim()) {
+    const original = el('details', undefined, 'mail-original');
+    original.append(el('summary', 'Show original email content'), linkedText(raw, 'message-body'));
+    box.append(original);
+  }
+  return box;
+}
+
 // What the task came from: subject, sender and the start of the email. Quiet if the email cannot be loaded.
 let emailContext = null;
 function emailCard(task) {
@@ -536,7 +573,7 @@ function emailCard(task) {
   const box = section('From this email');
   const fill = m => {
     box.append(el('strong', m.subject || '(No subject)'), el('p', 'From ' + (m.from || 'unknown') + ' · ' + formatWhen(m.internal_date, m.date || ''), 'meta'));
-    const text = (m.body_text || m.snippet || '').replace(/\s+/g, ' ').trim();
+    const text = readableMailText(m.body_text || m.snippet || '').replace(/https?:\/\/[^\s]+/gi, '[link]').replace(/\s+/g, ' ').trim();
     if (text) box.append(el('p', text.length > 360 ? text.slice(0, 360) + '…' : text, 'email-excerpt'));
     const more = el('a', 'Read the full email'); more.href = '/user/mail/' + encodeURIComponent(messageId); box.append(more);
   };
