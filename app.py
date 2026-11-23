@@ -28,7 +28,7 @@ import agentsteers_bridge
 import integration_feed
 from task_project import export_task, project_path, read_project
 from auth import AuthManager, SESSION_SECONDS, cookie_token, read_config
-from tasks import connection, DEFAULT_DB, get_task, task_for_source, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, task_work_plan, save_task_work_plan, rotate_task_image, task_image_review, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
+from tasks import connection, DEFAULT_DB, get_task, task_for_source, scope_source, task_for_scope, create_task, update_task, delete_task, task_images, task_image, save_task_image_review, task_work_plan, save_task_work_plan, rotate_task_image, task_image_review, ConflictError, reserve_agentsteers_dispatch, record_agentsteers_update
 
 ROOT = Path(__file__).resolve().parent
 _TRANSLATION_TIMINGS = {}
@@ -572,10 +572,11 @@ class Handler:
                 message = self._gmail_message(session,data.get('id'))
                 return self._json(200,{'draft':draft_reply(message),'sent':False,'template':True})
             if path == '/api/tasks' and self.command == 'POST':
-                message = dict(self._gmail_message(session,data.get('message_id')),provider='imap' if data.get('message_id','').startswith('imap-') else 'gmail')
+                self._gmail_message(session,data.get('message_id'))
                 with self._db() as db:
+                    message = scope_source(db,session['id'],data.get('message_id'),data.get('scope','messages'))
                     data.setdefault('due_timezone',prefs.effective(db,session['id'],self.gmail_config)['timezone'])
-                    existing = task_for_source(db,message['provider'],message['id'],session['id'])
+                    existing = task_for_scope(db,message,session['id'])
                     if existing:
                         return self._json(409,{'error':'Task already exists','task':existing})
                     task = create_task(db,message,data,session['id'])
@@ -588,13 +589,14 @@ class Handler:
                     'review_images': ('Review attached images and decide next steps', 'Review all attached images, translate any text into Chinese, and decide what follow-up is needed.'),
                 }
                 if intent not in suggestions: raise RequestError(400,'Unknown image task suggestion')
-                message = dict(self._gmail_message(session,data.get('message_id')),
-                               provider='imap' if str(data.get('message_id','')).startswith('imap-') else 'gmail')
+                self._gmail_message(session,data.get('message_id'))
                 with self._db() as db:
-                    image_count = db.execute("SELECT COUNT(*) FROM gmail_attachments WHERE user_id=? AND message_id=? AND mime_type LIKE 'image/%'",
-                                             (session['id'],message['id'])).fetchone()[0]
+                    message = scope_source(db,session['id'],data.get('message_id'),data.get('scope','messages'))
+                    placeholders = ','.join('?' for _ in message['source_ids'])
+                    image_count = db.execute(f"SELECT COUNT(*) FROM gmail_attachments WHERE user_id=? AND message_id IN ({placeholders}) AND mime_type LIKE 'image/%'",
+                                             (session['id'],*message['source_ids'])).fetchone()[0]
                     if not image_count: raise RequestError(400,'This message has no image attachments')
-                    existing = task_for_source(db,message['provider'],message['id'],session['id'])
+                    existing = task_for_scope(db,message,session['id'])
                     if existing: return self._json(200,{'task':existing,'existing':True})
                     user = prefs.effective(db,session['id'],self.gmail_config)
                     title,description = suggestions[intent]

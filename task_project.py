@@ -30,12 +30,17 @@ def export_task(db_path, user_id: int, task_id: int):
         task = db.execute('SELECT * FROM tasks WHERE id=? AND user_id=?', (task_id, user_id)).fetchone()
         if task is None: raise LookupError('Task not found')
         task_data = dict(task)
-        source = db.execute('SELECT peer_email FROM gmail_messages WHERE user_id=? AND message_id=?',
-                            (user_id, task['message_id'])).fetchone()
-        address = source['peer_email'] if source else ''
         messages = [dict(row) for row in db.execute('SELECT message_id,account_id,from_addr,to_addr,subject,date_header,internal_date,body_text,snippet '
-                    'FROM gmail_messages WHERE user_id=? AND peer_email=? ORDER BY internal_date,message_id',
-                    (user_id, address))] if address else []
+                    'FROM task_source_messages WHERE task_id=? ORDER BY internal_date,message_id', (task_id,))]
+        snapshot = bool(messages)
+        if not snapshot:
+            source_id = task['anchor_message_id'] or task['message_id']
+            source = db.execute('SELECT peer_email FROM gmail_messages WHERE user_id=? AND message_id=?',
+                                (user_id, source_id)).fetchone()
+            address = source['peer_email'] if source else ''
+            messages = [dict(row) for row in db.execute('SELECT message_id,account_id,from_addr,to_addr,subject,date_header,internal_date,body_text,snippet '
+                        'FROM gmail_messages WHERE user_id=? AND peer_email=? ORDER BY internal_date,message_id',
+                        (user_id, address))] if address else []
         root = root_dir()
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(root, 0o700)
@@ -53,8 +58,11 @@ def export_task(db_path, user_id: int, task_id: int):
             used = set()
             with zipfile.ZipFile(working / 'attachments.zip', 'w', compression=zipfile.ZIP_DEFLATED) as archive:
                 for index, mail in enumerate(messages, 1):
-                    for row in db.execute('SELECT filename,mime_type,size_bytes,content,skipped_reason FROM gmail_attachments '
-                                          'WHERE user_id=? AND message_id=? ORDER BY id', (user_id, mail['message_id'])):
+                    attachment_rows = (db.execute('SELECT filename,mime_type,size_bytes,content,skipped_reason FROM task_source_attachments '
+                                                  'WHERE task_id=? AND message_id=? ORDER BY id', (task_id,mail['message_id'])) if snapshot else
+                                       db.execute('SELECT filename,mime_type,size_bytes,content,skipped_reason FROM gmail_attachments '
+                                                  'WHERE user_id=? AND message_id=? ORDER BY id', (user_id,mail['message_id'])))
+                    for row in attachment_rows:
                         name = f'{index:04d}-{_safe_name(row["filename"])}'
                         while name in used: name = f'{index:04d}-copy-{name}'
                         used.add(name)
@@ -66,14 +74,14 @@ def export_task(db_path, user_id: int, task_id: int):
                             (files / name).write_bytes(content)
                             archive.write(files / name, arcname=name)
                 # Include task copies when their source attachment is no longer in the mail cache.
-                exported_source_names = {(item['message_id'], item['name']) for item in manifest}
+                exported_source_names = {item['name'] for item in manifest}
                 for row in db.execute('SELECT filename,mime_type,size_bytes,content,skipped_reason FROM task_attachments WHERE task_id=? ORDER BY id', (task_id,)):
-                    if (task['message_id'], row['filename']) in exported_source_names:
+                    if row['filename'] in exported_source_names:
                         continue
                     name = f'task-{_safe_name(row["filename"])}'
                     while name in used: name = 'copy-' + name
                     used.add(name)
-                    manifest.append({'message_id': task['message_id'], 'name': row['filename'], 'mime_type': row['mime_type'], 'file': name if row['content'] is not None else None,
+                    manifest.append({'message_id': task['anchor_message_id'] or task['message_id'], 'name': row['filename'], 'mime_type': row['mime_type'], 'file': name if row['content'] is not None else None,
                                      'size_bytes': row['size_bytes'], 'skipped_reason': row['skipped_reason'] if row['content'] is None else ''})
                     if row['content'] is not None:
                         (files / name).write_bytes(bytes(row['content']))

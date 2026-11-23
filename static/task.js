@@ -174,6 +174,8 @@ function fact(label, value) {
   return row;
 }
 
+const anchorMessageId = task => task.anchor_message_id || task.message_id;
+
 function renderTask(task) {
   currentTask = task;
   document.title = task.title + ' · Inbox Tend';
@@ -200,7 +202,7 @@ function renderTask(task) {
   card.append(due);
   const chips = el('div', undefined, 'task-chips');
   if (task.priority === 'high' && !finished) chips.dataset.tone = 'high';
-  for (const [name, value] of [['Priority', task.priority + ' priority'], ['Owner', task.owner], ['Project', task.project_label], ['Customer', task.customer_label],
+  for (const [name, value] of [['Priority', task.priority + ' priority'], ['Source', ({people:'People',threads:'Conversation',messages:'Message'})[task.source_scope] || 'Message'], ['Owner', task.owner], ['Project', task.project_label], ['Customer', task.customer_label],
       ['Agent', task.assigned_agent ? task.assigned_agent + ' (' + task.agent_status + ')' : '']]) {
     if (value) chips.append(el('span', name === 'Priority' ? value : name + ': ' + value, 'task-pill'));
   }
@@ -219,9 +221,9 @@ function renderTask(task) {
     wait.addEventListener('click', () => { wait.disabled = true; changeStatus(task, task.status === 'waiting' ? 'new' : 'waiting'); });
     actions.append(wait);
   }
-  if (task.source_provider === 'gmail' && task.message_id) {
+  if (task.source_provider !== 'demo' && anchorMessageId(task)) {
     const open = el('a', undefined, 'big-action');
-    open.href = '/user/mail/' + encodeURIComponent(task.message_id);
+    open.href = '/user/mail/' + encodeURIComponent(anchorMessageId(task));
     open.append(icon('mail'), document.createTextNode(' Open the email'));
     actions.append(open);
   }
@@ -258,7 +260,7 @@ function renderTask(task) {
   if (task.agentsteers_job_id || task.assigned_agent || task.agent_status === 'dispatch_error') {
     mainCol.append(section('AgentSteers mock handoff', makeAgentSteersControls(task)));
   }
-  if (task.source_provider === 'gmail' && task.message_id) side.append(emailCard(task));
+  if (task.source_provider !== 'demo' && anchorMessageId(task)) side.append(emailCard(task));
   const history = taskHistoryDetails(task);
   history.open = true;
   const stamps = el('p', 'Created ' + (task.created_at ? new Date(task.created_at).toLocaleString() : '—') + ' · Updated ' + (task.updated_at ? new Date(task.updated_at).toLocaleString() : '—'), 'meta');
@@ -425,7 +427,7 @@ function websiteSkillCard(task) {
 }
 
 function correspondenceCard(task) {
-  const box = section('Emails with this sender');
+  const box = section(({people:'Emails with this person',threads:'Emails in this conversation',messages:'Source message'})[task.source_scope] || 'Source emails');
   const summary = el('p', 'Loading saved emails…', 'meta');
   const list = el('ol', undefined, 'correspondence-list');
   const more = el('button', 'Load more emails');
@@ -438,7 +440,7 @@ function correspondenceCard(task) {
     try {
       const result = await request('/api/tasks/' + task.id + '/correspondence?offset=' + offset);
       if (!box.isConnected) return;
-      summary.textContent = result.address ? result.total + ' saved email' + (result.total === 1 ? '' : 's') + ' with ' + result.address : 'No saved sender history for this task.';
+      summary.textContent = result.total ? result.total + ' saved email' + (result.total === 1 ? '' : 's') + (result.address ? ' with ' + result.address : '') : 'No saved source emails for this task.';
       for (const mail of result.messages) {
         const item = el('li', undefined, 'correspondence-item');
         const link = el('a', mail.subject || '(No subject)');
@@ -446,6 +448,11 @@ function correspondenceCard(task) {
         if (mail.is_source) link.append(el('span', ' · task source', 'meta'));
         item.append(link, el('span', (mail.direction === 'sent' ? 'Sent' : 'Received') + ' · ' + formatWhen(mail.internal_date, mail.date || ''), 'meta'));
         if (mail.snippet) item.append(el('p', mail.snippet, 'email-excerpt'));
+        if (mail.body_text) {
+          const full = el('details');
+          full.append(el('summary', 'Read saved content'), el('pre', mail.body_text, 'message-body'));
+          item.append(full);
+        }
         list.append(item);
       }
       offset = result.next_offset;
@@ -463,16 +470,17 @@ function correspondenceCard(task) {
 // What the task came from: subject, sender and the start of the email. Quiet if the email cannot be loaded.
 let emailContext = null;
 function emailCard(task) {
+  const messageId = anchorMessageId(task);
   const box = section('From this email');
   const fill = m => {
     box.append(el('strong', m.subject || '(No subject)'), el('p', 'From ' + (m.from || 'unknown') + ' · ' + formatWhen(m.internal_date, m.date || ''), 'meta'));
     const text = (m.body_text || m.snippet || '').replace(/\s+/g, ' ').trim();
     if (text) box.append(el('p', text.length > 360 ? text.slice(0, 360) + '…' : text, 'email-excerpt'));
-    const more = el('a', 'Read the full email'); more.href = '/user/mail/' + encodeURIComponent(task.message_id); box.append(more);
+    const more = el('a', 'Read the full email'); more.href = '/user/mail/' + encodeURIComponent(messageId); box.append(more);
   };
-  if (emailContext && emailContext.id === task.message_id) { fill(emailContext); return box; }
+  if (emailContext && emailContext.id === messageId) { fill(emailContext); return box; }
   box.hidden = true;   // Shown only once the email is loaded.
-  request('/api/connectors/gmail/messages/' + encodeURIComponent(task.message_id))
+  request('/api/connectors/gmail/messages/' + encodeURIComponent(messageId))
     .then(result => { emailContext = result.message; fill(emailContext); box.hidden = false; })
     .catch(() => {});
   return box;

@@ -111,14 +111,27 @@ def task_correspondence(request: Request, task_id: int, offset: int = 0, user=De
     with model_session(path) as db:
         task = db.exec(select(Task).where(Task.id == task_id, Task.user_id == user['id'])).first()
         if task is None: raise HTTPException(404, 'Task not found')
-        message_id = task.message_id
+        message_id = task.anchor_message_id or task.message_id
+        scope = task.source_scope
     if not message_id:
-        return json_result({'messages': [], 'total': 0, 'address': '', 'next_offset': None})
+        return json_result({'messages': [], 'total': 0, 'address': '', 'scope': scope, 'next_offset': None})
     with connection(path) as db:
+        snapshot_count = db.execute('SELECT COUNT(*) FROM task_source_messages WHERE task_id=?',(task_id,)).fetchone()[0]
+        if snapshot_count:
+            rows = db.execute('SELECT * FROM task_source_messages WHERE task_id=? ORDER BY internal_date DESC,message_id DESC LIMIT 50 OFFSET ?',
+                              (task_id,offset)).fetchall()
+            messages = [{'id':row['message_id'],'from':row['from_addr'],'to':row['to_addr'],
+                         'subject':row['subject'],'date':row['date_header'],'internal_date':row['internal_date'],
+                         'snippet':row['snippet'],'body_text':row['body_text'],
+                         'direction':'sent' if '"SENT"' in row['label_ids'] else 'received',
+                         'is_source':row['message_id']==message_id} for row in rows]
+            next_offset = offset + len(messages) if offset + len(messages) < snapshot_count else None
+            return json_result({'messages':messages,'total':snapshot_count,'address':task.scope_key if scope=='people' else '',
+                                'scope':scope,'next_offset':next_offset})
         source = db.execute('SELECT peer_email FROM gmail_messages WHERE user_id=? AND message_id=?',
                             (user['id'], message_id)).fetchone()
         if source is None or not source['peer_email']:
-            return json_result({'messages': [], 'total': 0, 'address': '', 'next_offset': None})
+            return json_result({'messages': [], 'total': 0, 'address': '', 'scope': scope, 'next_offset': None})
         address = source['peer_email']
         params = (user['id'], address)
         where = 'user_id=? AND peer_email=?'
@@ -127,7 +140,7 @@ def task_correspondence(request: Request, task_id: int, offset: int = 0, user=De
                           ' ORDER BY internal_date DESC,message_id DESC LIMIT 50 OFFSET ?', (*params, offset)).fetchall()
     messages = [dict(mail_row(row), is_source=row['message_id'] == message_id) for row in rows]
     next_offset = offset + len(messages) if offset + len(messages) < total else None
-    return json_result({'messages': messages, 'total': total, 'address': address, 'next_offset': next_offset})
+    return json_result({'messages': messages, 'total': total, 'address': address, 'scope': scope, 'next_offset': next_offset})
 
 
 @router.post('/{task_id:int}/project')

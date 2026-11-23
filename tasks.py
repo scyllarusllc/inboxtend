@@ -5,6 +5,7 @@ from pathlib import Path
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 import json
+import hashlib
 import os
 import sqlite3
 from sqlmodel import create_engine
@@ -92,12 +93,32 @@ def connection(path=DEFAULT_DB):
         'agentsteers_job_id': "TEXT NOT NULL DEFAULT ''",
         'agentsteers_result': "TEXT NOT NULL DEFAULT ''",
         'user_id': 'INTEGER NOT NULL DEFAULT 1',
+        'source_scope': "TEXT NOT NULL DEFAULT 'messages'",
+        'scope_key': "TEXT NOT NULL DEFAULT ''",
+        'anchor_message_id': "TEXT NOT NULL DEFAULT ''",
     }
     with db:
         for name, definition in additions.items():
             if name not in columns:
                 db.execute(f'ALTER TABLE tasks ADD COLUMN {name} {definition}')
+        if 'scope_key' not in columns:
+            db.execute("UPDATE tasks SET scope_key=message_id WHERE scope_key='' ")
+        if 'anchor_message_id' not in columns:
+            db.execute("UPDATE tasks SET anchor_message_id=message_id WHERE anchor_message_id='' ")
         db.execute('CREATE UNIQUE INDEX IF NOT EXISTS tasks_source ON tasks(source_provider,message_id)')
+        db.execute('CREATE UNIQUE INDEX IF NOT EXISTS tasks_scope ON tasks(user_id,source_provider,source_scope,scope_key)')
+        db.execute('''CREATE TABLE IF NOT EXISTS task_source_messages (
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            message_id TEXT NOT NULL, account_id INTEGER, from_addr TEXT NOT NULL DEFAULT '',
+            to_addr TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '',
+            date_header TEXT NOT NULL DEFAULT '', internal_date INTEGER NOT NULL DEFAULT 0,
+            body_text TEXT NOT NULL DEFAULT '', snippet TEXT NOT NULL DEFAULT '',
+            label_ids TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY(task_id,message_id))''')
+        db.execute('''CREATE TABLE IF NOT EXISTS task_source_attachments (
+            id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            message_id TEXT NOT NULL, filename TEXT NOT NULL, mime_type TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL, content BLOB, skipped_reason TEXT NOT NULL DEFAULT '')''')
         db.execute('''CREATE TABLE IF NOT EXISTS task_events (
             id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
             action TEXT NOT NULL, changes TEXT NOT NULL, created_at TEXT NOT NULL)''')
@@ -312,6 +333,39 @@ def task_for_source(db, provider, message_id, user_id=1):
     return decorate(row, due_soon_hours=_soon(db, user_id)) if row else None
 
 
+def scope_source(db, user_id, message_id, scope='messages'):
+    """Derive a task's mail set on the server from its selected Inbox view."""
+    if scope not in ('people','threads','messages'): raise ValueError('Unknown task source mode')
+    anchor = db.execute('SELECT account_id,thread_id,peer_email FROM gmail_messages WHERE user_id=? AND message_id=?',
+                        (user_id,message_id)).fetchone()
+    if anchor is None: raise ValueError('Source message is not saved locally')
+    if scope == 'people' and anchor['peer_email']:
+        key = anchor['peer_email']
+        rows = db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND peer_email=? ORDER BY internal_date,message_id',
+                          (user_id,key)).fetchall()
+    elif scope == 'threads' and anchor['thread_id']:
+        account = anchor['account_id']
+        key = str(account) + ':' + anchor['thread_id']
+        if account is None:
+            rows = db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND account_id IS NULL AND thread_id=? ORDER BY internal_date,message_id',
+                              (user_id,anchor['thread_id'])).fetchall()
+        else:
+            rows = db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND account_id=? AND thread_id=? ORDER BY internal_date,message_id',
+                              (user_id,account,anchor['thread_id'])).fetchall()
+    else:
+        scope, key, rows = 'messages', message_id, [{'message_id':message_id}]
+    provider = ('imap' if message_id.startswith('imap-') else 'gmail') if scope == 'messages' else 'group'
+    source_id = message_id if scope == 'messages' else 'scope-' + scope + '-' + hashlib.sha256((scope+':'+key).encode()).hexdigest()[:40]
+    return {'provider':provider,'id':source_id,'anchor_message_id':message_id,'source_scope':scope,
+            'scope_key':key,'source_ids':[row['message_id'] for row in rows], 'thread_id':anchor['thread_id']}
+
+
+def task_for_scope(db, source, user_id=1):
+    row = db.execute('SELECT * FROM tasks WHERE user_id=? AND source_provider=? AND source_scope=? AND scope_key=?',
+                     (user_id,source['provider'],source['source_scope'],source['scope_key'])).fetchone()
+    return decorate(row, due_soon_hours=_soon(db,user_id)) if row else None
+
+
 def create_task(db, message, fields, user_id=1):
     title = _text(fields.get('title'), 'title', 200, True)
     description = _text(fields.get('description'), 'description', 1000)
@@ -324,6 +378,11 @@ def create_task(db, message, fields, user_id=1):
     _deadline(date, time, zone)
     provider = _text(message.get('provider'), 'provider', 40, True)
     message_id = _text(message.get('id'), 'message ID', 200, True)
+    source_scope = message.get('source_scope','messages')
+    if source_scope not in ('people','threads','messages'): raise ValueError('Unknown task source mode')
+    scope_key = _text(message.get('scope_key') or message_id,'scope key',500,True)
+    anchor_message_id = _text(message.get('anchor_message_id') or message_id,'anchor message ID',200,True)
+    source_ids = message.get('source_ids') or [anchor_message_id]
     thread_id = _text(message.get('thread_id') or '', 'thread ID', 200)
     project = _text(fields.get('project_label', ''), 'project label', 120)
     customer = _text(fields.get('customer_label', ''), 'customer label', 120)
@@ -337,18 +396,28 @@ def create_task(db, message, fields, user_id=1):
         with db:
             cursor = db.execute('''INSERT INTO tasks
                 (message_id,title,description,owner,due_date,priority,status,created_at,updated_at,
-                 source_provider,thread_id,project_label,customer_label,due_time,due_timezone,source_url,review_state,user_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                 source_provider,thread_id,project_label,customer_label,due_time,due_timezone,source_url,review_state,user_id,
+                 source_scope,scope_key,anchor_message_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                 (message_id,title,description,owner,date,priority,'new',now,now,
-                 provider,thread_id,project,customer,time,zone,source_url,'reviewed',user_id))
+                 provider,thread_id,project,customer,time,zone,source_url,'reviewed',user_id,
+                 source_scope,scope_key,anchor_message_id))
             task_id = cursor.lastrowid
             db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES (?,?,?,?)',
-                       (task_id,'created',json.dumps({'source_provider':provider,'message_id':message_id,
+                       (task_id,'created',json.dumps({'source_provider':provider,'message_id':anchor_message_id,
+                                                    'source_scope':source_scope,'source_count':len(source_ids),
                                                     **({'ai_assisted':True} if fields.get('ai_assisted') is True else {})}),now))
-            db.execute('''INSERT INTO task_attachments(task_id,filename,mime_type,size_bytes,content,skipped_reason)
-                SELECT ?,a.filename,a.mime_type,a.size_bytes,a.content,a.skipped_reason
-                FROM gmail_attachments a WHERE a.user_id=? AND a.message_id=? AND a.mime_type LIKE 'image/%' ''',
-                (task_id,user_id,message_id))
+            for source_id in source_ids:
+                db.execute('''INSERT INTO task_source_messages(task_id,message_id,account_id,from_addr,to_addr,subject,date_header,internal_date,body_text,snippet,label_ids)
+                    SELECT ?,message_id,account_id,from_addr,to_addr,subject,date_header,internal_date,body_text,snippet,label_ids
+                    FROM gmail_messages WHERE user_id=? AND message_id=?''',(task_id,user_id,source_id))
+                db.execute('''INSERT INTO task_source_attachments(task_id,message_id,filename,mime_type,size_bytes,content,skipped_reason)
+                    SELECT ?,message_id,filename,mime_type,size_bytes,content,skipped_reason
+                    FROM gmail_attachments WHERE user_id=? AND message_id=?''',(task_id,user_id,source_id))
+                db.execute('''INSERT INTO task_attachments(task_id,filename,mime_type,size_bytes,content,skipped_reason)
+                    SELECT ?,filename,mime_type,size_bytes,content,skipped_reason
+                    FROM gmail_attachments WHERE user_id=? AND message_id=? AND mime_type LIKE 'image/%' ''',
+                    (task_id,user_id,source_id))
     except sqlite3.IntegrityError as exc:
         raise ValueError('A task already exists for this message') from exc
     return get_task(db, task_id, user_id=user_id)

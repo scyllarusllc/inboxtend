@@ -85,6 +85,11 @@ async function showProposal(messageId, prepared) {
   for (const old of detail.querySelectorAll('.task-proposal')) old.remove();
   const form = el('form', undefined, 'task-proposal');
   form.append(el('h4', 'Review suggested task'), el('p', proposal.note, 'meta'));
+  const scopeName = view === 'people' ? 'all saved mail with this person' : view === 'threads' ? 'this conversation' : 'this message';
+  const scopeCount = currentGroup?.messages.length || 1;
+  form.append(el('p', 'Task source: ' + (view === 'messages' ? 'Message' : view === 'threads' ? 'Conversation' : 'People') +
+    ' · ' + scopeCount + ' email' + (scopeCount === 1 ? '' : 's') + '. The task will copy the saved content and attachments from ' + scopeName +
+    '. The suggested wording above is based on the open message; edit it for the full scope.', 'meta'));
   if (proposal.ai) {
     const box = el('div', undefined, 'ai-box');
     box.append(el('p', 'AI suggestion · confidence ' + proposal.ai.confidence + ' · ' + (proposal.ai.provider || 'AI') + ' · model: ' + proposal.ai.model, 'meta'));
@@ -115,13 +120,14 @@ async function showProposal(messageId, prepared) {
     submit.disabled = true;
     const data = Object.fromEntries(new FormData(form).entries());
     data.message_id = messageId;
+    data.scope = view;
     if (proposal.ai) data.ai_assisted = true;
     data.due_date = data.due_date.trim() || null;
     data.due_time = data.due_time.trim() || null;
     data.due_timezone = f.due_timezone || userSettings.timezone;
     try {
       const created = await request('/api/tasks', 'POST', data);
-      location.assign('/user/tasks#task-' + created.task.id);
+      location.assign('/user/task/' + created.task.id);
     } catch (error) {
       feedback.textContent = error.message;
       submit.disabled = false;
@@ -390,7 +396,7 @@ async function selectMessage(id) {
   if (imageCount) {
     const choices = el('section',undefined,'image-task-choices');
     choices.append(el('h4',imageCount + ' image attachments · continue in Tasks'),
-      el('p','Choose a starting goal. All images are copied into the task; you can translate and explain them there.','meta'));
+      el('p','Choose a starting goal. The task copies all saved mail and attachments in the current ' + view + ' view; you can translate and explain its images there.','meta'));
     for (const [intent,label] of [
       ['translate_images','Translate images to Chinese'],
       ['explain_images','Explain what the images mean'],
@@ -399,8 +405,8 @@ async function selectMessage(id) {
       button.addEventListener('click',async () => {
         for (const choice of choices.querySelectorAll('button')) choice.disabled = true;
         try {
-          const result = await request('/api/tasks/from-message','POST',{message_id:id,intent});
-          location.assign('/user/tasks#task-' + result.task.id);
+          const result = await request('/api/tasks/from-message','POST',{message_id:id,intent,scope:view});
+          location.assign('/user/task/' + result.task.id);
         } catch (error) {
           notify(error.message,true);
           for (const choice of choices.querySelectorAll('button')) choice.disabled = false;

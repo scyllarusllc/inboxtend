@@ -14,6 +14,9 @@ class Task(SQLModel, table=True):
     user_id: int = 1
     message_id: str
     source_provider: str = 'demo'
+    source_scope: str = 'messages'
+    scope_key: str = ''
+    anchor_message_id: str = ''
     thread_id: str = ''
     title: str
     description: str = ''

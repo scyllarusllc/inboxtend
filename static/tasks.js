@@ -120,9 +120,9 @@ function taskCard(task) {
   select.addEventListener('change', () => { select.disabled = true; changeStatus(task, select.value); });   // Saves as soon as it changes.
   label.append(select);
   actions.append(label);
-  if (task.source_provider === 'gmail' && task.message_id) {
+  if (task.source_provider !== 'demo' && (task.anchor_message_id || task.message_id)) {
     const open = el('a', undefined, 'task-link');
-    open.href = '/user/inbox?message=' + encodeURIComponent(task.message_id);
+    open.href = '/user/inbox?message=' + encodeURIComponent(task.anchor_message_id || task.message_id);
     open.append(icon('mail'), document.createTextNode(' Open the email'));
     actions.append(open);
   }
