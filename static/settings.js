@@ -38,36 +38,13 @@ function fillForm(values) {
     else control.value = value;
   }
 }
-function readForm() {
-  const form = prefsForm.elements;
-  return {
-    timezone: form.timezone.value.trim(),
-    due_soon_hours: Number(form.due_soon_hours.value),
-    default_priority: form.default_priority.value,
-    inbox_view: form.inbox_view.value,
-    unread_dismiss_delay_ms: Number(form.unread_dismiss_delay_ms.value),
-    sync_sent: form.sync_sent.checked,
-    mark_read_on_open: form.mark_read_on_open.checked,
-    gmail_write_read: form.gmail_write_read.checked,
-    auto_sync_minutes: Number(form.auto_sync_minutes.value),
-    sync_max_messages: Number(form.sync_max_messages.value),
-    attachment_max_mb: Number(form.attachment_max_mb.value),
-    ai_enabled: form.ai_enabled.checked,
-    ai_provider: form.ai_provider.value,
-    ai_model: form.ai_model_choice.value === OTHER_MODEL ? form.ai_model.value.trim() : form.ai_model_choice.value,
-    ai_language: form.ai_language.value.trim(),
-    ai_timeout: Number(form.ai_timeout.value),
-    ai_attachments: form.ai_attachments.checked,
-    translate_enabled: form.translate_enabled.checked,
-    translate_preload: form.translate_preload.checked,
-    translate_language: form.translate_language.value.trim(),
-    translate_max_chars: Number(form.translate_max_chars.value),
-    flags_enabled: form.flags_enabled.checked,
-    topics_enabled: form.topics_enabled.checked,
-    websites_enabled: form.websites_enabled.checked
-  };
+function settingValue(control) {
+  if (control.type === 'checkbox') return control.checked;
+  if (control.type === 'number' || ['due_soon_hours', 'unread_dismiss_delay_ms', 'translate_max_chars'].includes(control.name)) return Number(control.value);
+  return control.value.trim();
 }
 let savedModel = '';
+let savedSettings = null;
 async function init() {
   try { await sessionReady; } catch (error) { notify('Could not load session: ' + error.message, true); return; }
   const list = document.getElementById('timezone-list');
@@ -146,6 +123,8 @@ async function init() {
       document.getElementById('translation-timing').textContent = 'Could not load timing: ' + error.message;
     }));
     fillForm(result.settings);
+    savedSettings = {...result.settings};
+    userSettings = result.settings;
     savedModel = result.settings.ai_model || '';
     document.getElementById('account-name').textContent = result.username;
   } catch (error) { notify('Could not load settings: ' + error.message, true); return; }
@@ -155,7 +134,11 @@ async function init() {
   const saved = prefsForm.elements;
   await loadModels(saved.ai_provider.value, savedModel);
   showProviderStatus();
-  saved.ai_provider.addEventListener('change', async () => { await loadModels(saved.ai_provider.value, ''); showProviderStatus(); });
+  saved.ai_provider.addEventListener('change', async () => {
+    await loadModels(saved.ai_provider.value, '');
+    saved.ai_model_choice.dispatchEvent(new Event('change', {bubbles: true}));
+    showProviderStatus();
+  });
   saved.ai_model_choice.addEventListener('change', () => {
     saved.ai_model.hidden = saved.ai_model_choice.value !== OTHER_MODEL;
     if (!saved.ai_model.hidden) saved.ai_model.focus();
@@ -295,24 +278,41 @@ async function init() {
   document.getElementById('use-browser-language').addEventListener('click', () => {
     const code = (navigator.language || 'en').toLowerCase().startsWith('zh-tw') ? 'zt' : (navigator.language || 'en').split('-')[0].toLowerCase();
     const select = prefsForm.elements.translate_language;
-    if ([...select.options].some(option => option.value === code)) select.value = code;
+    if ([...select.options].some(option => option.value === code)) { select.value = code; select.dispatchEvent(new Event('change', {bubbles: true})); }
     else notify('No offline language pack is installed for this browser language.', true);
   });
   document.getElementById('use-browser-timezone').addEventListener('click', () => {
     prefsForm.elements.timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    prefsForm.elements.timezone.dispatchEvent(new Event('change', {bubbles: true}));
   });
-  prefsForm.addEventListener('submit', async event => {
-    event.preventDefault();
-    const save = document.getElementById('save-prefs');
-    save.disabled = true;
-    try {
-      const result = await request('/api/settings', 'PATCH', readForm());
-      fillForm(result.settings);
-      await loadModels(result.settings.ai_provider, result.settings.ai_model || '');
-      showProviderStatus();
-      notify('Settings saved.');
-    } catch (error) { notify(error.message, true); }
-    save.disabled = false;
+  const saveStatus = document.getElementById('prefs-save-status');
+  let saveQueue = Promise.resolve();
+  const lastRequested = {...savedSettings};
+  prefsForm.addEventListener('submit', event => event.preventDefault());
+  prefsForm.addEventListener('change', event => {
+    const control = event.target;
+    if (!control.name || control.disabled || !prefsForm.contains(control)) return;
+    const key = control.name === 'ai_model_choice' ? 'ai_model' : control.name;
+    if (!(key in userSettings)) return;
+    if (control.name === 'ai_model_choice' && control.value === OTHER_MODEL) return;
+    if (!control.checkValidity()) { control.reportValidity(); return; }
+    const value = settingValue(control);
+    if (lastRequested[key] === value) return;
+    const previous = lastRequested[key];
+    lastRequested[key] = value;
+    saveStatus.textContent = 'Saving ' + key.replaceAll('_', ' ') + '…';
+    saveQueue = saveQueue.catch(() => {}).then(async () => {
+      try {
+        const result = await request('/api/settings', 'PATCH', {[key]: value});
+        userSettings = result.settings;
+        saveStatus.textContent = 'Saved ' + key.replaceAll('_', ' ') + '.';
+        notify(saveStatus.textContent);
+      } catch (error) {
+        if (lastRequested[key] === value) lastRequested[key] = previous;
+        saveStatus.textContent = 'Could not save ' + key.replaceAll('_', ' ') + ': ' + error.message;
+        notify(saveStatus.textContent, true);
+      }
+    });
   });
   passwordForm.addEventListener('submit', async event => {
     event.preventDefault();

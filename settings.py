@@ -2,7 +2,7 @@
 
 Only values the user saved are stored. Everything else falls back to the defaults below, and for
 the mail-sync limits to the optional `.env` values (INBOX_TEND_SYNC_MAX_MESSAGES,
-INBOX_TEND_ATTACHMENT_MAX_BYTES), so existing installs behave exactly as before.
+INBOX_TEND_ATTACHMENT_MAX_BYTES). Explicit choices made by existing users remain saved.
 """
 from __future__ import annotations
 import json
@@ -22,33 +22,33 @@ DEFAULTS = {
     'unread_dismiss_delay_ms': 1000, # Wait before a read person leaves the Unread list.
     'sync_sent': True,              # Also mirror sent mail.
     'mark_read_on_open': True,      # Opening a message marks it read.
-    'gmail_write_read': False,      # Also apply read/unread to Gmail (needs the gmail.modify grant; set when it is granted).
+    'load_remote_images': True,     # Original-design mail preview loads sender-hosted images.
+    'gmail_write_read': True,       # Applies only to accounts with the gmail.modify grant.
     'sync_max_messages': 200,       # Per folder.
     'auto_sync_minutes': 5,         # Fetch new mail automatically this often (0 = only on Refresh).
     'attachment_max_mb': 10,        # Larger attachments are recorded as metadata only.
-    # Optional AI assistant (Codex CLI). Off by default: nothing leaves this server until the user turns it on
-    # AND presses an AI button.
-    'ai_enabled': False,
+    # Optional AI assistant (Codex CLI). User controls remain available in Settings.
+    'ai_enabled': True,
     'ai_provider': 'codex',         # codex (Codex CLI) or claude (Claude Code CLI).
     'ai_model': '',                 # Empty = the provider's own default model.
     'ai_language': '',              # Empty = write in the language of the email.
     'ai_timeout': 60,               # Seconds (10-1800). A proxy in front may cut slower requests.
-    'ai_attachments': False,        # Also send small text/CSV attachments with the email.
+    'ai_attachments': True,         # Also send small text/CSV attachments with the email.
     # Offline translation of opened messages using installed Argos language packs.
-    'translate_enabled': False,
-    'translate_preload': False,      # Fill the local translation cache while the server is idle.
+    'translate_enabled': True,
+    'translate_preload': True,       # Fill the local translation cache while the server is idle.
     'translate_language': '',
     'translate_max_chars': 5000,
     # Country flags next to correspondents, guessed once per sender by the AI provider and cached. Enabling it means
     # new senders' names, addresses, date offsets, subjects and a short snippet are sent to that provider.
-    'flags_enabled': False,
+    'flags_enabled': True,
     # A topic icon on every message (money, job, love, ...), guessed once per message by the AI provider and cached.
     # Enabling it means each new message's subject, sender and first characters are sent to that provider.
-    'topics_enabled': False,
-    'websites_enabled': False,       # AI selects a likely official site from URLs already in a message.
+    'topics_enabled': True,
+    'websites_enabled': True,        # AI selects a likely official site from URLs already in a message.
 }
 _INT_LIMITS = {'due_soon_hours': (1, 720), 'sync_max_messages': (1, 5000), 'attachment_max_mb': (0, 100), 'auto_sync_minutes': (0, 1440), 'ai_timeout': (10, 1800)}
-_BOOLS = ('sync_sent', 'mark_read_on_open', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled', 'translate_preload', 'flags_enabled', 'topics_enabled', 'websites_enabled')
+_BOOLS = ('sync_sent', 'mark_read_on_open', 'load_remote_images', 'gmail_write_read', 'ai_enabled', 'ai_attachments', 'translate_enabled', 'translate_preload', 'flags_enabled', 'topics_enabled', 'websites_enabled')
 
 
 def valid_timezone(name) -> str:

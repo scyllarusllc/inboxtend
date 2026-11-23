@@ -80,13 +80,17 @@ function mailBodyView(message) {
   const design = iconButton('eye', 'Original design');
   const easy = iconButton('list-check', 'Easy read');
   const remote = iconButton('eye', 'Load remote images');
-  const note = el('p', 'Remote images are off. Links in the design preview cannot be opened.', 'meta');
+  const note = el('p', undefined, 'meta');
   const frame = el('iframe', undefined, 'mail-design-frame');
   frame.title = 'Original email design';
   frame.setAttribute('sandbox', '');
   frame.referrerPolicy = 'no-referrer';
   frame.loading = 'lazy';
-  let remoteImages = false;
+  let remoteImages = Boolean(userSettings.load_remote_images);
+  const updateRemote = () => {
+    remote.replaceChildren(icon('eye'), document.createTextNode(remoteImages ? ' Hide remote images' : ' Load remote images'));
+    note.textContent = remoteImages ? 'Remote images are loaded from the sender’s servers. Links in this preview cannot be opened.' : 'Remote images are off. Links in the design preview cannot be opened.';
+  };
   const previewUrl = () => '/api/connectors/gmail/messages/' + encodeURIComponent(message.id) + '/design' + (remoteImages ? '?remote_images=true' : '');
   const show = original => {
     design.setAttribute('aria-pressed', String(original));
@@ -100,9 +104,9 @@ function mailBodyView(message) {
   remote.addEventListener('click', () => {
     remoteImages = !remoteImages;
     frame.src = previewUrl();
-    remote.replaceChildren(icon('eye'), document.createTextNode(remoteImages ? ' Hide remote images' : ' Load remote images'));
-    note.textContent = remoteImages ? 'Remote images are loaded from the sender’s servers.' : 'Remote images are off. Links in the design preview cannot be opened.';
+    updateRemote();
   });
+  updateRemote();
   controls.append(design, easy, remote);
   box.append(controls, note, frame, text);
   show(true);
@@ -139,7 +143,7 @@ function notify(message,error=false) {
 
 // Resolves once the session (and CSRF token) is known; page scripts await it.
 const sessionReady = request('/api/session').then(session => { csrfToken = session.csrf_token; });
-let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', inbox_view: 'people', mark_read_on_open: true, gmail_write_read: false, ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: '', flags_enabled: false, topics_enabled: false};
+let userSettings = {timezone: 'Pacific/Saipan', due_soon_hours: 48, default_priority: 'medium', inbox_view: 'people', mark_read_on_open: true, load_remote_images: false, gmail_write_read: false, ai_enabled: false, ai_provider: 'codex', translate_enabled: false, translate_language: '', flags_enabled: false, topics_enabled: false};
 const AI_PROVIDERS = {codex: {name: 'Codex', vendor: 'OpenAI'}, claude: {name: 'Claude', vendor: 'Anthropic'}};
 function aiProvider() { return AI_PROVIDERS[userSettings.ai_provider] || AI_PROVIDERS.codex; }
 // Resolves after the user's saved settings are loaded (falls back to the defaults above on failure).

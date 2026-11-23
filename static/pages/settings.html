@@ -15,6 +15,7 @@
           <li><a class="nav-link" href="#gmail"><i class="fa-solid fa-plug fa-fw" aria-hidden="true"></i><span>Gmail accounts</span></a></li>
           <li><a class="nav-link" href="#imap"><i class="fa-solid fa-envelope fa-fw" aria-hidden="true"></i><span>IMAP accounts</span></a></li>
           <li><a class="nav-link" href="#time"><i class="fa-regular fa-clock fa-fw" aria-hidden="true"></i><span>Time and tasks</span></a></li>
+          <li><a class="nav-link" href="#mail-display"><i class="fa-solid fa-eye fa-fw" aria-hidden="true"></i><span>Email display</span></a></li>
           <li><a class="nav-link" href="#sync"><i class="fa-solid fa-rotate fa-fw" aria-hidden="true"></i><span>Mail sync</span></a></li>
           <li><a class="nav-link" href="#ai"><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i><span>AI assistant</span></a></li>
           <li><a class="nav-link" href="#translation-settings"><i class="fa-solid fa-language fa-fw" aria-hidden="true"></i><span>Translation</span></a></li>
@@ -83,6 +84,14 @@
             </div>
           </section>
 
+          <section id="mail-display" class="panel settings-section scroll-mt-24" aria-labelledby="mail-display-heading">
+            <h2 id="mail-display-heading"><i class="fa-solid fa-eye" aria-hidden="true"></i>Email display</h2>
+            <div class="task-form">
+              <label class="check"><input name="load_remote_images" type="checkbox"><span class="font-medium text-slate-800">Load remote images in original email design</span>
+                <span class="meta">On by default. Opening an HTML email can contact the sender’s image servers. You can change this for one message in its preview.</span></label>
+            </div>
+          </section>
+
           <section id="sync" class="panel settings-section scroll-mt-24" aria-labelledby="sync-heading">
             <h2 id="sync-heading"><i class="fa-solid fa-rotate" aria-hidden="true"></i>Mail sync</h2>
             <div class="task-form">
@@ -107,7 +116,7 @@
 
           <section id="ai" class="panel settings-section scroll-mt-24" aria-labelledby="ai-heading">
             <h2 id="ai-heading"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>AI assistant</h2>
-            <p>Uses an AI command-line tool installed on this server to suggest tasks, draft replies, or translate and explain image attachments in Chinese. <strong>Off by default.</strong> Pressing a text AI button sends that message&rsquo;s sender, date, subject and text, and optionally small text attachments. Pressing the image button on the Tasks page sends up to eight stored images (2 MiB each) to the selected provider (OpenAI for Codex, Anthropic for Claude). Nothing is sent automatically, no reply is ever sent, and every result is only a suggestion you review.</p>
+            <p>Uses an AI command-line tool installed on this server to suggest tasks, draft replies, or translate and explain image attachments in Chinese. <strong>On by default.</strong> Pressing a text AI button sends that message&rsquo;s sender, date, subject and text, and optionally small text attachments. Pressing the image button on the Tasks page sends up to eight stored images (2 MiB each) to the selected provider (OpenAI for Codex, Anthropic for Claude). No reply is ever sent, and every result is only a suggestion you review.</p>
             <div class="task-form">
               <label class="check"><input name="ai_enabled" type="checkbox"><span class="font-medium text-slate-800">Enable the AI assistant</span></label>
               <label>Provider
@@ -133,12 +142,12 @@
               <label class="check"><input name="ai_attachments" type="checkbox"><span class="font-medium text-slate-800">Also send small text/CSV attachments</span><span class="meta">Up to 3 files, 8,000 characters each.</span></label>
             </div>
             <div class="settings-actions"><button id="ai-test" type="button"><i class="fa-solid fa-vial" aria-hidden="true"></i><span>Test the AI</span></button><span id="ai-test-result" class="meta" role="status"></span></div>
-            <p class="meta">The test sends a fixed message with no mail data, using the saved provider and model (save first). The program paths are set by the server operator with <code>INBOX_TEND_CODEX_BIN</code> and <code>INBOX_TEND_CLAUDE_BIN</code> in <code>.env</code>, not here.</p>
+            <p class="meta">The test sends a fixed message with no mail data, using the saved provider and model. The program paths are set by the server operator with <code>INBOX_TEND_CODEX_BIN</code> and <code>INBOX_TEND_CLAUDE_BIN</code> in <code>.env</code>, not here.</p>
           </section>
 
           <section id="translation-settings" class="panel settings-section scroll-mt-24" aria-labelledby="translate-heading">
             <h2 id="translate-heading"><i class="fa-solid fa-language" aria-hidden="true"></i>Translation</h2>
-            <p>Shows a translation of the open message in a third column. Translation runs locally on this server with installed Argos language packs; mail text is not sent to an AI provider for translation. <strong>Off by default.</strong> Results are saved in SQLite. Attachments are not translated.</p>
+            <p>Shows a translation of the open message in a third column. Translation runs locally on this server with installed Argos language packs; mail text is not sent to an AI provider for translation. <strong>On by default.</strong> Results are saved in SQLite. Attachments are not translated.</p>
             <div class="task-form">
               <label class="check"><input name="translate_enabled" type="checkbox"><span class="font-medium text-slate-800">Translate messages I open</span></label>
               <label>Translate into
@@ -169,7 +178,7 @@
 
           <section id="flags" class="panel settings-section scroll-mt-24" aria-labelledby="flags-heading">
             <h2 id="flags-heading"><i class="fa-regular fa-flag" aria-hidden="true"></i>Sender details</h2>
-            <p>Shows a country flag next to the people you correspond with, and a small card on the open message and in the <em>People</em> list. <strong>Off by default.</strong></p>
+            <p>Shows a country flag next to the people you correspond with, and a small card on the open message and in the <em>People</em> list. <strong>On by default.</strong></p>
             <p><strong>Guessed by the AI</strong> (marked as such, can be wrong): country and city, company and job title (only if their signature says so), the language they write in, what they are to you (client, colleague, friend, recruiter, vendor, newsletter, automated …) and their writing style (formal or casual, concise or long). It never guesses gender, age, ethnicity, religion, health or political views, and has no field for them.</p>
             <p><strong>Counted from your own mail, no AI:</strong> the time where they are now (from the timezone of their messages, with a hint when it is night), since when you know them, how many emails, how fast they usually reply to you, and the hour they usually write.</p>
             <p>When on, <strong>each new sender is sent once</strong> to the provider chosen under <em>AI assistant</em> (OpenAI for Codex, Anthropic for Claude): display name, email address, the timezone offset their messages are dated with, up to two subject lines and <strong>short excerpts of up to two messages they sent you</strong> (the first and last 500 characters, where the greeting and the signature are; quoted replies and links removed; never attachments, and never mail you sent), 20 senders per request. Results are saved in this server&rsquo;s database, so every sender is asked about only once. Details are only filled in when the text supports them; with no clue the field stays empty.</p>
@@ -181,7 +190,7 @@
 
           <section id="topics" class="panel settings-section scroll-mt-24" aria-labelledby="topics-heading">
             <h2 id="topics-heading"><i class="fa-solid fa-tags" aria-hidden="true"></i>Topic icons</h2>
-            <p>Puts a small icon on every message for what it is about, so you can see at a glance which mail is about <strong>money</strong>, <strong>work</strong>, <strong>love</strong>, friends and family, travel, shopping, meetings, account security, health, legal matters, education, tech, social networks, news, events, food or promotions. A message can have up to two. On the open message the topics are buttons: press one to see all mail about it (you can also search <code>topic:money</code>). <strong>Off by default.</strong></p>
+            <p>Puts a small icon on every message for what it is about, so you can see at a glance which mail is about <strong>money</strong>, <strong>work</strong>, <strong>love</strong>, friends and family, travel, shopping, meetings, account security, health, legal matters, education, tech, social networks, news, events, food or promotions. A message can have up to two. On the open message the topics are buttons: press one to see all mail about it (you can also search <code>topic:money</code>). <strong>On by default.</strong></p>
             <p>When on, <strong>each new message is sent once</strong> to the provider chosen under <em>AI assistant</em> (OpenAI for Codex, Anthropic for Claude): the other party&rsquo;s name and address, the subject and the first 400 characters of the text (quoted replies and links removed; never attachments), 20 messages per request. This includes mail you sent. The answers are saved in this server&rsquo;s database, so every message is asked about only once, and only the most recent 400 not yet labelled messages are handled per run. The topics are a guess by the AI and can be wrong; a message that fits none of the topics gets no icon.</p>
             <div class="task-form">
               <label class="check"><input name="topics_enabled" type="checkbox"><span class="font-medium text-slate-800">Show topic icons (guessed by AI)</span></label>
@@ -191,14 +200,11 @@
 
           <section id="websites" class="panel settings-section scroll-mt-24" aria-labelledby="websites-heading">
             <h2 id="websites-heading"><i class="fa-solid fa-link" aria-hidden="true"></i>Message websites</h2>
-            <p>Show a likely official website for the organization, product, or project discussed in a message. <strong>Off by default.</strong> When enabled, the app sends the sender, subject, up to 1,000 characters of text, and candidate domains from the saved mail to your selected AI provider in background batches. The AI can only choose a domain already found in the message or the sender&rsquo;s address; it cannot invent a URL or verify ownership. If it cannot identify a likely official site, no link is shown. Guesses are stored in SQLite. The link opens in a new tab.</p>
+            <p>Show a likely official website for the organization, product, or project discussed in a message. <strong>On by default.</strong> When enabled, the app sends the sender, subject, up to 1,000 characters of text, and candidate domains from the saved mail to your selected AI provider in background batches. The AI can only choose a domain already found in the message or the sender&rsquo;s address; it cannot invent a URL or verify ownership. If it cannot identify a likely official site, no link is shown. Guesses are stored in SQLite. The link opens in a new tab.</p>
             <div class="task-form"><label class="check"><input name="websites_enabled" type="checkbox"><span class="font-medium text-slate-800">Pre-guess websites for messages with AI</span></label></div>
           </section>
 
-          <div class="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-            <p class="meta">Gmail connection, mail sync, AI, translation, sender-detail, topic and website settings above are saved together.</p>
-            <button id="save-prefs" type="submit" class="action"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>Save settings</button>
-          </div>
+          <p id="prefs-save-status" class="meta" role="status" aria-live="polite">Changes save automatically.</p>
         </form>
 
         <section id="account" class="panel settings-section scroll-mt-24" aria-labelledby="account-heading">
