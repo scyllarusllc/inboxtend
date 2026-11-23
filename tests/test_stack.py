@@ -152,6 +152,16 @@ class StackTests(unittest.TestCase):
                     with patch('website_jobs.publish') as publish_job:
                         self.assertEqual(client.post(website_url + '/publish', headers={**headers, 'X-CSRF-Token': 'csrf'}, json={}).status_code, 400)
                         publish_job.assert_not_called()
+                    with connection(path) as db:
+                        image_id = db.execute("INSERT INTO task_attachments(task_id,filename,mime_type,size_bytes,content) VALUES(?, 'ocr.jpg','image/jpeg',6,?)",
+                                              (created['id'], b'\xff\xd8\xffabc')).lastrowid
+                        db.commit()
+                    with patch('task_api.prefs.effective', return_value={'ai_enabled': True, 'ai_provider': 'codex', 'ai_model': ''}), \
+                         patch('task_api.ai.extract_image_text', return_value=[{'number': 1, 'text': 'Original text'}]):
+                        ocr = client.post(f"/api/tasks/{created['id']}/images/extract-text", headers={**headers, 'X-CSRF-Token': 'csrf'},
+                                          json={'image_ids': [image_id]})
+                    self.assertEqual(ocr.status_code, 200)
+                    self.assertEqual(client.get(f"/api/tasks/{created['id']}/images", headers=headers).json()['texts'][0]['text_original'], 'Original text')
             finally:
                 app.state.auth_manager = old_manager
                 app.state.db_path = old_path

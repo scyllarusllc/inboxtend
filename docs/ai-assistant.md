@@ -35,6 +35,8 @@ In Inbox → Message review, three suggestion buttons create a task for the sele
 
 On the Tasks page, expand **Images** to see and download the copies. Press **Translate and explain images in Chinese** there to send the task text and up to eight stored images (2 MiB each) to the selected provider. The saved result shows a Chinese translation and interpretation for each image, an overall summary, and suggested task wording. **Use suggested task text** applies it only after an explicit click. Nothing is sent automatically. Images and AI interpretations are untrusted; check each preview before acting.
 
+**Extract text for each attachment** is a separate action in the Images section. It sends the stored images to the selected AI provider in groups of up to eight, asks for transcription in the original language without translation, and saves one result per image in SQLite. A later visit shows the saved text next to each image; running extraction again updates those results. Missing, unsupported, or over-2-MiB images are skipped and identified on the page. AI transcription can be wrong, so compare it with the image.
+
 Codex receives images as CLI image inputs in an isolated temporary directory; Claude receives base64 image blocks through structured stdin. Temporary copies are deleted after the request. The ordinary Inbox **Suggest task from email text** action does not read images.
 
 ## Task project AI plan

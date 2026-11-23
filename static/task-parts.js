@@ -34,6 +34,24 @@ function reviewProgress(count) {
     else node.remove();
   }};
 }
+function extractProgress(total) {
+  const node=el('div',undefined,'review-progress ai-work-progress');
+  const track=el('div',undefined,'progress-track');
+  track.setAttribute('role','progressbar');
+  track.setAttribute('aria-label','Text extraction progress');
+  track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');
+  const fill=el('div',undefined,'progress-fill');track.append(fill);
+  const label=el('p',undefined,'meta');node.append(track,label);
+  const update=done=>{
+    const percent=Math.round(100*done/total);
+    if(done)fill.style.width=percent+'%';
+    if(done===total)node.classList.add('is-complete');
+    track.setAttribute('aria-valuenow',String(percent));
+    label.textContent='Text saved for '+done+' of '+total+' images.';
+  };
+  update(0);
+  return {node,update};
+}
 function taskImageDetails(task, reviewHome) {   // reviewHome: an element that shows the extracted text and explanation elsewhere on the page
   const panel=el('details',undefined,'task-images');
   const heading=document.createElement('summary');
@@ -46,6 +64,16 @@ function taskImageDetails(task, reviewHome) {   // reviewHome: an element that s
     try {
       const result=await request('/api/tasks/'+task.id+'/images');
       body.replaceChildren();
+      const savedTexts=new Map((result.texts || []).map(item=>[item.image_id,item]));
+      const textHomes=new Map();
+      const showText=(file,home)=>{
+        home.replaceChildren();
+        const saved=savedTexts.get(file.id);
+        if(!saved)return;
+        home.append(el('h5','Extracted original text'),
+          el('p','Saved '+new Date(saved.created_at).toLocaleString()+' · '+saved.provider+' · AI transcription; check the image.','meta'),
+          el('pre',saved.text_original || 'No legible text found.','extracted'));
+      };
       for(const file of result.images) {
         const row=el('div',undefined,'attachment-row');
         row.append(el('strong',file.name || 'Unnamed image'),el('span',(file.size_bytes/1048576).toFixed(1)+' MB','meta'));
@@ -57,6 +85,10 @@ function taskImageDetails(task, reviewHome) {   // reviewHome: an element that s
             row.append(turnableImage(file,base+'/thumbnail',base+'/rotate'));
           }
         } else row.append(el('p','Image was not stored: '+(file.skipped_reason || 'unavailable'),'meta'));
+        const textHome=el('div',undefined,'task-ocr-text');
+        textHomes.set(file.id,textHome);
+        showText(file,textHome);
+        row.append(textHome);
         body.append(row);
       }
       const reviewBox=reviewHome || el('div',undefined,'task-image-review');
@@ -64,7 +96,33 @@ function taskImageDetails(task, reviewHome) {   // reviewHome: an element that s
       const count=result.images.length;
       const runLabel=()=>saved?'Translate again (replaces the saved result)':'Translate and explain all '+count+' images in Chinese';
       const run=iconButton('language',runLabel());
-      if(!reviewHome)body.prepend(reviewBox);body.prepend(run);
+      const eligible=result.images.filter(file=>file.stored && ['image/jpeg','image/png','image/gif','image/webp'].includes(file.mime_type) && file.size_bytes<=2*1024*1024);
+      const extract=iconButton('eye','Extract text for each attachment');
+      extract.disabled=!eligible.length;
+      if(!reviewHome)body.prepend(reviewBox);body.prepend(extract,run);
+      if(eligible.length<result.images.length) {
+        const skipped=result.images.length-eligible.length;
+        extract.after(el('p',skipped+' image'+(skipped===1?' is':'s are')+' unavailable for text extraction (missing, unsupported, or over 2 MiB).','meta'));
+      }
+      extract.addEventListener('click',async()=>{
+        extract.disabled=true;
+        extract.replaceChildren(icon('eye'),document.createTextNode(' Extracting text…'));
+        const progress=extractProgress(eligible.length);
+        extract.after(progress.node);
+        let done=0;
+        try {
+          for(let start=0;start<eligible.length;start+=8) {
+            const batch=eligible.slice(start,start+8);
+            const answer=await request('/api/tasks/'+task.id+'/images/extract-text','POST',{image_ids:batch.map(file=>file.id)});
+            for(const item of answer.texts)savedTexts.set(item.image_id,item);
+            for(const file of batch)showText(file,textHomes.get(file.id));
+            done+=batch.length;progress.update(done);
+          }
+          notify('Extracted text saved with this task. Check it against each image.');
+          window.setTimeout(()=>progress.node.remove(),2000);
+        } catch(error) {notify(error.message+(done?' · '+done+' images were saved.':''),true);progress.node.remove();}
+        finally {extract.replaceChildren(icon('eye'),document.createTextNode(' Extract text for each attachment'));extract.disabled=false;}
+      });
       const showReview=review=>{
         reviewBox.replaceChildren();
         if(!review){

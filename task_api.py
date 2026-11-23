@@ -15,7 +15,10 @@ from sqlmodel import select
 from auth import cookie_token
 from db_models import Task, TaskAttachment, TaskImageReview, session as model_session
 from tasks import DEFAULT_DB, connection, decorate, _soon, events, task_work_plan
+from tasks import task_image_texts, save_task_image_texts
 from app import raster_preview_mime
+import ai
+import settings as prefs
 from auth import read_config
 from app import ROOT
 from gmail_web import _row as mail_row
@@ -300,7 +303,44 @@ def images(request: Request, task_id: int, user=Depends(current_user)):
         metadata = [{'id': file.id, 'name': file.filename, 'mime_type': file.mime_type,
                      'size_bytes': file.size_bytes, 'stored': file.content is not None,
                      'skipped_reason': file.skipped_reason, 'rotation': file.rotation} for file in files]
-    return json_result({'images': metadata, 'review': saved})
+    with connection(path) as db: texts = task_image_texts(db,task_id,user['id'])
+    return json_result({'images': metadata, 'review': saved, 'texts': texts})
+
+
+@router.post('/{task_id:int}/images/extract-text')
+def extract_task_image_text(request: Request, task_id: int, body: dict, user=Depends(current_user)):
+    _require_write(request,user)
+    path = _task_exists(request,task_id,user['id'])
+    ids = body.get('image_ids')
+    if not isinstance(ids,list) or not 1 <= len(ids) <= ai.MAX_IMAGE_ATTACHMENTS or any(type(value) is not int or value <= 0 for value in ids) or len(set(ids)) != len(ids):
+        raise HTTPException(400, f'Choose 1–{ai.MAX_IMAGE_ATTACHMENTS} distinct images')
+    with connection(path) as db:
+        user_settings = prefs.effective(db,user['id'],getattr(request.app.state,'gmail_config',{}))
+        if not user_settings['ai_enabled']: raise HTTPException(403,'The AI assistant is turned off in Settings')
+        placeholders = ','.join('?' for _ in ids)
+        rows = db.execute(f'SELECT a.id,a.filename,a.mime_type,a.content FROM task_attachments a JOIN tasks t ON t.id=a.task_id '
+                          f'WHERE t.id=? AND t.user_id=? AND a.id IN ({placeholders})',
+                          (task_id,user['id'],*ids)).fetchall()
+        by_id = {row['id']:row for row in rows}
+        if len(by_id) != len(ids): raise HTTPException(404,'Task image not found')
+        images = []
+        for image_id in ids:
+            row = by_id[image_id]
+            content = bytes(row['content']) if row['content'] is not None else b''
+            if not raster_preview_mime(row['mime_type'],content):
+                raise HTTPException(400,'Every image must be stored, supported and at most 2 MiB')
+            images.append((row['filename'],row['mime_type'],content))
+    try:
+        with ai.guard(user['id']): extracted = ai.extract_image_text(getattr(request.app.state,'gmail_config',{}),images,user_settings)
+    except ai.AIBusy as exc: raise HTTPException(429,str(exc)) from None
+    except ai.AIError as exc: raise HTTPException(424,str(exc)) from None
+    provider = ai.PROVIDERS[ai.provider_of(user_settings)]['name']
+    model = user_settings['ai_model'] or 'provider default'
+    with connection(path) as db:
+        saved = save_task_image_texts(db,task_id,user['id'],
+                                     [{'image_id':image_id,'text':item['text']} for image_id,item in zip(ids,extracted)],provider,model)
+    if saved is None: raise HTTPException(404,'Task not found')
+    return json_result({'texts': saved})
 
 
 @router.get('/{task_id:int}/images/{image_id:int}/{action}')

@@ -8,6 +8,13 @@ MESSAGE = {'direction':'received','from':'sender@example.org','to':'owner@exampl
            'body_text':'', 'date':'2026-11-21'}
 
 class ImageReviewTests(unittest.TestCase):
+    def test_extracts_original_text_for_each_image_without_translation(self):
+        with patch.object(ai,'run_ai',return_value={'images':[{'number':2,'text':'原文二'}, {'number':1,'text':'Original one'}]}) as run:
+            result=ai.extract_image_text({},[('one.png','image/png',PNG),('two.png','image/png',PNG)],PREFS)
+        self.assertEqual(result,[{'number':1,'text':'Original one'},{'number':2,'text':'原文二'}])
+        self.assertIn('Do not translate',run.call_args.args[2])
+        self.assertEqual(len(run.call_args.kwargs['images']),2)
+
     def test_image_review_keeps_order_and_bounded_fields(self):
         response = {'images':[{'number':2,'visible_text_zh':'第二张','meaning_zh':'第二张含义'},
                               {'number':1,'visible_text_zh':'第一张','meaning_zh':'第一张含义'},

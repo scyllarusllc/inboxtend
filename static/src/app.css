@@ -448,6 +448,10 @@
   .agent-panel > :not(summary) { @apply mt-2; }
   .task-image-list { @apply grid gap-3; }
   .task-image-list > .attachment-row { @apply min-w-0; }
+  .task-ocr-text { @apply w-full border-t border-slate-200 pt-3; }
+  .task-ocr-text:empty { display: none; }
+  .task-ocr-text h5 { @apply m-0 text-xs font-bold uppercase tracking-wide text-slate-500; }
+  .task-ocr-text .extracted { @apply mt-2; }
   .task-image-list > button { @apply justify-self-start; }
   /* The suggested-task form is built by the script as a bare <form>; it gets the same grid as .task-form. */
   .task-proposal { @apply mt-5 grid gap-x-5 gap-y-4 rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 sm:grid-cols-2; }

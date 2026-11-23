@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from tasks import connection, create_task, get_task, task_image, task_images, save_task_image_review, task_image_review, delete_task
+from tasks import connection, create_task, get_task, task_image, task_images, save_task_image_review, task_image_review, task_image_texts, save_task_image_texts, delete_task
 
 class TaskImageTests(unittest.TestCase):
     def test_existing_task_images_are_backfilled_once(self):
@@ -41,8 +41,14 @@ class TaskImageTests(unittest.TestCase):
                     'summary_zh':'摘要','task_title':'翻译图片','task_description':'核对图片','actionable':False}
             save_task_image_review(db,task['id'],1,result)
             self.assertEqual(task_image_review(db,task['id'],1)['summary_zh'],'摘要')
+            saved=save_task_image_texts(db,task['id'],1,[{'image_id':images[0]['id'],'text':'Original text'}],'Claude','test-model')
+            self.assertEqual(saved[0]['text_original'],'Original text')
+            save_task_image_texts(db,task['id'],1,[{'image_id':images[1]['id'],'text':'Second image'}],'Claude','test-model')
+            self.assertEqual(len(task_image_texts(db,task['id'],1)),2)
+            self.assertIsNone(task_image_texts(db,task['id'],2))
             delete_task(db,task['id'],1)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM task_attachments').fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM task_image_texts').fetchone()[0],0)
             db.close()
 
 if __name__=='__main__': unittest.main()

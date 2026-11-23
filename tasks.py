@@ -110,6 +110,12 @@ def connection(path=DEFAULT_DB):
         db.execute('''CREATE TABLE IF NOT EXISTS task_image_reviews (
             task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
             user_id INTEGER NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)''')
+        db.execute('''CREATE TABLE IF NOT EXISTS task_image_texts (
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            image_id INTEGER NOT NULL REFERENCES task_attachments(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL, text_original TEXT NOT NULL,
+            provider TEXT NOT NULL, model TEXT NOT NULL, created_at TEXT NOT NULL,
+            PRIMARY KEY(task_id,image_id))''')
         db.execute('''CREATE TABLE IF NOT EXISTS task_ai_plans (
             task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
             user_id INTEGER NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)''')
@@ -373,6 +379,31 @@ def task_image(db, task_id, image_id, user_id):
 def task_image_review(db, task_id, user_id):
     row = db.execute('SELECT result_json,created_at FROM task_image_reviews WHERE task_id=? AND user_id=?',(task_id,user_id)).fetchone()
     return dict(json.loads(row['result_json']),created_at=row['created_at']) if row else None
+
+
+def task_image_texts(db, task_id, user_id):
+    if not db.execute('SELECT 1 FROM tasks WHERE id=? AND user_id=?', (task_id,user_id)).fetchone():
+        return None
+    return [dict(row) for row in db.execute('SELECT image_id,text_original,provider,model,created_at FROM task_image_texts '
+                                        'WHERE task_id=? AND user_id=? ORDER BY image_id', (task_id,user_id))]
+
+
+def save_task_image_texts(db, task_id, user_id, items, provider, model):
+    if not db.execute('SELECT 1 FROM tasks WHERE id=? AND user_id=?', (task_id,user_id)).fetchone():
+        return None
+    now = _now()
+    with db:
+        for item in items:
+            if not db.execute('SELECT 1 FROM task_attachments WHERE task_id=? AND id=?',
+                              (task_id,item['image_id'])).fetchone():
+                raise ValueError('Task image not found')
+            db.execute('INSERT INTO task_image_texts(task_id,image_id,user_id,text_original,provider,model,created_at) '
+                       'VALUES(?,?,?,?,?,?,?) ON CONFLICT(task_id,image_id) DO UPDATE SET '
+                       'text_original=excluded.text_original,provider=excluded.provider,model=excluded.model,created_at=excluded.created_at',
+                       (task_id,item['image_id'],user_id,item['text'],provider,model,now))
+        db.execute('INSERT INTO task_events(task_id,action,changes,created_at) VALUES(?,?,?,?)',
+                   (task_id,'image_text_extracted',json.dumps({'image_count':len(items)}),now))
+    return task_image_texts(db,task_id,user_id)
 
 
 def save_task_image_review(db, task_id, user_id, result):
