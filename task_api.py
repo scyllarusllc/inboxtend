@@ -3,13 +3,18 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import secrets
 import subprocess
+import tempfile
+import zipfile
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
+from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import func
 from sqlmodel import select
 
@@ -300,6 +305,66 @@ def project_attachment_file(request: Request, task_id: int, attachment_id: int, 
     if item.get('mime_type') in ('text/plain', 'text/csv') or str(item.get('name', '')).lower().endswith(('.txt', '.csv', '.md')):
         return json_result({'content': content[:65536].decode('utf-8', 'replace'), 'truncated': len(content) > 65536})
     raise HTTPException(415, 'Preview unavailable for this file type')
+
+
+@router.post('/{task_id:int}/project/attachments/{attachment_id:int}/rotate')
+def rotate_project_attachment(request: Request, task_id: int, attachment_id: int, body: dict, user=Depends(current_user)):
+    _require_write(request, user)
+    direction = body.get('direction')
+    if type(direction) is not int or direction not in (-90, 90):
+        raise HTTPException(400, 'Choose a 90-degree rotation')
+    item, file = _project_attachment(request, task_id, user['id'], attachment_id)
+    mime = item.get('mime_type')
+    if mime not in ('image/jpeg', 'image/png', 'image/webp') or file.stat().st_size > 2 * 1024 * 1024:
+        raise HTTPException(415, 'Rotation supports JPEG, PNG and WebP images up to 2 MiB')
+    try:
+        original = file.read_bytes()
+        if raster_preview_mime(mime, original) != mime:
+            raise HTTPException(415, 'Invalid image data')
+        with Image.open(BytesIO(original)) as source:
+            source.load()
+            image = ImageOps.exif_transpose(source)
+            rotated = image.rotate(-direction, expand=True)
+            output = BytesIO()
+            if mime == 'image/jpeg':
+                rotated.convert('RGB').save(output, format='JPEG', quality=85, optimize=True)
+            elif mime == 'image/png':
+                rotated.save(output, format='PNG', optimize=True)
+            else:
+                rotated.save(output, format='WEBP', quality=85)
+        content = output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise HTTPException(415, 'Invalid image data') from None
+    if len(content) > 2 * 1024 * 1024:
+        raise HTTPException(413, 'Rotated image exceeds the 2 MiB AI limit')
+    folder = project_path(task_id)
+    manifest_path = folder / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    if attachment_id < len(manifest):
+        manifest[attachment_id]['rotated'] = True
+        manifest[attachment_id]['size_bytes'] = len(content)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=file.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+        os.chmod(temporary, 0o600)
+        temporary.replace(file)
+        if attachment_id < len(manifest):
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+        archive_path = folder / 'attachments.zip'
+        with tempfile.NamedTemporaryFile(dir=folder, delete=False) as stream:
+            archive_temp = Path(stream.name)
+        try:
+            with zipfile.ZipFile(archive_temp, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                for source in sorted((folder / 'attachments').iterdir()):
+                    if source.is_file() and not source.is_symlink(): archive.write(source, arcname=source.name)
+            os.chmod(archive_temp, 0o600)
+            archive_temp.replace(archive_path)
+        finally: archive_temp.unlink(missing_ok=True)
+    finally:
+        if temporary: temporary.unlink(missing_ok=True)
+    return json_result({'rotated': True, 'size_bytes': len(content)})
 
 
 @router.get('/{task_id:int}/plan')

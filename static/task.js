@@ -295,6 +295,7 @@ function taskProjectFiles(task) {
           if (file.kind === 'image') {
             const img = el('img', undefined, 'attachment-image');
             img.src = base + '/preview'; img.alt = 'Preview of ' + file.name; img.loading = 'lazy'; row.append(img);
+            if (file.mime_type !== 'image/gif') addProjectImageRotation(row, img, base);
           } else if (file.kind === 'text') {
             const preview = el('pre', 'Loading preview…', 'attachment-preview'); row.append(preview);
             request(base + '/preview').then(result => { preview.textContent = result.content + (result.truncated ? '\n…' : ''); })
@@ -307,6 +308,24 @@ function taskProjectFiles(task) {
   };
   load();
   return box;
+}
+
+function addProjectImageRotation(row, img, base) {
+  const controls = el('div', undefined, 'project-actions');
+  for (const [iconName, label, direction] of [['rotate-left', 'Rotate left', -90], ['rotate-right', 'Rotate right', 90]]) {
+    const button = iconButton(iconName, label);
+    button.addEventListener('click', async () => {
+      for (const control of controls.querySelectorAll('button')) control.disabled = true;
+      try {
+        await request(base + '/rotate', 'POST', {direction});
+        img.src = base + '/preview?updated=' + Date.now();
+        notify('Rotated image saved in the task project.');
+      } catch (error) { notify(error.message, true); }
+      finally { for (const control of controls.querySelectorAll('button')) control.disabled = false; }
+    });
+    controls.append(button);
+  }
+  row.append(controls);
 }
 
 function projectCard(task) {
@@ -360,6 +379,7 @@ function projectCard(task) {
               img.alt = 'Preview of ' + file.name;
               img.loading = 'lazy';
               row.append(img);
+              if (file.mime_type !== 'image/gif') addProjectImageRotation(row, img, base);
             } else if (file.kind === 'text') {
               const text = el('pre', 'Loading text preview…', 'attachment-preview');
               row.append(text);

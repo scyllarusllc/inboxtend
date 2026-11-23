@@ -92,6 +92,15 @@ def export_task(db_path, user_id: int, task_id: int):
                 try:
                     old_manifest = json.loads((destination / 'manifest.json').read_text(encoding='utf-8'))
                     managed.update('attachments/' + item['file'] for item in old_manifest if item.get('file'))
+                    old_by_file = {item['file']: item for item in old_manifest if item.get('file')}
+                    for item in manifest:
+                        old = old_by_file.get(item.get('file'))
+                        if old and old.get('rotated') and item.get('file'):
+                            source = destination / 'attachments' / item['file']
+                            target = working / 'attachments' / item['file']
+                            if source.is_file() and not source.is_symlink() and target.is_file():
+                                shutil.copy2(source, target)
+                                item['rotated'] = True
                 except (OSError, ValueError, TypeError):
                     pass
                 for old in destination.rglob('*'):
@@ -104,6 +113,11 @@ def export_task(db_path, user_id: int, task_id: int):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     if not target.exists():
                         shutil.copy2(old, target)
+            (working / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+            with zipfile.ZipFile(working / 'attachments.zip', 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                for source in sorted(files.iterdir()):
+                    if source.is_file() and not source.is_symlink():
+                        archive.write(source, arcname=source.name)
             os.chmod(working, 0o700)
             for path in working.rglob('*'):
                 if path.is_file(): os.chmod(path, 0o600)

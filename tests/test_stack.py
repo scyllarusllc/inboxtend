@@ -3,6 +3,7 @@ import unittest
 import os
 import zipfile
 from io import BytesIO
+from PIL import Image
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -113,7 +114,7 @@ class StackTests(unittest.TestCase):
                     archive = client.get(f"/api/tasks/{created['id']}/attachments.zip", headers=headers)
                     self.assertEqual(archive.status_code, 200)
                     with zipfile.ZipFile(BytesIO(archive.content)) as bundle:
-                        self.assertEqual(bundle.read(bundle.namelist()[0]), b'abc')
+                        self.assertIn(b'abc', [bundle.read(name) for name in bundle.namelist()])
                     listing = client.get(f"/api/tasks/{created['id']}/project/attachments", headers=headers).json()['attachments']
                     self.assertEqual([item['kind'] for item in listing], ['text', 'image'])
                     self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/0/preview", headers=headers).json()['content'], 'abc')
@@ -126,6 +127,19 @@ class StackTests(unittest.TestCase):
                     listing = client.get(f"/api/tasks/{created['id']}/project/attachments", headers=headers).json()['attachments']
                     self.assertEqual([item['name'] for item in listing], ['note.txt', 'image.jpg', 'extra.md'])
                     self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/2/preview", headers=headers).json()['content'], 'Added to the project folder')
+                    image_bytes = BytesIO()
+                    Image.new('RGB', (20, 10), 'red').save(image_bytes, format='PNG')
+                    with open(folder + '/attachments/manual.png', 'wb') as image_file:
+                        image_file.write(image_bytes.getvalue())
+                    rotate_url = f"/api/tasks/{created['id']}/project/attachments/3/rotate"
+                    self.assertEqual(client.post(rotate_url, headers=headers, json={'direction': 90}).status_code, 403)
+                    rotated = client.post(rotate_url, headers={**headers, 'X-CSRF-Token': 'csrf'}, json={'direction': 90})
+                    self.assertEqual(rotated.status_code, 200)
+                    with Image.open(folder + '/attachments/manual.png') as image:
+                        self.assertEqual(image.size, (10, 20))
+                    with zipfile.ZipFile(folder + '/attachments.zip') as bundle:
+                        with Image.open(BytesIO(bundle.read('manual.png'))) as image:
+                            self.assertEqual(image.size, (10, 20))
                     project = read_project(created['id'])
                     self.assertIn('3 saved emails', project['text'])
                     self.assertIn('image.jpg', project['text'])
@@ -133,6 +147,8 @@ class StackTests(unittest.TestCase):
                         notes.write('Please review the updated context.')
                     export_task(path, 1, created['id'])
                     self.assertIn('Please review the updated context.', read_project(created['id'])['text'])
+                    with Image.open(folder + '/attachments/manual.png') as image:
+                        self.assertEqual(image.size, (10, 20))
                     plan = {'steps': [], 'approach': {'en': 'Use the project notes.', 'zh': ''},
                             'summary': {'en': 'Review the task.', 'zh': ''}, 'reply_draft': '',
                             'reply_draft_zh': '', 'questions': [], 'risks': [], 'confidence': 'medium'}
