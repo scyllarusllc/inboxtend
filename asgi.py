@@ -13,8 +13,8 @@ import secrets
 import sqlite3
 import traceback
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import Response
+from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.responses import Response, HTMLResponse
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -24,6 +24,10 @@ from tasks import DEFAULT_DB
 import gmail_web
 import translation_preload
 from task_api import router as task_router
+from task_api import current_user
+from mail_design import preview_document
+from mail_content import looks_like_html
+from tasks import connection
 
 
 class RequestAdapter(Handler):
@@ -76,6 +80,20 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title='Inbox Tend', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.include_router(task_router)
 _dev_boot = secrets.token_hex(8)
+
+
+@app.get('/api/connectors/gmail/messages/{message_id}/design')
+def email_design(request: Request, message_id: str, remote_images: bool = False, user=Depends(current_user)):
+    path = getattr(request.app.state, 'db_path', DEFAULT_DB)
+    with connection(path) as db:
+        row = db.execute('SELECT body_html,body_text FROM gmail_messages WHERE user_id=? AND message_id=?',
+                         (user['id'], message_id)).fetchone()
+    if row is None or not (row['body_html'] or looks_like_html(row['body_text'])):
+        raise HTTPException(404, 'HTML design unavailable')
+    policy = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:" + (' https:' if remote_images else '') + "; font-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
+    return HTMLResponse(preview_document(row['body_html'] or row['body_text'], remote_images), headers={
+        'Content-Security-Policy': policy, 'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer'})
 
 
 @app.get('/api/dev/version')

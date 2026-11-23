@@ -300,7 +300,7 @@ async function selectMessage(id) {
   const detailFlag = flagEl(full);
   if (detailFlag) head[1].append(detailFlag, el('span', countryName(full.country)));
   if (full.direction !== 'sent') { detailRead.badge = el('span', '', 'read-badge'); head[1].append(detailRead.badge); }
-  const body = linkedText(full.body_text || full.snippet || '(No text content)', 'message-body');  // Text only, never HTML; web addresses become links.
+  const body = mailBodyView(full);
   const person = personCard(full.person, full);
   const about = topicButtons(full.topics, code => { searchBox.value = 'topic:' + code; searchText = searchBox.value; reloadList(); window.scrollTo({top: 0, behavior: 'smooth'}); });
   detail.replaceChildren(...head, ...(about ? [about] : []), ...(person ? [person] : []), body);

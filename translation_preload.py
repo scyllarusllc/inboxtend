@@ -30,7 +30,7 @@ def _idle() -> bool:
 
 
 def _candidate(db, user_id: int, language: str):
-    rows = db.execute('''SELECT message_id, subject, body_text, snippet
+    rows = db.execute('''SELECT message_id, subject, body_text, body_html, snippet
         FROM gmail_messages m WHERE user_id=? AND in_inbox=1 AND has_full=1
         AND (read_override=0 OR (read_override IS NULL AND label_ids LIKE '%"UNREAD"%'))
         AND NOT EXISTS (SELECT 1 FROM message_translations t WHERE t.user_id=m.user_id

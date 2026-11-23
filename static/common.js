@@ -72,6 +72,42 @@ function linkedText(text, className) {
   box.append(document.createTextNode(text.slice(last)));
   return box;
 }
+function mailBodyView(message) {
+  const box = el('div', undefined, 'mail-body-view');
+  const text = linkedText(message.body_text || message.snippet || '(No text content)', 'message-body');
+  if (!message.has_html) { box.append(text); return box; }
+  const controls = el('div', undefined, 'mail-view-controls');
+  const design = iconButton('eye', 'Original design');
+  const easy = iconButton('list-check', 'Easy read');
+  const remote = iconButton('eye', 'Load remote images');
+  const note = el('p', 'Remote images are off. Links in the design preview cannot be opened.', 'meta');
+  const frame = el('iframe', undefined, 'mail-design-frame');
+  frame.title = 'Original email design';
+  frame.setAttribute('sandbox', '');
+  frame.referrerPolicy = 'no-referrer';
+  frame.loading = 'lazy';
+  let remoteImages = false;
+  const previewUrl = () => '/api/connectors/gmail/messages/' + encodeURIComponent(message.id) + '/design' + (remoteImages ? '?remote_images=true' : '');
+  const show = original => {
+    design.setAttribute('aria-pressed', String(original));
+    easy.setAttribute('aria-pressed', String(!original));
+    frame.hidden = remote.hidden = note.hidden = !original;
+    text.hidden = original;
+    if (original && !frame.src) frame.src = previewUrl();
+  };
+  design.addEventListener('click', () => show(true));
+  easy.addEventListener('click', () => show(false));
+  remote.addEventListener('click', () => {
+    remoteImages = !remoteImages;
+    frame.src = previewUrl();
+    remote.replaceChildren(icon('eye'), document.createTextNode(remoteImages ? ' Hide remote images' : ' Load remote images'));
+    note.textContent = remoteImages ? 'Remote images are loaded from the sender’s servers.' : 'Remote images are off. Links in the design preview cannot be opened.';
+  });
+  controls.append(design, easy, remote);
+  box.append(controls, note, frame, text);
+  show(true);
+  return box;
+}
 function icon(name) {
   const node = document.createElement('i');
   node.className = (ICONS[name] || 'fa-solid fa-circle') + ' fa-fw';

@@ -291,6 +291,11 @@
   .more-button { @apply w-full border-dashed bg-transparent text-indigo-700 shadow-none; }
   .message-body a { @apply break-all text-indigo-700 underline decoration-indigo-300 underline-offset-2 hover:text-indigo-900 hover:decoration-indigo-600; }
   .message-body { @apply my-3 whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-relaxed text-slate-800; }
+  .mail-body-view { @apply grid min-w-0 gap-2; }
+  .mail-view-controls { @apply flex flex-wrap items-center gap-2; }
+  .mail-view-controls [aria-pressed="true"] { @apply border-indigo-300 bg-indigo-50 text-indigo-800; }
+  .mail-design-frame { @apply min-h-96 w-full rounded-xl border border-slate-200 bg-white; height: min(65vh, 760px); }
+  .mail-body-view [hidden] { display: none; }
   .conversation-thread { @apply mt-5 grid gap-2; }
   .conversation-thread h4, .attachment-heading { @apply mb-1 flex items-center gap-2; }
   .attachment-section { @apply mt-5 grid gap-2; }

@@ -102,9 +102,24 @@ class StackTests(unittest.TestCase):
                 self.assertEqual(data['messages'][1]['direction'], 'sent')
                 self.assertTrue(data['messages'][2]['is_source'])
                 with connection(path) as db:
+                    db.execute("UPDATE gmail_messages SET body_html=? WHERE user_id=1 AND message_id='source'",
+                               ('<style>p {color:red}</style><p onclick="bad()">Hello <a href="https://example.org">friend</a><img src="https://example.org/pixel"></p><script>bad()</script>',))
                     db.execute("INSERT INTO gmail_attachments(user_id,message_id,filename,mime_type,size_bytes,content) VALUES(1,'source','note.txt','text/plain',3,?)", (b'abc',))
                     db.execute("INSERT INTO gmail_attachments(user_id,message_id,filename,mime_type,size_bytes,content) VALUES(1,'source','image.jpg','image/jpeg',6,?)", (b'\xff\xd8\xffabc',))
                     db.commit()
+                design = client.get('/api/connectors/gmail/messages/source/design', headers=headers)
+                self.assertEqual(design.status_code, 200)
+                self.assertIn('<style>p {color:red}</style>', design.text)
+                self.assertNotIn('bad()', design.text)
+                self.assertNotIn('https://example.org/pixel', design.text)
+                self.assertIn("img-src data:", design.headers['content-security-policy'])
+                self.assertEqual(client.get('/api/connectors/gmail/messages/source/design', headers={'Host': 'localhost:8765'}).status_code, 401)
+                remote = client.get('/api/connectors/gmail/messages/source/design?remote_images=true', headers=headers)
+                self.assertIn('https://example.org/pixel', remote.text)
+                with connection(path) as db:
+                    db.execute("UPDATE gmail_messages SET body_text=body_html,body_html='' WHERE user_id=1 AND message_id='source'")
+                    db.commit()
+                self.assertIn('Hello', client.get('/api/connectors/gmail/messages/source/design', headers=headers).text)
                 with tempfile.TemporaryDirectory() as projects, patch.dict(os.environ, {'INBOX_TEND_TASKS_DIR': projects}):
                     self.assertEqual(client.post(f"/api/tasks/{created['id']}/project", headers=headers).status_code, 403)
                     self.assertEqual(client.post(f"/api/tasks/{created['id']}/project", headers={**headers, 'X-CSRF-Token': 'csrf', 'Origin': 'https://evil.example.org'}).status_code, 403)

@@ -1,6 +1,7 @@
 """Offline email translation using explicitly installed Argos language packs."""
 from __future__ import annotations
 import threading
+from mail_content import readable_body
 
 LANGUAGES = {
     'ar':'Arabic', 'de':'German', 'en':'English', 'es':'Spanish', 'fr':'French',
@@ -126,7 +127,7 @@ def translate_message(message: dict, target: str, max_chars: int = MAX_TRANSLATI
     target = language_code(target)
     _, argos = _argos()
     subject = (message.get('subject') or '')[:500]
-    full_body = message.get('body_text') or message.get('snippet') or ''
+    full_body = readable_body(message.get('body_text'), message.get('body_html')) or message.get('snippet') or ''
     body = full_body[:max_chars]
     truncated = len(full_body) > max_chars
     sample = (body or subject).strip()

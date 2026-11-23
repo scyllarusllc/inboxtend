@@ -454,7 +454,8 @@ class Handler:
                 fetched = time.perf_counter()
                 force = data.get('force') is True
                 def answer(found,cached):
-                    return self._json(200,{'translation':dict(found,cached=cached,provider='Argos Translate' if found['provider']=='argos' else ai.PROVIDERS.get(found['provider'],{}).get('name',found['provider']))})
+                    from mail_content import readable_body
+                    return self._json(200,{'translation':dict(found,body=readable_body(found['body']),cached=cached,provider='Argos Translate' if found['provider']=='argos' else ai.PROVIDERS.get(found['provider'],{}).get('name',found['provider']))})
                 with self._db() as db:
                     found = gmail_web.get_translation(db,session['id'],message['id'],language)
                     if not found and not force: found = gmail_web.get_translation(db,session['id'],message['id'],local_translation.LANGUAGES[language])

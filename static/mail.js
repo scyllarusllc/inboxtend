@@ -41,7 +41,7 @@ async function renderMail(m) {
   card.append(who);
   if (m.to) card.append(el('div', 'To ' + m.to, 'meta'));
   if (m.cc) card.append(el('div', 'Cc ' + m.cc, 'meta'));
-  card.append(linkedText(m.body_text || m.snippet || '(No text content)', 'message-body'));
+  card.append(mailBodyView(m));
 
   const bar = el('div', undefined, 'action-bar');
   if (m.direction !== 'sent') {
