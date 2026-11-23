@@ -234,14 +234,16 @@ function renderTask(task) {
   card.append(projectCard(task));
   detailBox.append(card);
   if (lastPlan) detailBox.append(planPanel(lastPlan, task));   // Full width: English plan on the left, its Chinese translation on the right.
-  if (task.image_count) {
-    // The images on the left; what the AI extracted from them and what it thinks they mean on the right.
+  {
     const pair = el('div', undefined, 'plan-pair');
     const reviewBox = el('div', undefined, 'task-image-review');
-    const images = taskImageDetails(task, reviewBox);
-    pair.append(section('Images', images), section('Extracted text and AI explanation', reviewBox));
+    const files = taskProjectFiles(task);
+    if (task.image_count) {
+      const images = taskImageDetails(task, reviewBox);
+      files.append(images);
+      pair.append(section('Files', files), section('Extracted text and AI explanation', reviewBox));
+    } else pair.append(section('Files', files));
     detailBox.append(pair);
-    images.open = true;
   }
   // Two columns on a wide screen: the work (plan, images, edit) on the left, context (email, history) on the right.
   const columns = el('div', undefined, 'task-columns');
@@ -265,6 +267,46 @@ function renderTask(task) {
   history.open = true;
   const stamps = el('p', 'Created ' + (task.created_at ? new Date(task.created_at).toLocaleString() : '—') + ' · Updated ' + (task.updated_at ? new Date(task.updated_at).toLocaleString() : '—'), 'meta');
   side.append(section('History', history, stamps));
+}
+
+function taskProjectFiles(task) {
+  const box = el('div', 'Loading files from .tasks/' + task.id + '/attachments…', 'project-previews');
+  box.id = 'task-files';
+  const load = async () => {
+    try {
+      let data;
+      try { data = await request('/api/tasks/' + task.id + '/project/attachments'); }
+      catch (error) {
+        if (!String(error.message).includes('Create the task project first')) throw error;
+        await request('/api/tasks/' + task.id + '/project', 'POST', {});
+        data = await request('/api/tasks/' + task.id + '/project/attachments');
+      }
+      box.replaceChildren(el('p', 'Files in .tasks/' + task.id + '/attachments · ' + data.attachments.length + ' total', 'meta'));
+      if (!data.attachments.length) box.append(el('p', 'No attachments in this task project.', 'meta'));
+      for (const file of data.attachments) {
+        const row = el('div', undefined, 'attachment-row project-attachment');
+        row.append(el('strong', file.name || 'Unnamed file'),
+          el('span', (file.size_bytes / 1048576).toFixed(1) + ' MB · ' + (file.mime_type || 'File'), 'meta'));
+        if (file.kind === 'missing') row.append(el('p', 'Not stored locally: ' + (file.skipped_reason || 'unavailable'), 'meta'));
+        else {
+          const base = '/api/tasks/' + task.id + '/project/attachments/' + file.id;
+          const link = el('a', 'Download', 'icon-button');
+          link.href = base + '/download'; link.setAttribute('download', file.name); row.append(link);
+          if (file.kind === 'image') {
+            const img = el('img', undefined, 'attachment-image');
+            img.src = base + '/preview'; img.alt = 'Preview of ' + file.name; img.loading = 'lazy'; row.append(img);
+          } else if (file.kind === 'text') {
+            const preview = el('pre', 'Loading preview…', 'attachment-preview'); row.append(preview);
+            request(base + '/preview').then(result => { preview.textContent = result.content + (result.truncated ? '\n…' : ''); })
+              .catch(error => { preview.textContent = 'Preview unavailable: ' + error.message; });
+          }
+        }
+        box.append(row);
+      }
+    } catch (error) { box.textContent = 'Could not load task files: ' + error.message; }
+  };
+  load();
+  return box;
 }
 
 function projectCard(task) {

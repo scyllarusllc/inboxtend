@@ -120,10 +120,15 @@ class StackTests(unittest.TestCase):
                     self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/1/preview", headers=headers).content, b'\xff\xd8\xffabc')
                     self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/1/download", headers=headers).content, b'\xff\xd8\xffabc')
                     self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/2/preview", headers=headers).status_code, 404)
+                    folder = projects + '/' + str(created['id'])
+                    with open(folder + '/attachments/extra.md', 'w', encoding='utf-8') as extra:
+                        extra.write('Added to the project folder')
+                    listing = client.get(f"/api/tasks/{created['id']}/project/attachments", headers=headers).json()['attachments']
+                    self.assertEqual([item['name'] for item in listing], ['note.txt', 'image.jpg', 'extra.md'])
+                    self.assertEqual(client.get(f"/api/tasks/{created['id']}/project/attachments/2/preview", headers=headers).json()['content'], 'Added to the project folder')
                     project = read_project(created['id'])
                     self.assertIn('3 saved emails', project['text'])
                     self.assertIn('image.jpg', project['text'])
-                    folder = projects + '/' + str(created['id'])
                     with open(folder + '/notes.md', 'w', encoding='utf-8') as notes:
                         notes.write('Please review the updated context.')
                     export_task(path, 1, created['id'])

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import secrets
 import subprocess
 from pathlib import Path
@@ -245,6 +246,14 @@ def _project_attachment(request: Request, task_id: int, user_id: int, attachment
     try: manifest = json.loads((folder / 'manifest.json').read_text(encoding='utf-8'))
     except (OSError, ValueError): raise HTTPException(404, 'Create the task project first') from None
     if not isinstance(manifest, list): raise HTTPException(404, 'Project manifest unavailable')
+    attachments_dir = folder / 'attachments'
+    if attachments_dir.is_symlink(): raise HTTPException(404, 'Project unavailable')
+    if attachments_dir.is_dir():
+        managed = {item.get('file') for item in manifest if isinstance(item, dict)}
+        for file in sorted(attachments_dir.iterdir()):
+            if file.name in managed or not file.is_file() or file.is_symlink(): continue
+            manifest.append({'name': file.name, 'file': file.name, 'mime_type': mimetypes.guess_type(file.name)[0] or '',
+                             'size_bytes': file.stat().st_size, 'message_id': '', 'skipped_reason': ''})
     if attachment_id is None: return manifest, None
     if not 0 <= attachment_id < len(manifest): raise HTTPException(404, 'Attachment not found')
     item = manifest[attachment_id]
@@ -252,7 +261,6 @@ def _project_attachment(request: Request, task_id: int, user_id: int, attachment
     filename = item.get('file')
     if not isinstance(filename, str) or not filename or Path(filename).name != filename:
         raise HTTPException(404, 'Attachment is not stored')
-    attachments_dir = folder / 'attachments'
     file = attachments_dir / filename
     if attachments_dir.is_symlink() or file.is_symlink() or not file.is_file() or not file.resolve().is_relative_to(folder.resolve()):
         raise HTTPException(404, 'Attachment is not stored')
@@ -268,7 +276,7 @@ def project_attachments(request: Request, task_id: int, user=Depends(current_use
         mime = item.get('mime_type', '')
         size = item.get('size_bytes', 0)
         kind = 'missing'
-        if item.get('file'):
+        if item.get('file') and (project_path(task_id) / 'attachments' / str(item['file'])).is_file():
             kind = 'image' if mime in ('image/jpeg', 'image/png', 'image/gif', 'image/webp') and size <= 2 * 1024 * 1024 else (
                 'text' if mime in ('text/plain', 'text/csv') or str(item.get('name', '')).lower().endswith(('.txt', '.csv', '.md')) else 'download')
         items.append({'id': index, 'name': item.get('name', ''), 'mime_type': mime, 'size_bytes': size,
