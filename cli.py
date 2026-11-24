@@ -11,7 +11,10 @@ def serve(port: int = typer.Option(8765, min=1, max=65535), host: str = '127.0.0
           reload: bool = typer.Option(False, help='Reload Python code during development.')):
     """Run the FastAPI application with Uvicorn."""
     import uvicorn
-    uvicorn.run('asgi:app', host=host, port=port, reload=reload)
+    root = Path(__file__).resolve().parent
+    options = {'reload_dirs': [str(root)],
+               'reload_excludes': [str(root / name) for name in ('.venv', 'node_modules', '.tasks', 'data', 'frontend/.next')]}
+    uvicorn.run('asgi:app', host=host, port=port, reload=reload, **(options if reload else {}))
 
 
 @cli.command()

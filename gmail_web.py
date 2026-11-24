@@ -443,7 +443,7 @@ def grouped_inbox(db,user_id,folder,view,search=None,account_id=None):
         return {'messages':cached_inbox(db,user_id,folder,search,account_id)}
     column = FOLDERS[folder]
     where, params = mailsearch.condition(search) if search else ('',[])
-    rows = db.execute('SELECT m.account_id,m.message_id,m.thread_id,m.from_addr,m.to_addr,m.subject,m.date_header,m.snippet,m.internal_date,m.label_ids,m.read_override,'
+    rows = db.execute('SELECT m.account_id,m.message_id,m.thread_id,m.from_addr,m.to_addr,m.subject,m.date_header,m.snippet,m.internal_date,m.label_ids,m.read_override,m.has_full,'
                       f'm.peer_email,m.peer_name,m.{column} AS in_folder,' + (f'CASE WHEN {where} THEN 1 ELSE 0 END' if where else '1') + ' AS hit,'
                       '(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
                       'FROM gmail_messages m WHERE m.user_id=?' + (' AND m.account_id=?' if account_id is not None else '') + ' ORDER BY m.internal_date DESC, m.message_id DESC',
