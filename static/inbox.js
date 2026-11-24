@@ -4,6 +4,17 @@ const detail = document.getElementById('detail');
 const relatedMessages = document.getElementById('related-messages');
 const draft = document.getElementById('draft');
 let messages = [], selectedId = null, folder = 'inbox', view = 'people', groups = [], currentGroup = null, gmailWriteAccess = false;
+const messageDetails = new Map();
+function loadMessage(id) {
+  const saved = messageDetails.get(id);
+  if (saved && Date.now() - saved.at < 120000) return saved.promise;
+  const promise = request('/api/connectors/gmail/messages/' + encodeURIComponent(id))
+    .then(result => result.message)
+    .catch(error => { messageDetails.delete(id); throw error; });
+  messageDetails.set(id, {promise, at: Date.now()});
+  if (messageDetails.size > 20) messageDetails.delete(messageDetails.keys().next().value);
+  return promise;
+}
 // What the list shows: search words (Gmail-style operators work), two quick filters, and how many rows are drawn.
 let flagsAttempted = false, topicsAttempted = false, websitesAttempted = false;
 const websiteLink = document.getElementById('message-website-link');
@@ -278,12 +289,16 @@ async function selectMessage(id) {
   draft.replaceChildren();
   relatedMessages.replaceChildren();
   if (window.innerWidth < 1024) document.getElementById('review-heading').scrollIntoView({behavior: 'smooth', block: 'start'});   // One column: the message is below the list, so bring it into view.
-  detail.replaceChildren(el('h3', m.subject || '(No subject)'),
-    el('div', (m.from || 'Unknown sender') + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta'), el('p', 'Loading message…'));
+  const preview = [el('h3', m.subject || '(No subject)'),
+    el('div', (m.from || 'Unknown sender') + ' · ' + formatWhen(m.internal_date, m.date || 'No date'), 'meta')];
+  if (m.snippet) preview.push(el('p', m.snippet, 'email-excerpt'));
+  preview.push(el('p', m.has_full === false ? 'Fetching the full message from Gmail…' : 'Opening saved message…', 'meta'));
+  detail.replaceChildren(...preview);
   let full;
-  try { full = (await request('/api/connectors/gmail/messages/' + encodeURIComponent(id))).message; }
+  try { full = await loadMessage(id); }
   catch (error) { if (selectedId === id) detail.append(el('p', error.message, 'error')); return; }
   if (selectedId !== id) return;
+  if (readState.has(id)) full.unread = readState.get(id);
   showWebsiteLink(full.website);
   if (userSettings.translate_enabled) showTranslation(id);
   readState.set(full.id, full.unread);

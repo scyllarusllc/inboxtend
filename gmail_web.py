@@ -251,6 +251,7 @@ def _is_unread(r):
 def _row(r):
     return {'id':r['message_id'],'thread_id':r['thread_id'],'from':r['from_addr'],'to':r['to_addr'],
             'subject':r['subject'],'date':r['date_header'],'internal_date':r['internal_date'],'snippet':r['snippet'],
+            'has_full':bool(r['has_full']),
             'direction':'sent' if '"SENT"' in (r['label_ids'] or '') else 'received','unread':_is_unread(r),
             'peer':r['peer_email'] if 'peer_email' in r.keys() else '',
             'account_id':r['account_id'] if 'account_id' in r.keys() else None}

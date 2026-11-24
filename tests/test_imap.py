@@ -57,6 +57,7 @@ class IMAPTests(unittest.TestCase):
             messages=gmail_web.cached_inbox(db,1)
             self.assertEqual(len(messages),1)
             self.assertEqual(messages[0]['subject'],'Hello')
+            self.assertTrue(messages[0]['has_full'])
             self.assertFalse(messages[0]['unread'])
             self.assertEqual(gmail_web.message(db,config,1,messages[0]['id'])['body_text'].strip(),'Please review this.')
             with patch.object(imap_web.imaplib,'IMAP4_SSL',FakeIMAP):
