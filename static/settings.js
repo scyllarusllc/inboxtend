@@ -164,16 +164,43 @@ async function init() {
     prefsForm.elements.gmail_write_read.disabled = !gmail.write_access;
     return gmail;
   }
+  function remainingText(expiresAt) {
+    const seconds = expiresAt - Math.floor(Date.now() / 1000);
+    if (seconds <= 0) return 'access expired ' + formatWhen(expiresAt * 1000) + ': re-authorise';
+    const days = Math.floor(seconds / 86400), hours = Math.floor(seconds % 86400 / 3600), minutes = Math.floor(seconds % 3600 / 60);
+    return 'access valid for about ' + (days ? days + 'd ' + hours + 'h' : hours ? hours + 'h ' + minutes + 'm' : minutes + 'm') + ' (until ' + formatWhen(expiresAt * 1000) + ')';
+  }
   function accountRow(account, at, configured) {
     const row = el('li', undefined, 'account-row');
     const dot = el('span', undefined, 'account-dot'); dot.dataset.slot = String(at % 6);
     const name = account.email || 'Gmail account ' + account.id;
     const facts = [account.provider === 'imap' ? 'IMAP: read mail and change read/unread' : account.write ? 'Read, and change read/unread (gmail.modify)' : 'Read-only (gmail.readonly)', account.stored + ' message(s) saved',
                    account.last_sync ? 'last synced ' + formatWhen(account.last_sync * 1000) : 'not synced yet'];
+    if (account.provider !== 'imap' && account.expires_at) facts.push(remainingText(account.expires_at));
     const text = el('div', undefined, 'min-w-0');
     text.append(el('strong', name, 'break-all'), el('div', facts.join(' · '), 'meta'));
+    if (account.provider !== 'imap' && account.expires_at) {
+      // Share of the 7-day authorisation window that is left: green, amber under 2 days, red under 1 day or expired.
+      const left = account.expires_at - Math.floor(Date.now() / 1000), share = Math.max(0, Math.min(1, left / (7 * 86400)));
+      const bar = el('div', undefined, 'access-bar'), fill = el('span');
+      bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-label', 'Time left before ' + name + ' must be re-authorised');
+      bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100'); bar.setAttribute('aria-valuenow', String(Math.round(share * 100)));
+      bar.dataset.state = left < 86400 ? 'urgent' : left < 2 * 86400 ? 'soon' : 'ok';
+      fill.style.width = (share * 100) + '%'; bar.append(fill); text.append(bar);
+    }
     const actions = el('div', undefined, 'account-actions');
     const add = (label, className, handler) => { const b = el('button', label, className || ''); b.type = 'button'; b.addEventListener('click', () => handler(b)); actions.append(b); };
+    if (account.provider !== 'imap') add('Check access', '', async button => {
+      button.disabled = true;
+      try {
+        const result = await request('/api/connectors/gmail/check', 'POST', {account_id: account.id});
+        notify(result.valid === true ? name + ': access is valid. ' + remainingText(result.expires_at) + '.'
+          : result.valid === false ? name + ': access has expired or was withdrawn. Use Re-authorise to connect it again.'
+          : name + ': could not reach Google to check (' + (result.error || 'unknown error') + ').', result.valid !== true);
+      } catch (error) { notify(error.message, true); }
+      finally { button.disabled = false; }
+    });
+    if (configured && account.provider !== 'imap') add('Re-authorise', '', b => authorise(account.write ? 'modify' : 'readonly', b, 'settings', account.id));
     if (configured && account.provider !== 'imap') add(account.write ? 'Return to read-only…' : 'Allow changing read/unread…', '', b => authorise(account.write ? 'readonly' : 'modify', b, 'settings', account.id));
     add('Remove', 'danger', async button => {
       if (!confirm('Remove ' + name + '?\n\nThis deletes its saved messages, attachments, topics and translations from this server. Your other accounts and your tasks are kept. You can connect it again later and sync again.')) return;

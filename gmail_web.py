@@ -30,6 +30,7 @@ AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 TOKEN = 'https://oauth2.googleapis.com/token'
 SCOPE = SCOPES[0]
 LEVELS = ('readonly','modify')
+REAUTH_SECONDS = 7 * 86400   # A Google OAuth app in "Testing" mode: refresh tokens die 7 days after they were issued (a refresh does not extend it).
 
 class GmailConnectionError(RuntimeError):
     pass
@@ -149,7 +150,7 @@ def finish(db, config, user_id, session_token, state, code, *, opener=urlopen):
 
 def accounts(db,user_id):
     """The user's connected Gmail accounts, oldest first."""
-    gmail = [dict(id=r['id'],email=r['email'],prefix=r['prefix'],connected_at=r['connected_at'],last_sync=r['last_sync'],write=MODIFY_SCOPE in set(r['scopes'].split()),provider='gmail') for r in db.execute('SELECT * FROM gmail_connections WHERE user_id=? ORDER BY id',(user_id,))]
+    gmail = [dict(id=r['id'],email=r['email'],prefix=r['prefix'],connected_at=r['connected_at'],expires_at=r['connected_at']+REAUTH_SECONDS,last_sync=r['last_sync'],write=MODIFY_SCOPE in set(r['scopes'].split()),provider='gmail') for r in db.execute('SELECT * FROM gmail_connections WHERE user_id=? ORDER BY id',(user_id,))]
     imap = [dict(id=r['id'],email=r['email'],prefix=f"imap-{r['id']}~",connected_at=r['connected_at'],last_sync=r['last_sync'],write=False,provider='imap') for r in db.execute('SELECT * FROM imap_connections WHERE user_id=? ORDER BY id',(user_id,))]
     return gmail + imap
 
@@ -202,6 +203,23 @@ def disconnect(db,user_id,account_id=None):
             db.execute(f'DELETE FROM {table} WHERE user_id=? AND message_id IN ({gmail_ids})',(user_id,user_id))
         db.execute('DELETE FROM gmail_messages WHERE user_id=? AND (account_id IS NULL OR account_id>=0)',(user_id,))
         db.execute('DELETE FROM gmail_connections WHERE user_id=?',(user_id,))
+
+def check(db,config,user_id,account_id,*,opener=urlopen):
+    """Ask Google whether the stored refresh token still works. Returns valid (True/False, or None when Google could not
+    be reached), the time the authorisation is expected to lapse and the seconds left until then."""
+    row = _account(db,user_id,account_id)
+    expires_at = row['connected_at'] + REAUTH_SECONDS
+    result = {'account_id':row['id'],'checked_at':int(time.time()),'expires_at':expires_at}
+    try:
+        _access_token(db,config,user_id,account_id=row['id'],opener=opener)
+        result['valid'] = True
+    except GmailConnectionError as exc:
+        text = str(exc)
+        # 400/401 from the token endpoint: the token expired or access was withdrawn. Anything else is not a verdict.
+        result['valid'] = False if ('HTTP 400' in text or 'HTTP 401' in text or 'reconnect' in text) else None
+        result['error'] = text
+    result['remaining'] = max(0, expires_at - result['checked_at']) if result['valid'] is not False else 0
+    return result
 
 def _scope_matches(returned,expected):
     if MODIFY_SCOPE in expected:

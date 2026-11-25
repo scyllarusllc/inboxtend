@@ -369,6 +369,12 @@ class Handler:
                     if not gmail_web.write_access(db,session['id']): prefs.save(db,session['id'],{'gmail_write_read':False})
                     connected = gmail_web.status(db,session['id'])
                 return self._json(200,{'connected':connected})
+            if path == '/api/connectors/gmail/check' and self.command == 'POST':   # Is this Gmail account's authorisation still valid, and for how long?
+                account_id = data.get('account_id')
+                with self._db() as db:
+                    if not isinstance(account_id,int) or isinstance(account_id,bool) or account_id not in [a['id'] for a in gmail_web.accounts(db,session['id']) if a['provider']=='gmail']:
+                        raise RequestError(404,'Unknown Gmail account')
+                    return self._json(200,gmail_web.check(db,self.gmail_config,session['id'],account_id))
             if path == '/api/auth/google/link' and self.command == 'POST':   # Settings -> Account: add a Google account that may sign in as this user
                 try:
                     with self._db() as db: url,browser = google_login.begin(db,self.gmail_config,'link',session['id'])
