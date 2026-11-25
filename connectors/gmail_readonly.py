@@ -7,8 +7,11 @@ No sending, modifying, deleting, or draft-writing methods exist here.
 from __future__ import annotations
 import base64
 import codecs
+import contextlib
+import contextvars
 import html
 import json
+import logging
 import random
 import re
 import threading
@@ -20,6 +23,9 @@ from urllib.error import HTTPError, URLError
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 SCOPES = ("https://www.googleapis.com/auth/gmail.readonly",)
+
+
+log = logging.getLogger("inboxtend.gmail")
 
 
 class GmailReadError(RuntimeError):
@@ -36,6 +42,38 @@ _RETRY_DELAYS = (3, 6, 12, 24, 48)  # Seconds before each retry; the last wait i
 _cooldown = {"until": 0.0}          # Shared by all worker threads: when one is limited, every request waits.
 _cooldown_lock = threading.Lock()
 _sleep = time.sleep                 # Replaceable in tests.
+
+
+# A person is waiting on this request (opening a message): do not sleep through long rate-limit back-offs, fail fast instead.
+# Background sync leaves this unset and keeps the patient retry schedule above.
+_budget = contextvars.ContextVar("gmail_budget", default=None)
+
+
+@contextlib.contextmanager
+def interactive(seconds: float):
+    """Within this block every Gmail call in this thread must finish (or give up) within `seconds` in total."""
+    mark = _budget.set(time.monotonic() + seconds)
+    try:
+        yield
+    finally:
+        _budget.reset(mark)
+
+
+def budget_left():
+    deadline = _budget.get()
+    return None if deadline is None else deadline - time.monotonic()
+
+
+def request_timeout(default: float = 15.0) -> float:
+    left = budget_left()
+    return default if left is None else max(1.0, min(default, left))
+
+
+def _give_up_if_too_long(wait: float, what: str) -> None:
+    left = budget_left()
+    if left is not None and wait > left:
+        log.warning("gmail %s: back-off of %.0fs does not fit the %.0fs left for a person waiting; giving up", what, wait, max(0.0, left))
+        raise GmailRateLimitError(f"Gmail is rate-limiting requests right now. Try again in about {int(wait) + 1} seconds.")
 
 
 def cooldown_remaining() -> float:
@@ -73,18 +111,24 @@ def _get_json(token: str, path: str, params: dict | None = None, *,
     req = Request(url, method="GET",
                   headers={"Authorization": "Bearer " + token,
                            "Accept": "application/json"})
+    what = path.strip("/").split("/")[0] or "root"   # "messages", "labels", "profile": never log ids
     for attempt in range(len(_RETRY_DELAYS) + 1):
         wait = cooldown_remaining()
         if wait:
+            _give_up_if_too_long(wait, what)
+            log.warning("gmail %s: waiting %.1fs for the shared rate-limit cooldown (attempt %d)", what, wait, attempt + 1)
             _sleep(wait)
+        started = time.monotonic()
         try:
-            with opener(req, timeout=15) as response:
+            with opener(req, timeout=request_timeout()) as response:
                 data = response.read(max_bytes + 1)
             if len(data) > max_bytes:
                 raise GmailReadError("Gmail response exceeds size limit")
             obj = json.loads(data)
             if not isinstance(obj, dict):
                 raise ValueError("Unexpected Gmail response type")
+            if time.monotonic() - started > 3:
+                log.warning("gmail %s: slow response, %.1fs (attempt %d)", what, time.monotonic() - started, attempt + 1)
             return obj
         except HTTPError as exc:
             # Do not print the response body; it may include account information.
@@ -95,12 +139,17 @@ def _get_json(token: str, path: str, params: dict | None = None, *,
                     delay = min(120.0, float(exc.headers.get("Retry-After")))
                 except (TypeError, ValueError, AttributeError):
                     delay = _RETRY_DELAYS[attempt] + random.random()
+                log.warning("gmail %s: HTTP %s%s after %.1fs; backing off %.0fs (attempt %d of %d)", what, exc.code,
+                            " (" + ",".join(sorted(reasons)) + ")" if reasons else "", time.monotonic() - started, delay,
+                            attempt + 1, len(_RETRY_DELAYS) + 1)
+                _give_up_if_too_long(delay, what)
                 with _cooldown_lock:
                     _cooldown["until"] = max(_cooldown["until"], time.monotonic() + delay)
                 continue
             error = GmailRateLimitError if limited else GmailReadError
             raise error(_describe(exc.code, reasons)) from None
-        except (URLError, TimeoutError, OSError):
+        except (URLError, TimeoutError, OSError) as exc:
+            log.warning("gmail %s: connection failed after %.1fs (%s)", what, time.monotonic() - started, type(exc).__name__)
             raise GmailReadError("Gmail API connection failed") from None
         except (ValueError, UnicodeError):
             raise GmailReadError("Invalid Gmail API JSON response") from None

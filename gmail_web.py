@@ -18,7 +18,8 @@ try:
 except ImportError:  # Everything except Gmail works without the optional dependency.
     AESGCM = None
 from connectors.gmail_modify import MODIFY_SCOPE, GmailWriteError, set_unread as gmail_set_unread, clear_unread_many as gmail_clear_unread_many
-from connectors.gmail_readonly import SCOPES, GmailReadError, GmailRateLimitError, cooldown_remaining, get_totals, get_address, list_message_ids, get_message_full, get_attachment
+import logging
+from connectors.gmail_readonly import SCOPES, GmailReadError, GmailRateLimitError, cooldown_remaining, interactive, request_timeout, get_totals, get_address, list_message_ids, get_message_full, get_attachment
 from tasks import connection, peer_for
 import settings as prefs
 import mailsearch
@@ -31,6 +32,9 @@ TOKEN = 'https://oauth2.googleapis.com/token'
 SCOPE = SCOPES[0]
 LEVELS = ('readonly','modify')
 REAUTH_SECONDS = 7 * 86400   # A Google OAuth app in "Testing" mode: refresh tokens die 7 days after they were issued (a refresh does not extend it).
+
+log = logging.getLogger('inboxtend.gmail')
+INTERACTIVE_SECONDS = 8   # Longest a person opening a message waits on Gmail before getting a clear error.
 
 class GmailConnectionError(RuntimeError):
     pass
@@ -66,7 +70,7 @@ def _post(url, fields, *, opener=urlopen):
     req = Request(url, data=urlencode(fields).encode('ascii'), method='POST',
                   headers={'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'})
     try:
-        with opener(req, timeout=15) as response: raw = response.read(100_001)
+        with opener(req, timeout=request_timeout()) as response: raw = response.read(100_001)
         if len(raw) > 100_000: raise ValueError()
         data = json.loads(raw)
         if not isinstance(data, dict): raise ValueError()
@@ -185,6 +189,7 @@ def _split(db,user_id,message_id):
     return _account(db,user_id,row['account_id'] if row and row['account_id'] is not None else None), message_id
 
 def disconnect(db,user_id,account_id=None):
+    forget_tokens(user_id)
     """Remove one account (with all of its stored mail) or, without an id, every account of the user. The mail of
     other accounts is untouched. Tasks are kept."""
     with db:
@@ -211,7 +216,7 @@ def check(db,config,user_id,account_id,*,opener=urlopen):
     expires_at = row['connected_at'] + REAUTH_SECONDS
     result = {'account_id':row['id'],'checked_at':int(time.time()),'expires_at':expires_at}
     try:
-        _access_token(db,config,user_id,account_id=row['id'],opener=opener)
+        _access_token(db,config,user_id,account_id=row['id'],opener=opener,fresh=True)   # Ask Google, never the cache.
         result['valid'] = True
     except GmailConnectionError as exc:
         text = str(exc)
@@ -226,8 +231,23 @@ def _scope_matches(returned,expected):
         return MODIFY_SCOPE in returned and returned <= {SCOPE,MODIFY_SCOPE}
     return returned == {SCOPE}
 
-def _access_token(db,config,user_id,*,account_id=None,opener=urlopen):
+_TOKENS, _TOKENS_LOCK = {}, threading.Lock()   # (user, account, connected_at, scopes) -> (access token, monotonic expiry)
+TOKEN_MARGIN = 120
+
+def forget_tokens(user_id=None):
+    """Drop cached access tokens (after a 401, a reconnect or a removal)."""
+    with _TOKENS_LOCK:
+        for key in [k for k in _TOKENS if user_id is None or k[0] == user_id]: del _TOKENS[key]
+
+def _access_token(db,config,user_id,*,account_id=None,opener=urlopen,fresh=False):
+    """A Gmail access token. Google's last about an hour, so one is reused until shortly before it expires instead of
+    asking Google for a new one on every call. Tests that inject an opener always get a fresh one."""
     row = _account(db,user_id,account_id)
+    key = (user_id,row['id'],row['connected_at'],row['scopes'])
+    cacheable = opener is urlopen
+    if cacheable and not fresh:
+        with _TOKENS_LOCK: hit = _TOKENS.get(key)
+        if hit and hit[1] > time.monotonic(): return hit[0]
     try:
         encrypted = row['refresh_token']
         refresh = AESGCM(_key(config)).decrypt(encrypted[:12],encrypted[12:],str(user_id).encode()).decode()
@@ -240,6 +260,10 @@ def _access_token(db,config,user_id,*,account_id=None,opener=urlopen):
         or result.get('token_type','').lower() != 'bearer'
         or ('scope' in result and not _scope_matches(set(result['scope'].split()),_granted(row)))):
         raise GmailConnectionError('Google returned different access than was granted; reconnect Gmail')
+    if cacheable:
+        lifetime = result.get('expires_in') if isinstance(result.get('expires_in'),(int,float)) and not isinstance(result.get('expires_in'),bool) else 0
+        if lifetime > TOKEN_MARGIN:
+            with _TOKENS_LOCK: _TOKENS[key] = (result['access_token'],time.monotonic() + lifetime - TOKEN_MARGIN)
     return result['access_token']
 
 DEFAULTS = {'INBOX_TEND_SYNC_QUERY':'in:inbox','INBOX_TEND_SYNC_SENT_QUERY':'in:sent','INBOX_TEND_SYNC_MAX_MESSAGES':200,
@@ -619,7 +643,12 @@ def run_sync(db,config,user_id,*,account_id=None,report=lambda **kw: None,opener
     inbox_ids = _listing(token,settings['query'],settings['max_messages'])
     sent_ids = _listing(token,settings['sent_query'],settings['max_messages']) if settings['sync_sent'] else None
     have_full = {r[0][len(prefix):] for r in db.execute('SELECT message_id FROM gmail_messages WHERE user_id=? AND account_id=? AND has_full=1',(user_id,account_id))}
-    todo = [i for i in dict.fromkeys(inbox_ids + (sent_ids or [])) if i not in have_full]
+    unread_ids = set(_listing(token,f"({settings['query']}) is:unread",settings['max_messages']))
+    # Newest first within each group; unread inbox mail first, then the rest of the inbox, then sent mail, so what a person is
+    # most likely to open next is complete locally even if Gmail starts limiting the sync part-way.
+    inbox_set = set(inbox_ids)
+    order = {i:n for n,i in enumerate(dict.fromkeys(inbox_ids + (sent_ids or [])))}
+    todo = sorted((i for i in order if i not in have_full),key=lambda i:(0 if i in unread_ids else 1 if i in inbox_set else 2,order[i]))
     done = failed = 0
     first_error = None
     report(total=len(todo),done=0,failed=0)
@@ -643,7 +672,6 @@ def run_sync(db,config,user_id,*,account_id=None,report=lambda **kw: None,opener
                 report(done=done,failed=failed)
     if todo and not done:
         raise GmailReadError(first_error or 'No messages could be downloaded')
-    unread_ids = set(_listing(token,f"({settings['query']}) is:unread",settings['max_messages']))
     stored = lambda ids: [prefix + i for i in ids]
     with db:
         _refresh_unread(db,user_id,account,inbox_ids,unread_ids)
@@ -742,9 +770,18 @@ def message(db,config,user_id,message_id,*,opener=urlopen):
     if row and row['has_full']: return _detail(db,user_id,row)
     if message_id.startswith('imap-'): raise GmailReadError('IMAP message is not in the local cache; sync this account first')
     account, gmail_id = _split(db,user_id,message_id)
-    token = _access_token(db,config,user_id,account_id=account['id'],opener=opener)
-    try: item = _fetch(token,gmail_id,sync_settings(config,prefs.stored(db,user_id))['attachment_max'])
-    except ValueError: raise GmailReadError('Invalid message ID') from None
+    limit = sync_settings(config,prefs.stored(db,user_id))['attachment_max']
+    started = time.monotonic()
+    with interactive(INTERACTIVE_SECONDS):   # A person is waiting: fail fast on Gmail rate limits instead of sleeping through them.
+        token = _access_token(db,config,user_id,account_id=account['id'],opener=opener)
+        try:
+            try: item = _fetch(token,gmail_id,limit)
+            except GmailReadError as exc:
+                if 'HTTP 401' not in str(exc): raise
+                forget_tokens(user_id)   # The cached token was refused: get a new one and try once more.
+                item = _fetch(_access_token(db,config,user_id,account_id=account['id'],opener=opener,fresh=True),gmail_id,limit)
+        except ValueError: raise GmailReadError('Invalid message ID') from None
+    log.warning('message not stored in full: fetched from Gmail on open in %.1fs', time.monotonic() - started)
     with db: _store(db,user_id,item,account=account)
     return _detail(db,user_id,db.execute('SELECT * FROM gmail_messages WHERE user_id=? AND message_id=?',(user_id,account['prefix'] + item['id'])).fetchone())
 
