@@ -72,10 +72,53 @@ function linkedText(text, className) {
   box.append(document.createTextNode(text.slice(last)));
   return box;
 }
+// Plain text of the original-design HTML. DOMParser makes an inert document (no scripts run, nothing is fetched).
+function designText(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script,style,head,template,noscript').forEach(node => node.remove());
+  const block = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|DIV|DL|DT|DD|FIELDSET|FIGURE|FOOTER|FORM|H[1-6]|HEADER|HR|LI|MAIN|NAV|OL|P|PRE|SECTION|TABLE|TR|UL)$/;
+  let out = '';
+  const walk = node => {
+    if (node.nodeType === Node.TEXT_NODE) { out += node.nodeValue.replace(/\s+/g, ' '); return; }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.tagName === 'BR') { out += '\n'; return; }
+    if (node.tagName === 'IMG') { const alt = (node.getAttribute('alt') || '').trim(); if (alt) out += alt; return; }
+    const breaks = block.test(node.tagName);
+    if (breaks) out += '\n';
+    for (const child of node.childNodes) walk(child);
+    if (node.tagName === 'TD' || node.tagName === 'TH') out += '\t';
+    if (breaks) out += '\n';
+  };
+  walk(doc.body || doc.documentElement);
+  return out.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/\t+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 function mailBodyView(message) {
   const box = el('div', undefined, 'mail-body-view');
   const text = linkedText(message.body_text || message.snippet || '(No text content)', 'message-body');
-  if (!message.has_html) { box.append(text); return box; }
+  const copy = iconButton('copy', 'Copy');
+  let showingOriginal = false, copyTimer = 0;
+  const flash = label => { copy.lastChild.textContent = label; clearTimeout(copyTimer); copyTimer = setTimeout(() => { copy.lastChild.textContent = 'Copy'; }, 2000); };
+  copy.addEventListener('click', async () => {
+    copy.disabled = true;
+    try {
+      let content = message.body_text || message.snippet || '';
+      if (showingOriginal) {
+        // The design preview sits in a sandboxed frame we cannot read, so fetch the same document and take its text.
+        const response = await fetch('/api/connectors/gmail/messages/' + encodeURIComponent(message.id) + '/design', {credentials: 'same-origin'});
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        content = designText(await response.text()) || content;
+      }
+      await navigator.clipboard.writeText(content);
+      flash('Copied');
+    } catch (_) { flash('Copy failed'); }
+    finally { copy.disabled = false; }
+  });
+  if (!message.has_html) {
+    const bar = el('div', undefined, 'mail-view-controls');
+    bar.append(copy);
+    box.append(bar, text);
+    return box;
+  }
   const controls = el('div', undefined, 'mail-view-controls');
   const design = iconButton('eye', 'Original design');
   const easy = iconButton('list-check', 'Easy read');
@@ -93,6 +136,7 @@ function mailBodyView(message) {
   };
   const previewUrl = () => '/api/connectors/gmail/messages/' + encodeURIComponent(message.id) + '/design' + (remoteImages ? '?remote_images=true' : '');
   const show = original => {
+    showingOriginal = original;
     design.setAttribute('aria-pressed', String(original));
     easy.setAttribute('aria-pressed', String(!original));
     frame.hidden = remote.hidden = note.hidden = !original;
@@ -107,7 +151,7 @@ function mailBodyView(message) {
     updateRemote();
   });
   updateRemote();
-  controls.append(design, easy, remote);
+  controls.append(design, easy, remote, copy);
   box.append(controls, note, frame, text);
   show(true);
   return box;
