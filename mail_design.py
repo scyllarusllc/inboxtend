@@ -1,4 +1,4 @@
-"""Isolated, non-interactive rendering of an email's original HTML layout."""
+"""Isolated rendering of an email's original HTML layout: no scripts; https links open in a new tab."""
 from __future__ import annotations
 
 import bleach
@@ -15,11 +15,15 @@ def clean_email_html(markup: str, remote_images: bool = False) -> str:
             return True
         if tag == 'img' and name == 'src':
             return value.startswith(('data:image/png;base64,', 'data:image/jpeg;base64,', 'data:image/gif;base64,')) or (remote_images and value.startswith('https://'))
-        return False  # Links remain visible but inert; open them from the reading view.
+        if tag == 'a' and name == 'href':
+            return value.strip().lower().startswith('https://')   # Only https links; javascript:, data:, mailto: and the rest are dropped.
+        return False  # target and rel can never come from the email: they are added below.
 
     source = re.sub(r'<(script|noscript|iframe|object|template)\b[^>]*>[\s\S]*?</\1\s*>', '', markup[:500_000], flags=re.I)
-    return bleach.clean(source, tags=TAGS, attributes=attribute,
-                        protocols=('https', 'data'), css_sanitizer=CSS, strip=True)
+    clean = bleach.clean(source, tags=TAGS, attributes=attribute,
+                         protocols=('https', 'data'), css_sanitizer=CSS, strip=True)
+    # Every link opens in a new tab, cut off from this page, and tells the destination nothing about where it came from.
+    return re.sub(r'<a\b', '<a target="_blank" rel="noopener noreferrer nofollow ugc"', clean)
 
 
 def preview_document(markup: str, remote_images: bool = False) -> str:

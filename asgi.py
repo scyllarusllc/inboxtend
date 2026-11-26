@@ -90,7 +90,7 @@ def email_design(request: Request, message_id: str, remote_images: bool = False,
                          (user['id'], message_id)).fetchone()
     if row is None or not (row['body_html'] or looks_like_html(row['body_text'])):
         raise HTTPException(404, 'HTML design unavailable')
-    policy = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:" + (' https:' if remote_images else '') + "; font-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
+    policy = "sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:" + (' https:' if remote_images else '') + "; font-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
     return HTMLResponse(preview_document(row['body_html'] or row['body_text'], remote_images), headers={
         'Content-Security-Policy': policy, 'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer'})

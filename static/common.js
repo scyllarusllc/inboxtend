@@ -126,13 +126,13 @@ function mailBodyView(message) {
   const note = el('p', undefined, 'meta');
   const frame = el('iframe', undefined, 'mail-design-frame');
   frame.title = 'Original email design';
-  frame.setAttribute('sandbox', '');
+  frame.setAttribute('sandbox', 'allow-popups allow-popups-to-escape-sandbox');   // No scripts, no same-origin: links may only open a new tab.
   frame.referrerPolicy = 'no-referrer';
   frame.loading = 'lazy';
   let remoteImages = Boolean(userSettings.load_remote_images);
   const updateRemote = () => {
     remote.replaceChildren(icon('eye'), document.createTextNode(remoteImages ? ' Hide remote images' : ' Load remote images'));
-    note.textContent = remoteImages ? 'Remote images are loaded from the sender’s servers. Links in this preview cannot be opened.' : 'Remote images are off. Links in the design preview cannot be opened.';
+    note.textContent = remoteImages ? 'Remote images are loaded from the sender’s servers. Links open in a new tab.' : 'Remote images are off. Links open in a new tab.';
   };
   const previewUrl = () => '/api/connectors/gmail/messages/' + encodeURIComponent(message.id) + '/design' + (remoteImages ? '?remote_images=true' : '');
   const show = original => {
