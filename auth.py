@@ -15,7 +15,10 @@ import threading
 import time
 from tasks import connection
 
-SESSION_SECONDS = 12 * 3600
+SESSION_IDLE_SECONDS = 7 * 86400   # Signed out after this long without using the app; every use pushes it forward.
+SESSION_MAX_SECONDS = 30 * 86400   # Hard limit from sign-in, however active: after this, sign in again.
+SESSION_SECONDS = SESSION_MAX_SECONDS   # Cookie lifetime; the server enforces the shorter idle limit.
+_RENEW_AFTER = 3600                # Extend at most once an hour so reading does not write on every request.
 ROUNDS = 310_000
 _TOKEN = re.compile(r'^[A-Za-z0-9_-]{40,100}$')
 _DUMMY_HASH = None
@@ -171,7 +174,7 @@ class AuthManager:
             with db:
                 db.execute('DELETE FROM user_sessions WHERE expires_at<=?', (now,))
                 db.execute('INSERT INTO user_sessions(token_hash,user_id,csrf_token,expires_at,created_at) VALUES (?,?,?,?,?)',
-                           (sha256(token.encode()).hexdigest(), user_id, csrf, now + SESSION_SECONDS,
+                           (sha256(token.encode()).hexdigest(), user_id, csrf, now + SESSION_IDLE_SECONDS,
                             datetime.now(timezone.utc).isoformat()))
         return token, csrf
 
@@ -179,10 +182,26 @@ class AuthManager:
         if not token or not _TOKEN.fullmatch(token):
             return None
         with closing(connection(self.db_path)) as db:
-            row = db.execute('''SELECT s.csrf_token,s.expires_at,u.id,u.username,u.role
+            digest = sha256(token.encode()).hexdigest()
+            row = db.execute('''SELECT s.csrf_token,s.expires_at,s.created_at,u.id,u.username,u.role
                                 FROM user_sessions s JOIN users u ON u.id=s.user_id
-                                WHERE s.token_hash=?''', (sha256(token.encode()).hexdigest(),)).fetchone()
-            return dict(row) if row and row['expires_at'] > int(time.time()) else None
+                                WHERE s.token_hash=?''', (digest,)).fetchone()
+            now = int(time.time())
+            if not row or row['expires_at'] <= now:
+                return None
+            try:
+                hard_limit = int(datetime.fromisoformat(row['created_at']).timestamp()) + SESSION_MAX_SECONDS
+            except (TypeError, ValueError):
+                hard_limit = row['expires_at']   # Unreadable start time: never extend such a session.
+            if now >= hard_limit:
+                return None
+            wanted = min(now + SESSION_IDLE_SECONDS, hard_limit)
+            if wanted - row['expires_at'] >= _RENEW_AFTER:   # Sliding expiry: using the app keeps you signed in.
+                with db:
+                    db.execute('UPDATE user_sessions SET expires_at=? WHERE token_hash=?', (wanted, digest))
+            result = dict(row)
+            result.pop('created_at')
+            return result
 
     def revoke(self, token):
         if token and _TOKEN.fullmatch(token):
