@@ -3,7 +3,7 @@ NEXT_PORT ?= 3000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 CADDY ?= caddy
 
-.PHONY: dev dev-api dev-next caddy-dev test build-pages css css-watch css-check vendor demo
+.PHONY: deploy dev dev-api dev-next caddy-dev test build-pages css css-watch css-check vendor demo
 
 dev:
 	python3 scripts/bootstrap_dev.py
@@ -51,3 +51,6 @@ vendor:
 demo:
 	$(PYTHON) scripts/demo_data.py /tmp/inboxtend-demo/tasks.sqlite3
 	INBOX_TEND_DB=/tmp/inboxtend-demo/tasks.sqlite3 INBOX_TEND_PORT=8781 $(PYTHON) app.py
+
+deploy:
+	scripts/deploy.sh
