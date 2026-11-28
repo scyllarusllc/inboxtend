@@ -195,6 +195,7 @@ def connection(path=DEFAULT_DB):
             'account_id': 'INTEGER',   # The gmail_connections row the message came from (NULL: stored before accounts existed)
             'peer_email': "TEXT NOT NULL DEFAULT ''", 'peer_name': "TEXT NOT NULL DEFAULT ''",
             'read_override': 'INTEGER',  # NULL = follow Gmail's UNREAD label; 1 = read here; 0 = unread here.
+            'archived': 'INTEGER NOT NULL DEFAULT 0',  # 1 = filed under Archived here (sender is on the archived list); Gmail is not changed.
         }.items():
             if name not in message_columns:
                 db.execute(f'ALTER TABLE gmail_messages ADD COLUMN {name} {definition}')
@@ -207,6 +208,7 @@ def connection(path=DEFAULT_DB):
             db.execute('UPDATE gmail_messages SET account_id=(SELECT c.id FROM gmail_connections c WHERE c.user_id=gmail_messages.user_id ORDER BY c.id LIMIT 1) '
                        'WHERE account_id IS NULL AND EXISTS (SELECT 1 FROM gmail_connections c WHERE c.user_id=gmail_messages.user_id)')  # One-time migration for mail from before accounts existed.
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_account ON gmail_messages(user_id,account_id)')
+        db.execute('CREATE TABLE IF NOT EXISTS archived_senders (user_id INTEGER NOT NULL, address TEXT NOT NULL, name TEXT NOT NULL DEFAULT \'\', created_at INTEGER NOT NULL, PRIMARY KEY (user_id,address))')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_thread ON gmail_messages(user_id,thread_id)')
         db.execute('CREATE INDEX IF NOT EXISTS gmail_messages_peer ON gmail_messages(user_id,peer_email)')
         db.execute('''CREATE TABLE IF NOT EXISTS gmail_attachments (

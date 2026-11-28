@@ -58,6 +58,7 @@ async function renderMail(m) {
     });
     bar.append(toggle);
   }
+  if (m.direction !== 'sent' && m.sender_address) bar.append(archiveSenderButton(m, state => { m.sender_archived = state; }));
   const task = await taskFor(m);
   if (task) {
     const open = el('a', undefined, 'icon-button');

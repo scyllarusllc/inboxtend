@@ -41,7 +41,7 @@ const ICONS = {
   history: 'fa-solid fa-clock-rotate-left', check: 'fa-solid fa-check', 'check-double': 'fa-solid fa-check-double', plus: 'fa-solid fa-plus',
   mail: 'fa-regular fa-envelope', sent: 'fa-solid fa-paper-plane', received: 'fa-solid fa-inbox', paperclip: 'fa-solid fa-paperclip', download: 'fa-solid fa-download',
   eye: 'fa-regular fa-eye', language: 'fa-solid fa-language', sparkles: 'fa-solid fa-wand-magic-sparkles', upload: 'fa-solid fa-arrow-up-from-bracket',
-  reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark', play: 'fa-solid fa-play', 'rotate-left': 'fa-solid fa-rotate-left', 'rotate-right': 'fa-solid fa-rotate-right', clock: 'fa-regular fa-clock'
+  reply: 'fa-solid fa-reply', copy: 'fa-regular fa-copy', trash: 'fa-regular fa-trash-can', xmark: 'fa-solid fa-xmark', play: 'fa-solid fa-play', 'rotate-left': 'fa-solid fa-rotate-left', 'rotate-right': 'fa-solid fa-rotate-right', clock: 'fa-regular fa-clock', archive: 'fa-solid fa-box-archive'
 };
 // Message text with web addresses made clickable. Only http(s) links, always in a new tab and without handing the page
 // to the destination (noopener) or telling it where you came from (noreferrer). The text itself stays plain text nodes.
@@ -161,6 +161,35 @@ function icon(name) {
   node.className = (ICONS[name] || 'fa-solid fa-circle') + ' fa-fw';
   node.setAttribute('aria-hidden', 'true');
   return node;
+}
+// "Archive this sender": their mail is marked read and filed under Archived, now and on every later sync. Press again to undo.
+function archiveSenderButton(message, onChange) {
+  const button = iconButton('archive', '');
+  const paint = () => {
+    button.replaceChildren(icon('archive'), document.createTextNode(message.sender_archived ? 'Sender archived · undo' : 'Archive this sender'));
+    button.title = message.sender_archived ? 'Stop archiving ' + message.sender_address + '; their mail goes back to the Inbox'
+      : 'Mark all mail from ' + message.sender_address + ' as read and file it under Archived, also future mail';
+  };
+  paint();
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      if (message.sender_archived) {
+        const result = await request('/api/archived/senders/remove', 'POST', {address: message.sender_address});
+        message.sender_archived = false;
+        notify(result.restored + ' message(s) from ' + message.sender_address + ' are back in the Inbox.');
+      } else {
+        const result = await request('/api/archived/senders', 'POST', {message_id: message.id});
+        message.sender_archived = true;
+        message.unread = false;
+        notify(result.address + ' is archived: ' + result.archived + ' message(s) marked read and filed under Archived. Future mail is archived automatically.');
+      }
+      if (onChange) onChange(message.sender_archived);
+      paint();
+    } catch (error) { notify(error.message, true); }
+    button.disabled = false;
+  });
+  return button;
 }
 function iconButton(name,label) {
   const button=el('button',undefined,'icon-button');

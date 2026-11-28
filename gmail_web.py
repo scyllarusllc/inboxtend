@@ -463,14 +463,18 @@ def last_sync(db,user_id,account_id=None):
         return row[0] if row else None
     return max((a['last_sync'] or 0 for a in accounts(db,user_id)),default=0) or None
 
-FOLDERS = {'inbox':'in_inbox','sent':'in_sent'}
+FOLDERS = {'inbox':'in_inbox','sent':'in_sent','archived':'archived'}
+
+def _in_folder(folder):
+    """SQL condition (table alias m) for 'the message is listed in this folder'. Archived mail leaves the Inbox here without
+    touching in_inbox, which the sync owns."""
+    return {'inbox':'(m.in_inbox=1 AND m.archived=0)','sent':'(m.in_sent=1)','archived':'(m.archived=1)'}[folder]
 
 def cached_inbox(db,user_id,folder='inbox',search=None,account_id=None):
     """Folder rows from the local SQLite copy; makes no Gmail request. `search` is a mailsearch.parse() result."""
-    column = FOLDERS[folder]
     where, params = mailsearch.condition(search) if search else ('',[])
     rows = db.execute('SELECT m.*,(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
-                      f'FROM gmail_messages m WHERE m.user_id=? AND m.{column}=1' + (' AND m.account_id=?' if account_id is not None else '') + (f' AND ({where})' if where else '') +
+                      f'FROM gmail_messages m WHERE m.user_id=? AND {_in_folder(folder)}' + (' AND m.account_id=?' if account_id is not None else '') + (f' AND ({where})' if where else '') +
                       ' ORDER BY m.internal_date DESC, m.message_id DESC',(user_id,*(() if account_id is None else (account_id,)),*params))
     return topics.attach(db,user_id,flags.attach(db,user_id,[dict(_row(r),attachment_count=r['n_att']) for r in rows]))
 
@@ -483,10 +487,9 @@ def grouped_inbox(db,user_id,folder,view,search=None,account_id=None):
     conversation or person, from both folders. Purely local: no Gmail request."""
     if view == 'messages':
         return {'messages':cached_inbox(db,user_id,folder,search,account_id)}
-    column = FOLDERS[folder]
     where, params = mailsearch.condition(search) if search else ('',[])
     rows = db.execute('SELECT m.account_id,m.message_id,m.thread_id,m.from_addr,m.to_addr,m.subject,m.date_header,m.snippet,m.internal_date,m.label_ids,m.read_override,m.has_full,'
-                      f'm.peer_email,m.peer_name,m.{column} AS in_folder,' + (f'CASE WHEN {where} THEN 1 ELSE 0 END' if where else '1') + ' AS hit,'
+                      f'm.peer_email,m.peer_name,{_in_folder(folder)} AS in_folder,' + (f'CASE WHEN {where} THEN 1 ELSE 0 END' if where else '1') + ' AS hit,'
                       '(SELECT COUNT(*) FROM gmail_attachments a WHERE a.user_id=m.user_id AND a.message_id=m.message_id) AS n_att '
                       'FROM gmail_messages m WHERE m.user_id=?' + (' AND m.account_id=?' if account_id is not None else '') + ' ORDER BY m.internal_date DESC, m.message_id DESC',
                       (*params,user_id,*(() if account_id is None else (account_id,))))  # Metadata-only rows (older syncs) group fine too.
@@ -543,9 +546,9 @@ def group_name(address):
 
 def folder_counts(db,user_id,account_id=None):
     scope, args = (' AND account_id=?', (user_id,account_id)) if account_id is not None else ('', (user_id,))
-    row = db.execute('SELECT COALESCE(SUM(in_inbox),0),COALESCE(SUM(in_sent),0) FROM gmail_messages WHERE user_id=?'+scope,args).fetchone()
-    unread = sum(1 for r in db.execute('SELECT label_ids,read_override FROM gmail_messages WHERE user_id=? AND in_inbox=1'+scope,args) if _is_unread(r))
-    return {'inbox':row[0],'sent':row[1],'unread':unread}
+    row = db.execute('SELECT COALESCE(SUM(in_inbox AND NOT archived),0),COALESCE(SUM(in_sent),0),COALESCE(SUM(archived),0) FROM gmail_messages WHERE user_id=?'+scope,args).fetchone()
+    unread = sum(1 for r in db.execute('SELECT label_ids,read_override FROM gmail_messages WHERE user_id=? AND in_inbox=1 AND archived=0'+scope,args) if _is_unread(r))
+    return {'inbox':row[0],'sent':row[1],'archived':row[2],'unread':unread}
 
 def stored_count(db,user_id,account_id=None):
     scope, args = (' AND account_id=?', (user_id,account_id)) if account_id is not None else ('', (user_id,))
@@ -720,6 +723,11 @@ def _background(db_path,config,user_id,account_ids):
                 except Exception as exc: problems.append((name + ': ' if name else '') + ('IMAP sync failed: '+str(exc) if account_id is not None and account_id < 0 else 'Sync failed unexpectedly'))
                 for key in base: base[key] += current[key]
     except Exception: problems.append('Sync failed unexpectedly')
+    try:   # Mail from archived senders is filed and marked read, also when a sync was only partly successful.
+        import archive
+        with closing(connection(db_path)) as db:
+            archive.apply(db,config,user_id)
+    except Exception: log.warning('archiving mail from archived senders failed',exc_info=True)
     _update(user_id,running=False,**({'error':' '.join(problems)} if problems else {}))
 
 def start_sync(db_path,config,user_id,account_id=None):
@@ -801,6 +809,9 @@ def _detail(db,user_id,row):
             (user_id,row['thread_id']))]
     else:
         detail['thread'] = []
+    detail['archived'] = bool(row['archived'])
+    detail['sender_archived'] = bool(row['peer_email']) and '"SENT"' not in (row['label_ids'] or '') and bool(db.execute('SELECT 1 FROM archived_senders WHERE user_id=? AND address=?',(user_id,row['peer_email'])).fetchone())
+    detail['sender_address'] = row['peer_email'] if '"SENT"' not in (row['label_ids'] or '') else ''
     flags.attach(db,user_id,[detail]+detail['thread'])
     topics.attach(db,user_id,[detail]+detail['thread'])
     detail['person'] = flags.card(db,user_id,row['peer_email'])

@@ -377,6 +377,7 @@ async function selectMessage(id) {
   const bar = el('div', undefined, 'action-bar');
   if (full.direction !== 'sent') bar.append(reply);
   bar.append(propose);
+  if (full.direction !== 'sent' && full.sender_address) bar.append(archiveSenderButton(full, () => reloadList()));
   const manual = iconButton('plus', 'Create task manually');
   manual.addEventListener('click', async () => {
     manual.disabled = true;

@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, quote
 import ai
 import gmail_web
+import archive
 import imap_web
 import google_login
 import mailsearch
@@ -33,12 +34,13 @@ from tasks import connection, DEFAULT_DB, get_task, task_for_source, scope_sourc
 ROOT = Path(__file__).resolve().parent
 _TRANSLATION_TIMINGS = {}
 _TRANSLATION_TIMINGS_LOCK = threading.Lock()
-NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('tasks','/user/tasks','Tasks','list-check'))
+NAV_ITEMS = (('inbox','/user/inbox','Inbox','inbox'),('archived','/user/archived','Archived','box-archive'),('tasks','/user/tasks','Tasks','list-check'))
 # name -> (title, description, scripts, active nav item, signed in)
 PAGES = {
     'home': ('Inbox Tend · Gmail and IMAP mail to tasks', 'Review Gmail and IMAP mail, translate text, and track follow-up tasks on your own server.', (), 'home', False),
     'login': ('Sign in · Inbox Tend', 'Sign in to the Inbox Tend workspace.', ('/static/login.js',), None, False),
     'inbox': ('Inbox · Inbox Tend', 'Review your Gmail inbox and turn messages into local tasks.', ('/static/common.js','/static/inbox.js','/static/vendor/chartjs/chart.umd.min.js','/static/stats.js'), 'inbox', True),
+    'archived': ('Archived · Inbox Tend', 'Mail from senders you archived: read automatically and kept out of the Inbox.', ('/static/common.js','/static/archived.js'), 'archived', True),
     'tasks': ('Tasks · Inbox Tend', 'Track local follow-up tasks, owners, deadlines and status.', ('/static/common.js','/static/task-parts.js','/static/tasks.js'), 'tasks', True),
     'task': ('Task · Inbox Tend', 'One follow-up task: details, deadline, history and images.', ('/static/common.js','/static/task-parts.js','/static/task.js','/static/zh.js'), 'tasks', True),
     'mail': ('Email · Inbox Tend', 'Read one email with its conversation, attachments and task.', ('/static/common.js','/static/mail.js'), 'inbox', True),
@@ -48,7 +50,7 @@ PAGES = {
 VENDOR_TYPES = {'.css':'text/css; charset=utf-8','.woff2':'font/woff2','.js':'text/javascript','.svg':'image/svg+xml'}
 SCREEN_TYPES = {'.jpg':'image/jpeg','.png':'image/png'}   # Screenshots of the demo data, shown on the public home page
 STATIC_FILES = {'/static/icons/favicon.svg':'image/svg+xml','/static/icons/favicon-32.png':'image/png','/static/icons/apple-touch-icon.png':'image/png',
-                '/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/task-parts.js':'text/javascript','/static/task.js':'text/javascript','/static/zh.js':'text/javascript','/static/mail.js':'text/javascript','/static/stats.js':'text/javascript',
+                '/static/styles.css':'text/css','/static/common.js':'text/javascript','/static/inbox.js':'text/javascript','/static/task-parts.js':'text/javascript','/static/task.js':'text/javascript','/static/zh.js':'text/javascript','/static/mail.js':'text/javascript','/static/archived.js':'text/javascript','/static/stats.js':'text/javascript',
                 '/static/tasks.js':'text/javascript','/static/settings.js':'text/javascript','/static/login.js':'text/javascript',
                 '/static/dev-reload.js':'text/javascript','/static/stimulus-app.js':'text/javascript'}
 
@@ -314,7 +316,7 @@ class Handler:
             return self._redirect('/user/settings?gmail=readonly' if next_page == 'settings' else '/user/inbox?gmail=connected')
         if not write and path == '/user/dashboard':
             return self._redirect('/user/inbox')  # Legacy URL
-        if not write and path in ('/user/inbox','/user/tasks','/user/settings'):
+        if not write and path in ('/user/inbox','/user/tasks','/user/settings','/user/archived'):
             return self._send(200,render_page(path.rsplit('/',1)[1]),'text/html; charset=utf-8')
         if not write and re.fullmatch(r'/user/task/\d{1,12}',path):
             return self._send(200,render_page('task'),'text/html; charset=utf-8')
@@ -427,6 +429,20 @@ class Handler:
                     outcome = gmail_web.set_read(db,self.gmail_config,session['id'],parts_w[4],data['read'],write=user['gmail_write_read'])
                 if outcome is None: raise RequestError(404,'Message not found')
                 return self._json(200,dict(outcome,id=parts_w[4]))
+            if path == '/api/archived/senders' and self.command == 'POST':   # Archive a sender: from one of their messages
+                mid = data.get('message_id')
+                if not isinstance(mid,str) or not 0 < len(mid) <= 200: raise RequestError(400,'Message ID required')
+                with self._db() as db:
+                    try: result = archive.add_sender(db,self.gmail_config,session['id'],mid)
+                    except ValueError as exc: raise RequestError(400,str(exc)) from None
+                if result is None: raise RequestError(404,'Message not found')
+                return self._json(200,result)
+            if path == '/api/archived/senders/remove' and self.command == 'POST':
+                address = data.get('address')
+                if not isinstance(address,str) or not 0 < len(address) <= 254: raise RequestError(400,'Address required')
+                with self._db() as db: restored = archive.remove_sender(db,session['id'],address)
+                if restored is None: raise RequestError(404,'That sender is not on the archived list')
+                return self._json(200,{'removed':True,'restored':restored})
             if path == '/api/topics/guess' and self.command == 'POST':
                 with self._db() as db: user = prefs.effective(db,session['id'],self.gmail_config)
                 if not user['topics_enabled']: raise RequestError(403,'Topic icons are turned off in Settings')
@@ -746,6 +762,8 @@ class Handler:
                 if account_id is not None and account_id not in [a['id'] for a in gmail_web.accounts(db,session['id'])]: raise RequestError(404,'Unknown Gmail account')
                 tz = prefs.effective(db,session['id'],self.gmail_config)['timezone']
                 return self._json(200,mailstats.compute(db,session['id'],tz,account_id))
+        if path == '/api/archived/senders':
+            with self._db() as db: return self._json(200,{'senders':archive.senders(db,session['id'])})
         if path == '/api/connectors/gmail/status':
             with self._db() as db:
                 connected = gmail_web.status(db,session['id'])
